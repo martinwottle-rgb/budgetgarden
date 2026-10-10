@@ -4,7 +4,11 @@
 import { iso, KON, BLATT_FARBEN, f, p2, tr, poly, linie, kreis, oval, pfad, gruppe, kiste, gerundet, qb, zufall, defs, bodenschatten } from './grafik/hilfen.js';
 import { MOEBEL, platzFeld } from './grafik/moebel.js';
 import { PFLANZEN } from './grafik/pflanzen.js';
+import * as R from './grafik/raritaeten.js';
 import { DEKO } from './grafik/deko.js';
+
+// Groessenfaktor fuer Raritaeten (ueber R.RAR_SKALA, falls das Grafik-Modul ihn exportiert; sonst 1.15)
+const RAR_SKALA = R.RAR_SKALA ?? 1.15;
 
 const FUGE = 'stroke="#c9a27a" stroke-width="0.8" stroke-linejoin="round"';
 // Standardgroesse des Bodens in Feldern (6, 7 oder 8). Alle Masse unten sind auf 6 gerechnet und mit faktor skaliert.
@@ -269,10 +273,10 @@ function haken() {
   }).join('');
 }
 
-// Pflanze oder Deko: Ursprung am Bodenkontakt, Skalierung 1.6, Kontaktschatten darunter.
+// Pflanze oder Deko: Ursprung am Bodenkontakt, Skalierung 1.6 (Raritaeten 1.6 * RAR_SKALA), Kontaktschatten darunter.
 // attr (optional): zusaetzliche Attribute der Gruppe, z. B. data-id und data-art
-function platziert(fuss, inhalt, attr = '') {
-  return gruppe(`${attr} ${tr(fuss, 1.6)}`.trim(), inhalt);
+function platziert(fuss, inhalt, attr = '', skala = 1.6) {
+  return gruppe(`${attr} ${tr(fuss, skala)}`.trim(), inhalt);
 }
 
 // Markierungen: Rauten fuer Bodenfelder und Moebel-Grundflaechen, Kreise fuer Stellplaetze und Haken.
@@ -387,10 +391,15 @@ export function zeichneSzene(container, zustand) {
     ...(z.deko || []).map((d) => ({ ...d, art: 'deko' })),
   ];
   for (const o of objekte) {
-    const def = o.art === 'pflanze' ? PFLANZEN[o.typ] : DEKO[o.typ];
+    // Raritaeten (rar: true) kommen aus eigenem Grafik-Modul, mit Tageszeit und eigener Skalierung
+    const rar = o.art === 'pflanze' && !!o.rar;
+    const def = o.art === 'pflanze' ? (rar ? R.RARITAETEN[o.typ] : PFLANZEN[o.typ]) : DEKO[o.typ];
     if (!def || !o.ort) continue;
     const aufMoebel = 'moebel' in o.ort;
-    const inhalt = o.art === 'pflanze' ? def.zeichne(o.stufe, welk, aufMoebel ? 'brett' : 'boden') : def.zeichne();
+    const ebene = aufMoebel ? 'brett' : 'boden';
+    const inhalt = rar ? def.zeichne(o.stufe, welk, ebene, { tageszeit: zeit })
+      : o.art === 'pflanze' ? def.zeichne(o.stufe, welk, ebene) : def.zeichne();
+    const skala = rar ? 1.6 * RAR_SKALA : 1.6;
     const attr = `data-art="${o.art}" data-id="${escAttr(o.id)}"`;
     const istLicht = getoent && o.art === 'deko' && o.typ === 'laterne';
     if (def.haengend) {
@@ -403,13 +412,13 @@ export function zeichneSzene(container, zustand) {
       const e = moebelById.get(o.ort.moebel);
       const pos = e && platzFeld(e.m, o.ort.platz);
       if (pos) {
-        const svg = platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr);
+        const svg = platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr, skala);
         if (istLicht) lichtEintraege.push({ key: e.key + 0.5, svg });
         else e.aufsatz.push(svg);
       }
     } else if (o.ort.feld) {
       const [gx, gy] = o.ort.feld;
-      const svg = platziert(iso(gx + 0.5, gy + 0.5, 0), inhalt, attr);
+      const svg = platziert(iso(gx + 0.5, gy + 0.5, 0), inhalt, attr, skala);
       if (istLicht) lichtEintraege.push({ key: gx + gy + 1, svg });
       else bodenEintraege.push({ key: gx + gy + 1, svg });
     }
@@ -452,7 +461,7 @@ export function zeichneSzene(container, zustand) {
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${breite} ${hoehe}" width="100%">` +
     defs(uid) + `<rect x="${x0}" y="${y0}" width="${breite}" height="${hoehe}" fill="#a9d3a5"/>` +
-    hinten + inhalt + marken + strahl + stimmung + lichter + vorn + '</svg>';
+    hinten + inhalt + '<g pointer-events="none">' + strahl + stimmung + lichter + '</g>' + vorn + marken + '</svg>';
 
   container.innerHTML = '';
   container.insertAdjacentHTML('beforeend', svg);

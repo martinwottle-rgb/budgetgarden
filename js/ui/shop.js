@@ -1,10 +1,11 @@
 // Shop nach UI.md Abschnitt 5: Reiter Pflanzen · Möbel · Deko · Erweiterungen, Raster aus Karten mit Vorschau.
 // Kaufen führt in den Garten zur Platzwahl, gekauft wird dort (garten.js). Erweiterungen werden hier direkt gekauft.
 
-import { katalog, freiePlaetze, kaufen, levelAus, ERWEITERUNGEN } from '../spiel.js';
+import { katalog, freiePlaetze, kaufen, levelAus, ERWEITERUNGEN, raritaetenListe } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { MOEBEL } from '../grafik/moebel.js';
 import { DEKO } from '../grafik/deko.js';
+import { RARITAETEN, silhouette } from '../grafik/raritaeten.js';
 import { iso, poly } from '../grafik/hilfen.js';
 import { vorschau, einpassen } from '../szene.js';
 import { el, muenzSvg, svgBox, zahl } from './bausteine.js';
@@ -13,7 +14,8 @@ const REITER = [
   { id: 'pflanze', name: 'Pflanzen' },
   { id: 'moebel', name: 'Möbel' },
   { id: 'deko', name: 'Deko' },
-  { id: 'erweiterung', name: 'Erweiterungen' }
+  { id: 'erweiterung', name: 'Erweiterungen' },
+  { id: 'raritaet', name: 'Raritäten ✨' }
 ];
 const KEIN_PLATZ = 'Kein freier Platz, verkaufe oder verschiebe etwas';
 
@@ -22,14 +24,57 @@ let reiterWahl = 'pflanze';
 
 export function zeige(container, ctx) {
   const d = ctx.daten;
-  const artikel = katalog(d).filter(a => a.kategorie === reiterWahl);
+  const karten = reiterWahl === 'raritaet'
+    ? raritaetenListe(d).map(r => raritaetKarte(ctx, r))
+    : katalog(d).filter(a => a.kategorie === reiterWahl).map(a => (a.kategorie === 'erweiterung' ? erweiterungKarte(ctx, a) : artikelKarte(ctx, a)));
   container.append(
     el('h1', { class: 'titel', text: 'Shop' }),
     samenStand(d),
     reiterLeiste(ctx),
-    el('div', { class: 'raster' }, artikel.map(a => (a.kategorie === 'erweiterung' ? erweiterungKarte(ctx, a) : artikelKarte(ctx, a))))
+    el('div', { class: 'raster' }, karten)
   );
   einpassen(container);
+}
+
+// Karte für Raritäten (goldener Rahmen): gesperrt mit Silhouette, Bedingung und Fortschritt;
+// bereit mit voller Vorschau und „Pflanzen (gratis)“; gepflanzt mit Hinweis.
+function raritaetKarte(ctx, r) {
+  const f = r.fortschritt;
+  if (r.zustand === 'gesperrt') {
+    const prozent = f.soll > 0 ? Math.min(100, (f.ist / f.soll) * 100) : 0;
+    return el('section', { class: 'karte ra-karte ra-gesperrt' },
+      el('div', { class: 'sh-bild ra-bild' }, vorschau(silhouette(r.typ), 'sh-vorschau')),
+      el('div', { class: 'sh-name', text: r.name }),
+      el('div', { class: 'klein ra-bedingung', text: r.bedingung }),
+      el('div', { class: 'ra-balken', role: 'img', 'aria-label': f.text }, el('span', { style: 'width:' + prozent.toFixed(1) + '%' })),
+      el('div', { class: 'klein', text: f.text })
+    );
+  }
+  const bild = el('div', { class: 'sh-bild ra-bild' },
+    vorschau(RARITAETEN[r.typ].zeichne(4), 'sh-vorschau'),
+    r.zustand === 'bereit' ? el('span', { class: 'ra-funkel', 'aria-hidden': 'true', text: '✦' }) : null
+  );
+  if (r.zustand === 'gepflanzt') {
+    return el('section', { class: 'karte ra-karte ra-gepflanzt' },
+      bild,
+      el('div', { class: 'sh-name', text: r.name }),
+      el('div', { class: 'sh-hinweis', text: 'Im Gewächshaus ✓' })
+    );
+  }
+  return el('section', { class: 'karte ra-karte ra-bereit' },
+    bild,
+    el('div', { class: 'sh-name', text: r.name }),
+    el('div', { class: 'klein', text: 'Freigeschaltet' }),
+    el('button', {
+      type: 'button',
+      class: 'knopf knopf-primaer knopf-voll ra-knopf',
+      text: 'Pflanzen (gratis)',
+      onclick: () => {
+        if (!freiePlaetze(ctx.daten, 'raritaet', r.typ).length) return ctx.toast(KEIN_PLATZ);
+        ctx.navigiere('garten', { platzieren: { kategorie: 'raritaet', typ: r.typ } });
+      }
+    })
+  );
 }
 
 // Samen-Stand oben

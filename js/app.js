@@ -3,7 +3,9 @@
 
 import * as L from './logik.js';
 import { laden, speichern as persistieren, standardDaten } from './speicher.js';
-import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick } from './spiel.js';
+import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze } from './spiel.js';
+import { RARITAETEN } from './grafik/raritaeten.js';
+import { vorschau, einpassen, tageszeitAus } from './szene.js';
 import { swRegistrieren } from './push.js';
 import { el, muenzSvg, zahl, heutigesDatum, svgBox, kurzDatum, tage, kategorieVon } from './ui/bausteine.js';
 import * as garten from './ui/garten.js';
@@ -290,6 +292,11 @@ function belohnen(ereignisse) {
     }, (i + 1) * 400);
   });
 
+  // Raritaeten: eigener Fest-Dialog, nacheinander (kein Toast, der würde den Dialogtitel verdecken)
+  const raritaeten = ereignisse.filter(e => e.art === 'raritaet');
+  for (const e of raritaeten) festWarteschlange.push(e.typ);
+  if (raritaeten.length) festeZeigen();
+
   if (samen > 0) {
     muenzFlug(samen >= 100 ? 8 : samen >= 30 ? 6 : 5);
     zaehleHoch(ctx.daten.spiel.samen);
@@ -386,14 +393,62 @@ function klasseFuer(art) {
   return '';
 }
 
+// ---------- Fest-Dialoge der Raritaeten ----------
+
+// Wartende Raritaeten (Typ) und die Kette, die sie nacheinander zeigt
+const festWarteschlange = [];
+let festLauf = Promise.resolve();
+
+function festeZeigen() {
+  festLauf = festLauf.then(async () => {
+    while (festWarteschlange.length) {
+      try {
+        await raritaetFest(festWarteschlange.shift());
+      } catch (fehler) {
+        console.error(fehler);
+      }
+    }
+  });
+  return festLauf;
+}
+
+// Fest-Dialog: große Vorschau in goldenem Rahmen, Name, „Weil du: …“. Jetzt pflanzen führt in die Platzwahl.
+async function raritaetFest(typ) {
+  const r = RARITAETEN[typ];
+  if (!r) return;
+  const vorschauEl = vorschau(r.zeichne(4, false, 'boden', { tageszeit: tageszeitAus(new Date()) }), 'ra-fest-vorschau');
+  const inhalt = el('div', { class: 'ra-fest' },
+    el('div', { class: 'ra-rahmen' }, vorschauEl),
+    el('div', { class: 'ra-fest-name', text: r.name }),
+    el('p', { class: 'klein ra-fest-grund', text: `Freigeschaltet durch: ${r.bedingung}` })
+  );
+  const dialog = ctx.dialog({
+    titel: 'Rarität freigeschaltet! ✨',
+    inhalt,
+    knoepfe: [
+      { text: 'Jetzt pflanzen', wert: 'jetzt', art: 'primaer' },
+      { text: 'Später', wert: 'spaeter', art: 'leise' }
+    ]
+  });
+  einpassen(inhalt); // der Dialog ist schon im Dokument, getBBox funktioniert
+  const wahl = await dialog;
+  if (wahl !== 'jetzt') return;
+  if (!freiePlaetze(ctx.daten, 'raritaet', typ).length) {
+    toast('Kein freier Platz, verkaufe oder verschiebe etwas');
+    return;
+  }
+  navigiere('garten', { platzieren: { kategorie: 'raritaet', typ } });
+}
+
 // ---------- Dialoge nach dem Start und nach dem Tageswechsel ----------
 
-// Nacheinander: offene Monatsabschlüsse, dann die Gehaltsfrage, dann der Wochenrückblick, dann die Backup-Erinnerung.
+// Nacheinander: Raritaeten-Feiern, offene Monatsabschlüsse, dann die Gehaltsfrage, dann der Wochenrückblick, dann die Backup-Erinnerung.
 // Nie zwei Abläufe gleichzeitig.
 async function dialogeNachStart() {
   if (dialogeLaufen || !ctx.daten.einstellungen.ersteinrichtungFertig) return;
   dialogeLaufen = true;
   try {
+    await festeZeigen();
     await abschluesseZeigen();
     await gehaltZeigen();
     await rueckblickZeigen();

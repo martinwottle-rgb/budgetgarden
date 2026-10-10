@@ -7,6 +7,7 @@ import { neueId } from './speicher.js';
 import { PFLANZEN } from './grafik/pflanzen.js';
 import { MOEBEL } from './grafik/moebel.js';
 import { DEKO } from './grafik/deko.js';
+import { RARITAETEN } from './grafik/raritaeten.js';
 import { HAKEN } from './szene.js';
 
 // ---------- Preise und Freischaltung (Tempo mittel, SPEC.md) ----------
@@ -363,6 +364,99 @@ export const ABZEICHEN = [
   { id: 'level_10', name: 'Level 10', emoji: '🏆', text: 'Level 10 erreicht.', pruefe: d => levelAus(d.spiel.xp).level >= 10 }
 ];
 
+// ---------- Raritaeten (SPEC.md, Abschnitt Raritäten) ----------
+
+// Preis einer Rarität zum Leveln (Stufe 2: 30 %, 3: 60 %, 4: 100 %), wie bei Pflanzen
+const RARITAET_PREIS = 300;
+
+// Sortierte Kopie (nach Startdatum, ISO-Text)
+const nachStart = (liste) => [...liste].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+
+// Laengste Folge aufeinanderfolgender Eintraege, fuer die ja(e) gilt
+function laengsteFolge(liste, ja) {
+  let beste = 0;
+  let lauf = 0;
+  for (const e of liste) {
+    lauf = ja(e) ? lauf + 1 : 0;
+    beste = Math.max(beste, lauf);
+  }
+  return beste;
+}
+
+// Woche im Budget und alle ihre Challenges erfuellt
+function wochePerfekt(d, w) {
+  const ch = d.spiel.challenges[w.start];
+  return !!w.erfuellt && Array.isArray(ch) && ch.length > 0 && ch.every(c => c.erfuellt);
+}
+
+// Je Typ: pruefe(daten) → bool, fortschritt(daten) → { ist, soll, text } fuer die Shop-Karte
+export const RARITAETEN_REGELN = {
+  koenigin_der_nacht: {
+    pruefe: d => d.spiel.besteSerie >= 30,
+    fortschritt: d => {
+      const ist = Math.min(d.spiel.besteSerie, 30);
+      return { ist, soll: 30, text: `${ist} von 30 Tagen` };
+    }
+  },
+  jadewein: {
+    pruefe: d => d.sparziele.some(s => s.zielsumme && (s.angespart || 0) >= s.zielsumme),
+    fortschritt: d => {
+      // Sparziel mit dem groessten Anteil an seiner Zielsumme
+      const mit = d.sparziele.filter(s => s.zielsumme);
+      if (!mit.length) return { ist: 0, soll: 1, text: 'Noch kein Sparziel mit Zielsumme' };
+      const s = mit.reduce((a, b) => ((b.angespart || 0) / b.zielsumme > (a.angespart || 0) / a.zielsumme ? b : a));
+      const ist = Math.min(s.angespart || 0, s.zielsumme);
+      return { ist, soll: s.zielsumme, text: `${L.euro(ist)} von ${L.euro(s.zielsumme)} gespart` };
+    }
+  },
+  thai_constellation: {
+    pruefe: d => laengsteFolge(nachStart(d.spiel.bewertet.zeitraeume), z => z.erfuellt) >= 3,
+    fortschritt: d => {
+      const ist = Math.min(laengsteFolge(nachStart(d.spiel.bewertet.zeitraeume), z => z.erfuellt), 3);
+      return { ist, soll: 3, text: `${ist} von 3 Zeiträumen in Folge` };
+    }
+  },
+  pink_princess: {
+    pruefe: d => laengsteFolge(nachStart(d.spiel.bewertet.wochen), w => wochePerfekt(d, w)) >= 4,
+    fortschritt: d => {
+      const ist = Math.min(laengsteFolge(nachStart(d.spiel.bewertet.wochen), w => wochePerfekt(d, w)), 4);
+      return { ist, soll: 4, text: `${ist} von 4 Wochen in Folge` };
+    }
+  },
+  drachenbaum: {
+    pruefe: d => angespartGesamt(d) >= 100000,
+    fortschritt: d => {
+      const ist = Math.min(angespartGesamt(d), 100000);
+      return { ist, soll: 100000, text: `${L.euro(ist)} von ${L.euro(100000)} angespart` };
+    }
+  },
+  gold_ginkgo: {
+    pruefe: d => levelAus(d.spiel.xp).level >= 15,
+    fortschritt: d => {
+      const ist = Math.min(levelAus(d.spiel.xp).level, 15);
+      return { ist, soll: 15, text: `Level ${ist} von 15` };
+    }
+  }
+};
+
+// Alle Raritaeten fuer den Shop: zustand gesperrt (noch nicht freigeschaltet), bereit (freigeschaltet, noch nicht
+// gepflanzt) oder gepflanzt
+export function raritaetenListe(daten) {
+  const besitz = daten.spiel.raritaeten || {};
+  return Object.keys(RARITAETEN).map(typ => {
+    const r = RARITAETEN[typ];
+    const eintrag = besitz[typ];
+    const zustand = !eintrag || !eintrag.freigeschaltet ? 'gesperrt' : eintrag.gepflanzt ? 'gepflanzt' : 'bereit';
+    return {
+      typ,
+      name: r.name,
+      bedingung: r.bedingung,
+      zustand,
+      fortschritt: RARITAETEN_REGELN[typ].fortschritt(daten)
+    };
+  });
+}
+
 // ---------- Bewertung ----------
 
 // Zeitraum abschliessen: Sparziele bekommen ihren Anteil, Eintrag in abschluesse
@@ -462,6 +556,14 @@ export function bewerte(daten, heute) {
     }
   }
 
+  // 5. Raritaeten: neu erfuellte werden einmal freigeschaltet (nie doppelt)
+  if (!sp.raritaeten) sp.raritaeten = {};
+  for (const typ of Object.keys(RARITAETEN_REGELN)) {
+    if (sp.raritaeten[typ] || !RARITAETEN_REGELN[typ].pruefe(d)) continue;
+    sp.raritaeten[typ] = { freigeschaltet: heute, gepflanzt: false };
+    ereignisse.push({ art: 'raritaet', typ, text: `Rarität freigeschaltet: ${RARITAETEN[typ].name}`, samen: 0 });
+  }
+
   return { daten: d, ereignisse };
 }
 
@@ -503,8 +605,16 @@ export function welk(daten, heute) {
 
 // ---------- Grundrisse und Platzierung ----------
 
+// Grafikdaten einer Pflanze oder Rarität (gleiche Form: name, groesse, zeichne)
+function pflanzenDef(typ) {
+  if (Object.prototype.hasOwnProperty.call(PFLANZEN, typ)) return PFLANZEN[typ];
+  if (Object.prototype.hasOwnProperty.call(RARITAETEN, typ)) return RARITAETEN[typ];
+  return null;
+}
+
 function groesseVon(typ) {
-  return PFLANZEN[typ] ? PFLANZEN[typ].groesse : 'klein';
+  const def = pflanzenDef(typ);
+  return def ? def.groesse : 'klein';
 }
 
 function moebelMass(m) {
@@ -711,7 +821,8 @@ export function freiePlaetze(daten, kategorie, typ) {
       if (!belegt.has(schluessel(x, y))) felder.push({ feld: [x, y] });
     }
   }
-  if (kategorie === 'pflanze') {
+  // Raritaeten: wie normale Pflanzen gleicher Groesse
+  if (kategorie === 'pflanze' || kategorie === 'raritaet') {
     if (groesseVon(typ) === 'gross') return felder.filter(o => !pruefeOrt(gh, 'pflanze', typ, o, null));
     const plaetze = [];
     for (const m of gh.moebel) {
@@ -818,16 +929,32 @@ export function moebelSetzen(daten, id, gx, gy, drehung) {
   return { daten: d };
 }
 
-// Pflanze eine Stufe hoeher. Kosten je Stufe: 30 %, 60 %, 100 % des Kaufpreises.
+// Rarität pflanzen: kostenlos, nur wenn freigeschaltet und noch nicht gepflanzt. Platzregeln wie normale Pflanzen.
+export function raritaetPflanzen(daten, typ, ort) {
+  if (!Object.prototype.hasOwnProperty.call(RARITAETEN, typ)) return fehler('Diese Rarität gibt es nicht.');
+  const name = RARITAETEN[typ].name;
+  const d = kopie(daten);
+  const eintrag = (d.spiel.raritaeten || {})[typ];
+  if (!eintrag || !eintrag.freigeschaltet) return fehler(name + ' ist noch nicht freigeschaltet.');
+  if (eintrag.gepflanzt) return fehler(name + ' steht schon im Gewächshaus.');
+  const gh = d.spiel.gewaechshaus;
+  const f = pruefeOrt(gh, 'pflanze', typ, ort, null);
+  if (f) return fehler(f);
+  gh.pflanzen.push({ id: neueId('p'), typ, stufe: 1, ort: normOrt(ort), rar: true });
+  eintrag.gepflanzt = true;
+  return { daten: d };
+}
+
+// Pflanze eine Stufe hoeher. Kosten je Stufe: 30 %, 60 %, 100 % des Kaufpreises (Raritaeten: Basis 300).
 export function pflanzeLeveln(daten, id) {
   const d = kopie(daten);
   const p = d.spiel.gewaechshaus.pflanzen.find(x => x.id === id);
   if (!p) return fehler('Diese Pflanze gibt es nicht.');
   if (p.stufe >= 4) return fehler('Die Pflanze ist schon auf Stufe 4.');
-  const def = PREISE_PFLANZEN[p.typ];
-  if (!def) return fehler('Diese Pflanze ist nicht bekannt.');
+  const preis = p.rar ? RARITAET_PREIS : (PREISE_PFLANZEN[p.typ] || {}).preis;
+  if (!preis) return fehler('Diese Pflanze ist nicht bekannt.');
   const neue = p.stufe + 1;
-  const kosten = Math.round(def.preis * STUFENKOSTEN[neue] / 100);
+  const kosten = Math.round(preis * STUFENKOSTEN[neue] / 100);
   if (d.spiel.samen < kosten) return fehler('Dafür fehlen ' + (kosten - d.spiel.samen) + ' Samen.');
   d.spiel.samen -= kosten;
   p.stufe = neue;
@@ -854,6 +981,7 @@ export function verkaufen(daten, kategorie, id) {
   }
   const idx = liste.findIndex(x => x.id === id);
   if (idx < 0) return fehler('Diesen Gegenstand gibt es nicht.');
+  if (liste[idx].rar) return fehler('Raritäten kann man nicht verkaufen.');
   if (kategorie === 'moebel' && gh.pflanzen.some(p => p.ort.moebel === id)) {
     return fehler('Auf dem Möbel stehen noch Pflanzen.');
   }

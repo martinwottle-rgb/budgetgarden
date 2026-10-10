@@ -472,6 +472,138 @@ test('wochenRueckblick: überzogene Woche und ohne Ausgaben', () => {
   gleich(S.wochenRueckblick(mitGehalt('2026-10-01'), '2026-10-05').topKategorie, null, 'ohne Ausgaben keine Top-Kategorie');
 });
 
+// ---------- Raritaeten (SPEC.md, Abschnitt Raritäten) ----------
+
+// Bewertung am Starttag: es werden keine Tage bewertet, nur die Freischaltungen geprueft
+const bewertetAm = (d) => S.bewerte(d, '2026-10-01');
+const raritaetEreignisse = (r) => r.ereignisse.filter(e => e.art === 'raritaet');
+
+// Startstand mit einer freigeschalteten, noch nicht gepflanzten Rarität
+function freigeschaltet(typ, samen = 500) {
+  const d = basis(samen);
+  d.spiel.raritaeten = { [typ]: { freigeschaltet: '2026-10-01', gepflanzt: false } };
+  return d;
+}
+
+test('Raritaeten: Königin der Nacht ab 30-Tage-Serie', () => {
+  const d = basis();
+  d.spiel.besteSerie = 29;
+  gleich(bewertetAm(d).daten.spiel.raritaeten.koenigin_der_nacht, undefined, '29 Tage: gesperrt');
+  d.spiel.besteSerie = 30;
+  const r = bewertetAm(d);
+  gleich(r.daten.spiel.raritaeten.koenigin_der_nacht, { freigeschaltet: '2026-10-01', gepflanzt: false }, '30 Tage: freigeschaltet');
+  gleich(raritaetEreignisse(r).map(e => e.text), ['Rarität freigeschaltet: Königin der Nacht'], 'Ereignis mit Name');
+});
+
+test('Raritaeten: Jadewein bei erreichtem Sparziel', () => {
+  const d = basis();
+  d.sparziele.push({ id: 's1', name: 'Urlaub', proMonat: 10000, zielsumme: 100000, angespart: 99999 });
+  gleich(bewertetAm(d).daten.spiel.raritaeten.jadewein, undefined, '1 Cent fehlt: gesperrt');
+  d.sparziele[0].angespart = 100000;
+  gleich(bewertetAm(d).daten.spiel.raritaeten.jadewein.freigeschaltet, '2026-10-01', 'Zielsumme erreicht');
+});
+
+test('Raritaeten: Thai Constellation nach 3 Zeiträumen in Folge (unsortiert)', () => {
+  const d = basis();
+  d.spiel.bewertet.zeitraeume = [
+    { start: '2026-09-27', erfuellt: true }, { start: '2026-07-27', erfuellt: true }, { start: '2026-08-27', erfuellt: true }
+  ];
+  gleich(bewertetAm(d).daten.spiel.raritaeten.thai_constellation.freigeschaltet, '2026-10-01', '3 in Folge');
+  const luecke = basis();
+  luecke.spiel.bewertet.zeitraeume = [
+    { start: '2026-07-27', erfuellt: true }, { start: '2026-08-27', erfuellt: false }, { start: '2026-09-27', erfuellt: true }, { start: '2026-10-27', erfuellt: true }
+  ];
+  gleich(bewertetAm(luecke).daten.spiel.raritaeten.thai_constellation, undefined, 'Lücke: gesperrt');
+});
+
+test('Raritaeten: Pink Princess nach 4 Wochen in Folge alle Challenges', () => {
+  const d = basis();
+  const wochen = ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24'];
+  d.spiel.bewertet.wochen = wochen.map(start => ({ start, erfuellt: true }));
+  for (const w of wochen) d.spiel.challenges[w] = [{ id: 'a', erfuellt: true }, { id: 'b', erfuellt: true }];
+  gleich(bewertetAm(d).daten.spiel.raritaeten.pink_princess.freigeschaltet, '2026-10-01', '4 Wochen in Folge');
+  d.spiel.challenges['2026-08-17'][1].erfuellt = false;
+  gleich(bewertetAm(d).daten.spiel.raritaeten.pink_princess, undefined, 'eine offene Challenge bricht die Folge');
+});
+
+test('Raritaeten: Drachenbaum ab 1.000 € insgesamt angespart', () => {
+  const d = basis();
+  d.sparziele.push({ id: 'a', name: 'A', proMonat: 0, zielsumme: null, angespart: 40000 }, { id: 'b', name: 'B', proMonat: 0, zielsumme: null, angespart: 59999 });
+  gleich(bewertetAm(d).daten.spiel.raritaeten.drachenbaum, undefined, '999,99 € insgesamt: gesperrt');
+  d.sparziele[1].angespart = 60000;
+  gleich(bewertetAm(d).daten.spiel.raritaeten.drachenbaum.freigeschaltet, '2026-10-01', '1.000 € insgesamt');
+});
+
+test('Raritaeten: Goldener Ginkgo ab Level 15', () => {
+  const d = basis(500, 10499);
+  gleich(bewertetAm(d).daten.spiel.raritaeten.gold_ginkgo, undefined, 'Level 14: gesperrt');
+  d.spiel.xp = 10500;
+  gleich(bewertetAm(d).daten.spiel.raritaeten.gold_ginkgo.freigeschaltet, '2026-10-01', 'Level 15');
+});
+
+test('Raritaeten: keine Doppelfreischaltung', () => {
+  const d = basis();
+  d.spiel.besteSerie = 31;
+  const r1 = bewertetAm(d);
+  gleich(raritaetEreignisse(r1).length, 1, 'erste Bewertung: ein Ereignis');
+  const r2 = S.bewerte(r1.daten, '2026-10-01');
+  gleich(raritaetEreignisse(r2).length, 0, 'zweite Bewertung: kein neues Ereignis');
+  gleich(r2.daten.spiel.raritaeten.koenigin_der_nacht.freigeschaltet, '2026-10-01', 'Datum bleibt');
+});
+
+test('Raritaeten pflanzen: gratis, Stufe 1, rar und gepflanzt', () => {
+  const r = S.raritaetPflanzen(freigeschaltet('koenigin_der_nacht', 500), 'koenigin_der_nacht', { feld: [5, 5] });
+  klappt(r, 'pflanzen klappt');
+  const p = r.daten.spiel.gewaechshaus.pflanzen.find(x => x.typ === 'koenigin_der_nacht');
+  gleich(p ? [p.rar, p.stufe] : null, [true, 1], 'rar: true, Stufe 1');
+  gleich(r.daten.spiel.samen, 500, 'kostenlos');
+  gleich(r.daten.spiel.raritaeten.koenigin_der_nacht.gepflanzt, true, 'als gepflanzt markiert');
+});
+
+test('Raritaeten pflanzen: zweites Mal und gesperrt scheitern, verkaufen scheitert', () => {
+  const r = S.raritaetPflanzen(freigeschaltet('koenigin_der_nacht'), 'koenigin_der_nacht', { feld: [5, 5] });
+  scheitert(S.raritaetPflanzen(r.daten, 'koenigin_der_nacht', { feld: [4, 4] }), 'zweites Pflanzen');
+  scheitert(S.raritaetPflanzen(basis(), 'jadewein', { feld: [5, 5] }), 'gesperrt pflanzen');
+  const id = r.daten.spiel.gewaechshaus.pflanzen.find(x => x.rar).id;
+  gleich(S.verkaufen(r.daten, 'pflanze', id).fehler, 'Raritäten kann man nicht verkaufen.', 'verkaufen');
+});
+
+test('Raritaeten leveln: Kosten 90, 180, 300 (Basis 300)', () => {
+  const r = S.raritaetPflanzen(freigeschaltet('jadewein', 1000), 'jadewein', { feld: [5, 5] });
+  const id = r.daten.spiel.gewaechshaus.pflanzen.find(x => x.rar).id;
+  const s2 = S.pflanzeLeveln(r.daten, id);
+  gleich(s2.daten.spiel.samen, 910, 'Stufe 2 kostet 90');
+  const s3 = S.pflanzeLeveln(s2.daten, id);
+  gleich(s3.daten.spiel.samen, 730, 'Stufe 3 kostet 180');
+  const s4 = S.pflanzeLeveln(s3.daten, id);
+  gleich(s4.daten.spiel.samen, 430, 'Stufe 4 kostet 300');
+  gleich(s4.daten.spiel.gewaechshaus.pflanzen.find(x => x.id === id).stufe, 4, 'Stufe 4 erreicht');
+});
+
+test('Raritaeten: Platzregel, große nicht auf Möbel, kleine schon', () => {
+  const gross = S.raritaetPflanzen(freigeschaltet('jadewein'), 'jadewein', { moebel: 'm2', platz: 1 });
+  gleich(gross.fehler, 'Große Pflanzen passen nicht auf ein Möbel.', 'groß auf Möbel scheitert');
+  const klein = S.raritaetPflanzen(freigeschaltet('pink_princess'), 'pink_princess', { moebel: 'm2', platz: 1 });
+  klappt(klein, 'klein auf Möbel klappt');
+  const frei = S.freiePlaetze(freigeschaltet('jadewein'), 'raritaet', 'jadewein');
+  gleich(frei.some(o => 'moebel' in o), false, 'groß: keine Stellplätze auf Möbeln');
+  gleich(frei.length > 0, true, 'groß: freie Felder');
+  gleich(S.freiePlaetze(freigeschaltet('pink_princess'), 'raritaet', 'pink_princess').some(o => 'moebel' in o), true, 'klein: Stellplätze auf Möbeln');
+});
+
+test('Raritaeten: nicht im Katalog, Liste mit Zustand und Fortschritt', () => {
+  gleich(S.katalog(basis()).some(k => k.typ === 'koenigin_der_nacht'), false, 'nicht im Katalog');
+  const d = basis();
+  d.spiel.besteSerie = 12;
+  const liste = S.raritaetenListe(d);
+  const k = liste.find(x => x.typ === 'koenigin_der_nacht');
+  gleich([k.zustand, k.fortschritt.text], ['gesperrt', '12 von 30 Tagen'], 'gesperrt mit Fortschritt');
+  gleich(liste.find(x => x.typ === 'jadewein').zustand, 'gesperrt', 'Jadewein gesperrt');
+  gleich(S.raritaetenListe(freigeschaltet('jadewein')).find(x => x.typ === 'jadewein').zustand, 'bereit', 'bereit nach Freischaltung');
+  const gp = S.raritaetPflanzen(freigeschaltet('jadewein'), 'jadewein', { feld: [5, 5] });
+  gleich(S.raritaetenListe(gp.daten).find(x => x.typ === 'jadewein').zustand, 'gepflanzt', 'gepflanzt nach Pflanzen');
+});
+
 // ---------- Speicher ----------
 
 test('standardDaten und importText: Rundweg', () => {

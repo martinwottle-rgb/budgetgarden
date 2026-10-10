@@ -4,8 +4,9 @@
 
 import * as L from '../logik.js';
 import { zeichneSzene, vorschau, einpassen } from '../szene.js';
-import { welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
+import { welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
+import { RARITAETEN } from '../grafik/raritaeten.js';
 import { MOEBEL } from '../grafik/moebel.js';
 import { DEKO } from '../grafik/deko.js';
 import { el, euro, muenzSvg, svgBox, balken, vorzeichen, tage, kurzDatum, zahl } from './bausteine.js';
@@ -14,8 +15,9 @@ const KEIN_PLATZ = 'Kein freier Platz, verkaufe oder verschiebe etwas';
 
 // Einrichten-Modus: freie Plätze sind markiert, ein Objekt antippen öffnet sein Blatt. Bleibt bei Bildschirmwechseln erhalten.
 let einrichtenAn = false;
-// Nach einem Kauf im Shop: Blätter-Konfetti beim nächsten Zeichnen
+// Nach einem Kauf im Shop: Blätter-Konfetti beim nächsten Zeichnen (bei einer Rarität in Gold)
 let konfettiNaechstes = false;
+let konfettiGold = false;
 
 export function zeige(container, ctx, param) {
   const d = ctx.daten;
@@ -66,7 +68,8 @@ export function zeige(container, ctx, param) {
   platz.addEventListener('click', (e) => szeneKlick(e, ctx, aktion));
   if (konfettiNaechstes) {
     konfettiNaechstes = false;
-    konfettiStarten(karte);
+    konfettiStarten(karte, konfettiGold);
+    konfettiGold = false;
   }
 
   // Serie
@@ -156,10 +159,14 @@ function szeneKlick(e, ctx, aktion) {
 // Platz gewählt: bei Platzwahl kaufen, sonst verschieben. Danach Modus beenden und speichern.
 function zielGewaehlt(ctx, aktion, ort) {
   if (aktion.modus === 'platzieren') {
-    const r = kaufen(ctx.daten, aktion.kategorie, aktion.typ, ort);
+    const istRaritaet = aktion.kategorie === 'raritaet';
+    const r = istRaritaet
+      ? raritaetPflanzen(ctx.daten, aktion.typ, ort)
+      : kaufen(ctx.daten, aktion.kategorie, aktion.typ, ort);
     if (r.fehler) return ctx.toast(r.fehler);
     ctx.navigiere('garten');  // Platzwahl beenden, bevor gespeichert und neu gezeichnet wird
     konfettiNaechstes = true;
+    konfettiGold = istRaritaet;
     return ctx.speichern(r.daten);
   }
   const r = aktion.kategorie === 'moebel'
@@ -241,7 +248,7 @@ function verkaufBereich(ctx, kategorie, id, name, schliessen) {
 
 function pflanzenBlatt(ctx, p) {
   const d = ctx.daten;
-  const def = PFLANZEN[p.typ];
+  const def = p.rar ? RARITAETEN[p.typ] : PFLANZEN[p.typ];
   const name = def ? def.name : (PREISE_PFLANZEN[p.typ] ? PREISE_PFLANZEN[p.typ].name : p.typ);
   const kosten = p.stufe >= 4 ? null : levelKosten(d, p.id);
   const zuWenig = kosten !== null && d.spiel.samen < kosten;
@@ -263,6 +270,7 @@ function pflanzenBlatt(ctx, p) {
 
   const inhalt = el('div', {},
     el('h2', { class: 'ga-titel', text: name }),
+    p.rar ? el('div', { class: 'ra-marke', text: 'Rarität' }) : null,
     el('div', { class: 'ga-sterne', 'aria-hidden': 'true', text: '★'.repeat(p.stufe) + '☆'.repeat(4 - p.stufe) }),
     el('div', { class: 'klein', text: `Stufe ${p.stufe} von 4` }),
     def ? vorschau(def.zeichne(p.stufe, false, 'boden'), 'ga-vorschau') : null,
@@ -276,7 +284,8 @@ function pflanzenBlatt(ctx, p) {
         text: 'Verschieben',
         onclick: () => verschiebenStarten(ctx, 'pflanze', p.typ, p.id, schliessen)
       }),
-      ...verkaufBereich(ctx, 'pflanze', p.id, name, schliessen)
+      // Raritäten lassen sich nicht verkaufen: kein Verkaufen-Knopf
+      ...(p.rar ? [] : verkaufBereich(ctx, 'pflanze', p.id, name, schliessen))
     )
   );
   blatt = blattOeffnen(ctx, inhalt);
@@ -345,8 +354,8 @@ function dekoBlatt(ctx, o) {
 
 // ---------- Konfetti ----------
 
-// 20 kleine grüne Blätter fallen über die Szene, danach werden sie entfernt
-function konfettiStarten(wurzel) {
+// 20 kleine grüne Blätter fallen über die Szene, danach werden sie entfernt. gold: goldene Blätter (Rarität).
+function konfettiStarten(wurzel, gold = false) {
   const schicht = el('div', { class: 'ga-konfetti', 'aria-hidden': 'true' });
   for (let i = 0; i < 20; i++) {
     const links = (8 + Math.random() * 84).toFixed(1);
@@ -354,7 +363,7 @@ function konfettiStarten(wurzel) {
     const rot = Math.round(Math.random() * 540 - 270);
     const verzoegerung = (Math.random() * 0.35).toFixed(2);
     schicht.append(el('span', {
-      class: 'ga-blatt',
+      class: gold ? 'ga-blatt ra-blatt' : 'ga-blatt',
       style: `left:${links}%;--ga-dx:${dx}px;--ga-rot:${rot}deg;animation-delay:${verzoegerung}s`
     }));
   }
