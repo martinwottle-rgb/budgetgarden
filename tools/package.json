@@ -1,0 +1,11 @@
+{
+  "name": "budgetgarten-erinnerung",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sendet die 22-Uhr-Erinnerung des Budgetgartens per Web-Push",
+  "type": "module",
+  "main": "push.mjs",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

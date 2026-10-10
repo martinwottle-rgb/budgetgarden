@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tests Spiel Budget-Gewächshaus</title>
+<style>
+  body { font-family: ui-rounded, system-ui, sans-serif; background: #a9d3a5; color: #3d2b20; margin: 0; padding: 16px; }
+  h1 { font-size: 20px; }
+  #ergebnis { font-size: 18px; font-weight: bold; background: #fff8ee; border-radius: 12px; padding: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
+  #ergebnis[data-ok="true"] { color: #3f7a3a; }
+  #ergebnis[data-ok="false"] { color: #b03a2a; }
+  #zeilen { list-style: none; padding: 0; font-size: 15px; }
+  #zeilen li { background: #fff8ee; border-radius: 8px; margin: 6px 0; padding: 8px 10px; }
+  #zeilen li.gruen { color: #3f7a3a; }
+  #zeilen li.rot { color: #b03a2a; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Tests Spiel und Speicher</h1>
+<p id="ergebnis" data-ok="false">läuft …</p>
+<ul id="zeilen"></ul>
+<script type="module" src="js/tests-spiel.js"></script>
+</body>
+</html>

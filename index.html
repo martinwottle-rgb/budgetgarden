@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Budgetgarten">
+  <meta name="theme-color" content="#a9d3a5">
+  <title>Budgetgarten</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header id="kopf">
+    <div class="kopf-titel">Budgetgarten</div>
+    <div class="kopf-werte">
+      <button id="muenze" class="kopf-muenze" type="button" aria-label="Samen, zum Shop">
+        <span id="muenzsymbol" class="muenze-symbol"></span>
+        <span id="muenzzahl" class="muenze-zahl">0</span>
+      </button>
+      <div class="kopf-level" aria-label="Level">
+        <svg class="ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle class="ring-bg" cx="22" cy="22" r="18"></circle>
+          <circle id="ringfill" class="ring-fill" cx="22" cy="22" r="18"></circle>
+        </svg>
+        <span id="levelzahl" class="level-zahl">1</span>
+      </div>
+      <button id="zahnrad" class="kopf-knopf" type="button" aria-label="Einstellungen">⚙️</button>
+    </div>
+  </header>
+
+  <main id="inhalt"></main>
+
+  <nav id="tabs">
+    <button class="tab" type="button" data-ziel="garten">
+      <span class="tab-symbol" aria-hidden="true">🌿</span>
+      <span class="tab-name">Garten</span>
+    </button>
+    <button class="tab" type="button" data-ziel="uebersicht">
+      <span class="tab-symbol" aria-hidden="true">📊</span>
+      <span class="tab-name">Übersicht</span>
+    </button>
+    <button class="tab tab-buchen" type="button" data-ziel="buchen" aria-label="Buchen">
+      <span class="tab-kreis" aria-hidden="true">➕</span>
+      <span class="tab-name">Buchen</span>
+    </button>
+    <button class="tab" type="button" data-ziel="ziele">
+      <span class="tab-symbol" aria-hidden="true">🎯</span>
+      <span class="tab-name">Ziele</span>
+    </button>
+    <button class="tab" type="button" data-ziel="shop">
+      <span class="tab-symbol" aria-hidden="true">🪴</span>
+      <span class="tab-name">Shop</span>
+    </button>
+  </nav>
+
+  <div id="overlay"></div>
+  <div id="toasts"></div>
+  <div id="flug"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

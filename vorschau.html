@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="de-DE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gewächshaus-Vorschau</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #a9d3a5;
+      color: #6b4a3a;
+      font-family: ui-rounded, system-ui, sans-serif;
+    }
+    h2 {
+      font-size: 18px;
+      margin: 16px auto 6px;
+      max-width: 800px;
+    }
+    .szene {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>A: froh</h2>
+  <div id="szene-a" class="szene"></div>
+
+  <h2>B: besorgt, welk</h2>
+  <div id="szene-b" class="szene"></div>
+
+  <script type="module">
+    import { zeichneSzene } from './js/szene.js';
+
+    const moebel = [
+      { id: 'm1', typ: 'regal_holz', gx: 0, gy: 1.6, drehung: 90 },
+      { id: 'm2', typ: 'tisch_natur', gx: 1.2, gy: 0, drehung: 0 }
+    ];
+
+    const pflanzen = [
+      { id: 'p1', typ: 'kaktus', stufe: 4, ort: { moebel: 'm1', platz: 0 } },
+      { id: 'p2', typ: 'kaktus', stufe: 2, ort: { moebel: 'm1', platz: 2 } },
+      { id: 'p3', typ: 'sonnenblume', stufe: 1, ort: { moebel: 'm2', platz: 0 } },
+      { id: 'p4', typ: 'tomate', stufe: 4, ort: { feld: [1, 4] } },
+      { id: 'p5', typ: 'monstera', stufe: 4, ort: { feld: [5, 1] } },
+      { id: 'p6', typ: 'sonnenblume', stufe: 3, ort: { feld: [4, 2] } }
+    ];
+
+    zeichneSzene(document.getElementById('szene-a'), {
+      moebel,
+      pflanzen,
+      deko: [
+        { id: 'd1', typ: 'laterne', ort: { feld: [2, 2] } },
+        { id: 'd2', typ: 'bank', ort: { feld: [4, 4] } },
+        { id: 'd3', typ: 'giesskanne', ort: { feld: [2, 4] } },
+        { id: 'd4', typ: 'katze', ort: { moebel: 'm1', platz: 1 } },
+        { id: 'd5', typ: 'haengeampel', ort: { haken: 'h1' } }
+      ],
+      welk: false
+    });
+
+    zeichneSzene(document.getElementById('szene-b'), {
+      moebel,
+      pflanzen,
+      deko: [],
+      welk: true
+    });
+  </script>
+</body>
+</html>

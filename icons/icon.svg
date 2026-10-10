@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#a9d3a5"/>
+  <!-- Blätter (kommen aus der Erde, Basis wird vom Topfrand verdeckt) -->
+  <g transform="translate(256 318) rotate(-60) scale(0.8)">
+    <path d="M0,0 C-40,-30 -95,-50 -95,-115 C-95,-160 -60,-175 -35,-170 C-15,-167 0,-150 0,-130 C0,-150 15,-167 35,-170 C60,-175 95,-160 95,-115 C95,-50 40,-30 0,0 Z" fill="#5e9a52"/>
+    <path d="M0,-6 L0,-122" stroke="#477d43" stroke-width="5" stroke-linecap="round" fill="none"/>
+  </g>
+  <g transform="translate(256 318) rotate(58) scale(0.8)">
+    <path d="M0,0 C-40,-30 -95,-50 -95,-115 C-95,-160 -60,-175 -35,-170 C-15,-167 0,-150 0,-130 C0,-150 15,-167 35,-170 C60,-175 95,-160 95,-115 C95,-50 40,-30 0,0 Z" fill="#477d43"/>
+    <path d="M0,-6 L0,-122" stroke="#5e9a52" stroke-width="5" stroke-linecap="round" fill="none"/>
+  </g>
+  <g transform="translate(256 318)">
+    <path d="M0,0 C-40,-30 -95,-50 -95,-115 C-95,-160 -60,-175 -35,-170 C-15,-167 0,-150 0,-130 C0,-150 15,-167 35,-170 C60,-175 95,-160 95,-115 C95,-50 40,-30 0,0 Z" fill="#5e9a52"/>
+    <path d="M0,-6 L0,-122" stroke="#477d43" stroke-width="5" stroke-linecap="round" fill="none"/>
+  </g>
+  <!-- Topf -->
+  <path d="M168,338 L344,338 L323,432 Q320,444 306,444 L206,444 Q192,444 189,432 Z" fill="#d9825b" stroke="#6b4a3a" stroke-width="8" stroke-linejoin="round"/>
+  <rect x="152" y="300" width="208" height="44" rx="12" fill="#d9825b" stroke="#6b4a3a" stroke-width="8"/>
+  <!-- Münze unten rechts -->
+  <circle cx="396" cy="396" r="40" fill="#f2c14e" stroke="#b8892a" stroke-width="6"/>
+  <circle cx="396" cy="396" r="26" fill="none" stroke="#d9a93a" stroke-width="4"/>
+</svg>

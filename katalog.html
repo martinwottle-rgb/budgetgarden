@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="de-DE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gewächshaus-Katalog</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #a9d3a5;
+      color: #6b4a3a;
+      font-family: ui-rounded, system-ui, sans-serif;
+    }
+    h2 {
+      font-size: 18px;
+      margin: 20px 0 8px;
+    }
+    .raster {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .kachel {
+      width: 220px;
+      height: 260px;
+      box-sizing: border-box;
+      padding: 8px;
+      background: #fbf3e6;
+      border-radius: 18px;
+      box-shadow: 0 4px 12px rgba(107, 74, 58, 0.25);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .kachel svg {
+      width: 200px;
+      height: 196px;
+    }
+    .kachel .name {
+      font-size: 16px;
+      color: #6b4a3a;
+      text-align: center;
+      line-height: 1.2;
+    }
+  </style>
+</head>
+<body>
+  <script type="module">
+    import { PFLANZEN } from './js/grafik/pflanzen.js';
+    import { DEKO } from './js/grafik/deko.js';
+    import { MOEBEL } from './js/grafik/moebel.js';
+    import { defs } from './js/grafik/hilfen.js';
+
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    let nr = 0;
+
+    function abschnitt(titel) {
+      const h = document.createElement('h2');
+      h.textContent = titel;
+      const r = document.createElement('div');
+      r.className = 'raster';
+      document.body.append(h, r);
+      return r;
+    }
+
+    // Kachel mit SVG und Beschriftung. Die Beschriftung wird als Text gesetzt, nicht als HTML.
+    function kachel(raster, svgInhalt, beschriftung) {
+      const k = document.createElement('div');
+      k.className = 'kachel';
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('viewBox', '-200 -200 400 400');
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      svg.innerHTML = svgInhalt;
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = beschriftung;
+      k.append(svg, name);
+      raster.append(k);
+      return { k, svg };
+    }
+
+    // Pflanzen und Deko: Ursprung Bodenkontakt, Skalierung 3.5, zentriert im Kachelausschnitt
+    function objektKachel(raster, inhaltFn, beschriftung) {
+      const uid = 'k' + (++nr);
+      const { svg } = kachel(raster, defs(uid) + `<g class="objekt"><g transform="scale(3.5)">${inhaltFn()}</g></g>`, beschriftung);
+      const g = svg.querySelector('.objekt');
+      const b = g.getBBox();
+      const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+      svg.setAttribute('viewBox', `${cx - 240} ${cy - 240} 480 480`);
+    }
+
+    // Moebel: eigenes SVG, viewBox um das Objekt
+    function moebelKachel(raster, typ, drehung) {
+      const def = MOEBEL[typ];
+      const { svg } = kachel(raster, `<g class="objekt">${def.zeichne(2, 2, drehung)}</g>`, `${def.name}, Drehung ${drehung}°`);
+      const b = svg.querySelector('.objekt').getBBox();
+      svg.setAttribute('viewBox', `${b.x - 6} ${b.y - 6} ${b.width + 12} ${b.height + 12}`);
+    }
+
+    const pflanzenRaster = abschnitt('Pflanzen');
+    for (const [typ, def] of Object.entries(PFLANZEN)) {
+      for (const stufe of [1, 2, 3, 4]) {
+        objektKachel(pflanzenRaster, () => def.zeichne(stufe, false), `${def.name}, Stufe ${stufe}`);
+      }
+      objektKachel(pflanzenRaster, () => def.zeichne(4, true), `${def.name}, Stufe 4 welk`);
+    }
+
+    const dekoRaster = abschnitt('Deko');
+    for (const def of Object.values(DEKO)) {
+      objektKachel(dekoRaster, () => def.zeichne(), def.name);
+    }
+
+    const moebelRaster = abschnitt('Möbel');
+    for (const typ of Object.keys(MOEBEL)) {
+      for (const drehung of [0, 90]) {
+        moebelKachel(moebelRaster, typ, drehung);
+      }
+    }
+  </script>
+</body>
+</html>
