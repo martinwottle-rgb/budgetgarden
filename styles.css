@@ -1368,3 +1368,79 @@ body.vollbild header#kopf { display: none; }
 .es-schritte li { margin-bottom: 4px; }
 .es-gefahr { border: 2px solid rgba(217, 98, 90, 0.35); }
 .es-version { margin: 20px 0 0; text-align: center; }
+
+/* 1.1 ziele */
+.zi11-karte-oben { display: flex; align-items: flex-start; gap: 14px; }
+.zi11-text { flex: 1 1 auto; min-width: 0; }
+.zi11-links {
+  flex: 0 0 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.zi11-pflanze { position: relative; width: 112px; height: 112px; }
+.zi11-pflanze-bild { display: block; width: 100%; height: 100%; }
+.zi11-pflanze-bild svg { display: block; width: 100%; height: 100%; }
+.zi11-hinweis { margin: 0; max-width: 112px; text-align: center; line-height: 1.3; }
+
+.zi11-funke {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  pointer-events: none;
+  animation: zi11-funkeln 2.6s ease-in-out infinite;
+}
+.zi11-funke.f1 { left: 14px; top: 18px; }
+.zi11-funke.f2 { right: 12px; top: 14px; background: var(--koralle); animation-delay: 0.5s; }
+.zi11-funke.f3 { left: 8px; bottom: 26px; background: var(--positiv); animation-delay: 1s; }
+.zi11-funke.f4 { right: 16px; bottom: 30px; animation-delay: 1.5s; }
+.zi11-funke.f5 { left: 50%; top: 4px; width: 5px; height: 5px; background: #fff6c9; animation-delay: 0.25s; }
+
+@keyframes zi11-funkeln {
+  0%, 100% { opacity: 0.2; transform: scale(0.6); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zi11-funke { animation: none; opacity: 0.9; }
+}
+
+.zi11-kachelreihe {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.zi11-kachel {
+  flex: 0 0 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 2px solid #ecdcc4;
+  border-radius: 16px;
+  background: #fffdf8;
+  color: var(--braun);
+  font: inherit;
+  cursor: pointer;
+}
+.zi11-kachel.aktiv {
+  border-color: var(--koralle);
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(232, 138, 122, 0.35);
+}
+.zi11-kachel-bild { display: block; width: 68px; height: 68px; }
+.zi11-kachel-bild svg { display: block; width: 100%; height: 100%; }
+.zi11-kachel-name { font-size: 13px; font-weight: 700; line-height: 1.2; }
+
+.zi11-einzahlen { margin-bottom: 14px; }
+.zi11-extra { margin-top: 12px; }
+
+.zi11-backup { margin: 10px 2px 12px; font-size: 14px; font-weight: 700; color: var(--braun-2); }
+.zi11-backup-alt { color: #d9822b; }

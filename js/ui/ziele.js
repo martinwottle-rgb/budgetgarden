@@ -4,12 +4,20 @@
 import * as L from '../logik.js';
 import { neueId } from '../speicher.js';
 import { ABZEICHEN } from '../spiel.js';
+import { PFLANZEN } from '../grafik/pflanzen.js';
+import { vorschau, einpassen } from '../szene.js';
 import { el, euro, parseBetrag, betragText } from './bausteine.js';
 
 const VERTRAG_KATEGORIEN = ['Wohnen', 'Versicherung', 'Abos', 'Mobilität', 'Kommunikation', 'Sonstiges'];
 const INTERVALLE = [[1, 'monatlich'], [3, 'vierteljährlich'], [6, 'halbjährlich'], [12, 'jährlich']];
 const INTERVALL_TEXT = Object.fromEntries(INTERVALLE);
 const DATUM_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Pflanzen für Sparziele (Schlüssel aus PFLANZEN) mit kurzem Namen für die Auswahl
+const SPAR_PFLANZEN = [
+  ['zitrone', 'Zitrone'], ['monstera', 'Monstera'], ['sonnenblume', 'Sonnenblume'], ['kletterrose', 'Kletterrose'],
+  ['geigenfeige', 'Geigenfeige'], ['bonsai', 'Bonsai'], ['orchidee', 'Orchidee'], ['erdbeere', 'Erdbeere']
+];
 
 export function zeige(container, ctx) {
   container.append(
@@ -25,6 +33,7 @@ export function zeige(container, ctx) {
     el('div', { class: 'abschnitt', text: 'Abzeichen' }),
     abzeichenBereich(ctx)
   );
+  einpassen(container);
 }
 
 // ---------- Kleine Helfer ----------
@@ -102,13 +111,72 @@ function sparzieleBereich(ctx) {
   );
 }
 
+// Pflanze eines Sparziels. Ohne Feld pflanze (ältere Ziele): deterministisch nach id aus der Auswahl.
+function pflanzeVon(s) {
+  if (s.pflanze && PFLANZEN[s.pflanze]) return s.pflanze;
+  let summe = 0;
+  for (const zeichen of String(s.id || '')) summe = (summe * 31 + zeichen.charCodeAt(0)) >>> 0;
+  return SPAR_PFLANZEN[summe % SPAR_PFLANZEN.length][0];
+}
+
+// Stufe 1 bis 4: mit Zielsumme nach Anteil, ohne nach Anzahl angesparter Monatsraten
+function pflanzenStufe(s) {
+  const angespart = s.angespart || 0;
+  if (s.zielsumme) {
+    const anteil = angespart / s.zielsumme;
+    if (anteil < 0.25) return 1;
+    if (anteil < 0.5) return 2;
+    if (anteil < 1) return 3;
+    return 4;
+  }
+  const raten = s.proMonat > 0 ? Math.floor(angespart / s.proMonat) : 0;
+  if (raten < 3) return 1;
+  if (raten < 6) return 2;
+  if (raten < 12) return 3;
+  return 4;
+}
+
+// Monate bis zur nächsten Stufe (ohne Zielsumme), null in Stufe 4
+function monateBisStufe(s) {
+  const raten = s.proMonat > 0 ? Math.floor((s.angespart || 0) / s.proMonat) : 0;
+  const naechste = raten < 3 ? 3 : raten < 6 ? 6 : raten < 12 ? 12 : null;
+  return naechste === null ? null : naechste - raten;
+}
+
+function wachstumsHinweis(s) {
+  if (s.zielsumme) return 'Wächst bei 25 %, 50 %, 100 %';
+  const monate = monateBisStufe(s);
+  if (monate === null) return 'Voll erblüht';
+  return `Nächste Stufe in ${monate} ${monate === 1 ? 'Monat' : 'Monaten'}`;
+}
+
+// Links auf der Karte: Pflanzenvorschau mit Funkeln in Stufe 4, darunter der Wachstumshinweis
+function pflanzenBlock(s, stufe) {
+  return el('div', { class: 'zi11-links' },
+    el('div', { class: 'zi11-pflanze' },
+      vorschau(PFLANZEN[pflanzeVon(s)].zeichne(stufe, false, 'boden'), 'zi11-pflanze-bild'),
+      stufe === 4 ? [
+        el('span', { class: 'zi11-funke f1' }),
+        el('span', { class: 'zi11-funke f2' }),
+        el('span', { class: 'zi11-funke f3' }),
+        el('span', { class: 'zi11-funke f4' }),
+        el('span', { class: 'zi11-funke f5' })
+      ] : null
+    ),
+    el('div', { class: 'klein zi11-hinweis', text: wachstumsHinweis(s) })
+  );
+}
+
 function sparzielKarte(ctx, s) {
   const angespart = s.angespart || 0;
   const erreicht = !!s.zielsumme && angespart >= s.zielsumme;
   return el('section', { class: 'karte zi-sparziel' },
-    el('div', { class: 'zi-kopf' },
-      el('div', { class: 'titelzeile', text: s.name }),
-      el('div', { class: 'klein', text: `Rate: ${euro(s.proMonat || 0)} pro Monat` })
+    el('div', { class: 'zi11-karte-oben' },
+      pflanzenBlock(s, pflanzenStufe(s)),
+      el('div', { class: 'zi-kopf zi11-text' },
+        el('div', { class: 'titelzeile', text: s.name }),
+        el('div', { class: 'klein', text: `Rate: ${euro(s.proMonat || 0)} pro Monat` })
+      )
     ),
     s.zielsumme ? fortschritt(angespart / s.zielsumme) : null,
     el('div', { class: 'zi-werte' },
@@ -123,7 +191,69 @@ function sparzielKarte(ctx, s) {
   );
 }
 
+// Auswahl von 8 Pflanzen als horizontale Kachelreihe (Stufe 4). aendern(schluessel) wird bei Tippen gerufen.
+function pflanzenWahl(gewaehlt, aendern) {
+  const kacheln = SPAR_PFLANZEN.map(([schluessel, kurz]) => el('button', {
+    type: 'button',
+    class: 'zi11-kachel' + (schluessel === gewaehlt ? ' aktiv' : ''),
+    'aria-pressed': schluessel === gewaehlt ? 'true' : 'false',
+    'aria-label': kurz,
+    onclick: () => {
+      aendern(schluessel);
+      kacheln.forEach((k, i) => {
+        const an = SPAR_PFLANZEN[i][0] === schluessel;
+        k.classList.toggle('aktiv', an);
+        k.setAttribute('aria-pressed', String(an));
+      });
+    }
+  },
+  vorschau(PFLANZEN[schluessel].zeichne(4, false, 'boden'), 'zi11-kachel-bild'),
+  el('span', { class: 'zi11-kachel-name', text: kurz })
+  ));
+  return el('div', { class: 'zi11-kachelreihe', role: 'group', 'aria-label': 'Pflanze wählen' }, kacheln);
+}
+
+// Extra einzahlen: betrag wandert ins Sparziel und wird als Fixkosten gebucht, damit er vom Budget abgeht
+async function extraEinzahlen(ctx, id, sheetSchliessen) {
+  const ziel = (ctx.daten.sparziele || []).find(x => x.id === id);
+  if (!ziel) return;
+  const betragFeld = el('input', {
+    class: 'feld', type: 'text', inputmode: 'decimal', placeholder: '0,00 €', autocomplete: 'off', 'aria-label': 'Betrag'
+  });
+  const inhalt = el('div', { class: 'zi11-einzahlen' }, beschriftung('Betrag'), betragFeld);
+  for (;;) {
+    const ok = await ctx.dialog({
+      titel: `Extra in ${ziel.name}?`,
+      text: 'Der Betrag wird vom aktuellen Budget abgezogen und dem Sparziel gutgeschrieben.',
+      inhalt,
+      knoepfe: [
+        { text: 'Abbrechen', wert: false, art: 'leise' },
+        { text: 'Einzahlen', wert: true, art: 'primaer' }
+      ]
+    });
+    if (ok !== true) return;
+    const cent = parseBetrag(betragFeld.value);
+    if (cent === null || cent <= 0) {
+      ctx.toast('Bitte einen Betrag über 0 eingeben, zum Beispiel 50,00.');
+      continue;
+    }
+    const d = ctx.daten;
+    const sparziele = (d.sparziele || []).map(x => (x.id === id ? { ...x, angespart: (x.angespart || 0) + cent } : x));
+    const buchung = {
+      id: neueId('b'), art: 'fixkosten', name: `Extra in ${ziel.name}`, betrag: cent,
+      datum: ctx.heute, kategorie: 'sonstiges', notiz: ''
+    };
+    if (sheetSchliessen) sheetSchliessen();
+    ctx.speichern({ ...d, sparziele, buchungen: [...(d.buchungen || []), buchung] });
+    ctx.toast(`${euro(cent)} in ${ziel.name} eingezahlt.`);
+    return;
+  }
+}
+
 function sparzielSheet(ctx, original) {
+  // Neue Ziele bekommen ihre id schon hier, damit die Vorauswahl der Pflanze daraus folgt
+  const neueSparId = original ? null : neueId('s');
+  let pflanze = original ? pflanzeVon(original) : pflanzeVon({ id: neueSparId });
   const nameFeld = el('input', {
     class: 'feld', type: 'text', placeholder: 'z. B. Urlaub', maxlength: 40, autocomplete: 'off',
     value: original ? original.name : ''
@@ -154,8 +284,8 @@ function sparzielSheet(ctx, original) {
 
     const d = ctx.daten;
     const eintrag = original
-      ? { ...original, name, proMonat: rate, zielsumme: ziel }
-      : { id: neueId('s'), name, proMonat: rate, zielsumme: ziel, angespart: 0 };
+      ? { ...original, name, proMonat: rate, zielsumme: ziel, pflanze }
+      : { id: neueSparId, name, proMonat: rate, zielsumme: ziel, angespart: 0, pflanze };
     const sparziele = original
       ? (d.sparziele || []).map(x => (x.id === original.id ? eintrag : x))
       : [...(d.sparziele || []), eintrag];
@@ -177,12 +307,17 @@ function sparzielSheet(ctx, original) {
     beschriftung('Name'), nameFeld,
     beschriftung('Rate pro Monat'), rateFeld,
     beschriftung('Zielsumme (optional)'), zielFeld,
+    beschriftung('Pflanze'), pflanzenWahl(pflanze, (k) => { pflanze = k; }),
     fehlerZeile,
     el('div', { class: 'aktionen' },
       aktionKnopf('Speichern', 'knopf-primaer', speichernen),
       original ? aktionKnopf('Löschen', 'knopf-gefahr', loeschen) : null
-    )
+    ),
+    original ? el('div', { class: 'zi11-extra' },
+      aktionKnopf('+ Extra einzahlen', 'knopf-leise', () => extraEinzahlen(ctx, original.id, () => sheet.schliessen()))
+    ) : null
   ));
+  einpassen(sheet.element);
 }
 
 // ---------- Verträge und regelmäßige Einnahmen ----------

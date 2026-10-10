@@ -1,6 +1,7 @@
 // Einstellungen nach UI.md "Einstellungen": Gehaltstag, Kategorien, Erinnerung 22 Uhr,
 // Export und Import, "Alles zurücksetzen", Version.
 
+import * as L from '../logik.js';
 import { standardDaten, exportDatei, importText } from '../speicher.js';
 import { pushMoeglich, pushAbonnieren } from '../push.js';
 import { el } from './bausteine.js';
@@ -208,10 +209,27 @@ function datenAbschnitt(ctx) {
     el('section', { class: 'karte' },
       el('p', { class: 'klein', text: 'Deine Daten bleiben auf diesem Gerät. Mit Export sicherst du sie, mit Import stellst du sie wieder her.' }),
       knopf('Daten exportieren', () => exportieren(ctx), 'primaer'),
+      backupZeile(ctx),
       knopf('Datei importieren', () => importFeld.click(), 'normal'),
       importFeld
     )
   );
+}
+
+// Stand des letzten Exports (TT.MM.JJJJ). Orange, wenn er älter als 30 Tage ist oder noch nie war.
+function backupZeile(ctx) {
+  const letzter = ctx.daten.einstellungen.letzterExport;
+  const alt = !letzter || L.tageZwischen(letzter, ctx.heute) > 30;
+  const [j, m, t] = letzter ? letzter.split('-') : [];
+  return el('div', {
+    class: 'zi11-backup' + (alt ? ' zi11-backup-alt' : ''),
+    text: letzter ? `Letztes Backup: ${t}.${m}.${j}` : 'Noch kein Backup'
+  });
+}
+
+// Merkt den Tag des erfolgreichen Exports
+function exportMerken(ctx) {
+  ctx.speichern({ ...ctx.daten, einstellungen: { ...ctx.daten.einstellungen, letzterExport: ctx.heute } });
 }
 
 async function exportieren(ctx) {
@@ -221,6 +239,7 @@ async function exportieren(ctx) {
     if (navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: 'Budgetgarten-Sicherung' });
+        exportMerken(ctx);
         return;
       } catch (fehler) {
         if (fehler && fehler.name === 'AbortError') return;
@@ -235,6 +254,7 @@ async function exportieren(ctx) {
     link.remove();
     URL.revokeObjectURL(url);
   }, 1000);
+  exportMerken(ctx);
   ctx.toast('Export als Datei gespeichert.');
 }
 
