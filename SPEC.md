@@ -204,3 +204,24 @@ Stil wie Referenzbild (isometrischer Cozy-Raum, Pastell, Pixel-/Illustrationsloo
   `ui-rounded` mit Fallback), Akzent Koralle `#e88a7a`, Positiv Grün `#6fae6a`.
 - Startbildschirm: oben Rest heute groß, darunter Wochen-Rest, dann die Szene, unten
   Tab-Leiste: Garten · Buchen · Übersicht · Ziele · Shop. Plus-Knopf für schnelle Ausgabe.
+
+## Raritäten (ab 1.1)
+
+Seltene, echte Pflanzen, nicht kaufbar. Jede wird durch eine Leistung freigeschaltet und kann genau
+einmal gepflanzt werden (danach nicht verkaufbar, nicht doppelt). Grafik in `js/grafik/raritaeten.js`
+(Export `RARITAETEN`, gleiche Schnittstelle wie PFLANZEN plus `bedingung` als Text).
+
+| Typ | Name | Freischaltung | Größe |
+|---|---|---|---|
+| koenigin_der_nacht | Königin der Nacht | 30-Tage-Serie | groß |
+| jadewein | Jadewein | erstes Sparziel komplett erreicht | groß |
+| thai_constellation | Monstera „Thai Constellation“ | 3 Zeiträume in Folge im Budget | groß |
+| pink_princess | Pink Princess Philodendron | 4 Wochen in Folge alle Challenges | klein |
+| drachenbaum | Drachenbaum | insgesamt 1.000 € angespart (Summe angespart aller Sparziele) | groß |
+| gold_ginkgo | Goldener Ginkgo-Bonsai | Level 15 | klein |
+
+Datenmodell: `spiel.raritaeten: { [typ]: { freigeschaltet: "YYYY-MM-DD", gepflanzt: false } }`.
+Gepflanzte Rarität im Gewächshaus als Pflanze mit `rar: true`. Leveln mit Samen möglich (doppelte
+Kosten einer großen Pflanze, Basis 300). Anzeige: goldener Topf, Funkeln (SVG-Animation), Namensschild.
+Shop-Reiter „Raritäten“: freigeschaltet und nicht gepflanzt → „Pflanzen (gratis)“; gesperrt → Silhouette + Bedingung + Fortschritt.
+Freischaltung löst einen eigenen Fest-Dialog aus.
