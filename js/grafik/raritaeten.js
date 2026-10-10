@@ -8,6 +8,8 @@ import { f, p2, gruppe, pfad, linie, oval, kreis, rechteck, poly, qb, zufall, is
 
 const RAD = Math.PI / 180;
 const SILH = '#6b4a3a';
+// Groessenfaktor der Raritaeten in der Szene (beim Platzieren genutzt)
+export const RAR_SKALA = 1.15;
 
 // Konturen wie in pflanzen.js: Topf braun, Pflanzenteile dunkelgruen (welk: Erdton)
 const KON_TOPF = 'stroke="#6b4a3a" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"';
@@ -84,12 +86,12 @@ function vierstern(x, y, r, attr) {
   return pfad(d, attr);
 }
 
-// Funkeln: kleine vierzackige Sterne, die per <animate> auf opacity 0 - 1 - 0 blinken
+// Funkeln: vierzackige Sterne (Radius 3 bis 4) mit weissem Kern und goldenem Rand, blinken per <animate> auf opacity 0 - 1 - 0
 function funkeln(liste) {
-  return liste.map(([x, y, r0, b]) => {
-    const r = r0 * 1.5;
-    const d = `M${f(x)},${f(y - r)}Q${f(x)},${f(y)} ${f(x + r)},${f(y)}Q${f(x)},${f(y)} ${f(x)},${f(y + r)}Q${f(x)},${f(y)} ${f(x - r)},${f(y)}Q${f(x)},${f(y)} ${f(x)},${f(y - r)}Z`;
-    return `<path d="${d}" fill="#fff6c8" opacity="0"><animate attributeName="opacity" values="0;1;0" dur="2.4s" begin="${b}s" repeatCount="indefinite"/></path>`;
+  return liste.map(([x, y, r, b]) => {
+    const aussen = vierstern(x, y, r, 'fill="#f5c542" stroke="#b8860b" stroke-width="0.5" stroke-linejoin="round"');
+    const kern = vierstern(x, y, r * 0.5, 'fill="#ffffff"');
+    return `<g opacity="0"><animate attributeName="opacity" values="0;1;0" dur="2.4s" begin="${b}s" repeatCount="indefinite"/>${aussen}${kern}</g>`;
   }).join('');
 }
 
@@ -114,7 +116,7 @@ function fallBlatt(x, y, w) {
 
 // Kontaktschatten unter dem Topf
 function kontakt(R, H, schale) {
-  if (schale) return oval(0, 0, 14, 6, 'fill="#6b4a3a" opacity="0.18"');
+  if (schale) return oval(0, 0, 14 * schale, 6 * schale, 'fill="#6b4a3a" opacity="0.18"');
   const Rb = R * 0.72, ryb = Rb * 0.4;
   return oval(1, 0, Rb + 2.5, ryb + 1.5, 'fill="#6b4a3a" opacity="0.18"');
 }
@@ -157,14 +159,15 @@ function goldTopf(R, H, stein) {
 // Goldene flache Bonsai-Schale (Oberkante bei -H)
 const SCHALE_GOLD = { links: '#c19a35', rechts: '#a8792a', oben: '#e8c15a' };
 const isoRel = (gx, gy, z) => { const [x, y] = iso(gx, gy, z); return [x - OX, y - OY]; };
-function goldSchale(H) {
+// g: Groessenfaktor der Schale (1 = wie bisher, Grundriss und Fuesse skaliert)
+function goldSchale(H, g = 1) {
   const fuss = [[-0.13, -0.09], [0.13, -0.09], [-0.13, 0.09], [0.13, 0.09]]
-    .map(([gx, gy]) => { const [x, y] = isoRel(gx, gy, 0); return oval(x, y + 1.5, 2.4, 1.5, 'fill="#a8792a" stroke="#6b4a3a" stroke-width="0.6"'); })
+    .map(([gx, gy]) => { const [x, y] = isoRel(gx * g, gy * g, 0); return oval(x, y + 1.5 * g, 2.4 * g, 1.5 * g, 'fill="#a8792a" stroke="#6b4a3a" stroke-width="0.6"'); })
     .join('');
-  const korpus = gruppe(`transform="translate(${-OX},${-OY})"`, kiste(-0.16, 0.16, -0.12, 0.12, 0, H, SCHALE_GOLD));
-  const erde = poly([[-0.13, -0.09], [0.13, -0.09], [0.13, 0.09], [-0.13, 0.09]].map(([gx, gy]) => isoRel(gx, gy, H)),
+  const korpus = gruppe(`transform="translate(${-OX},${-OY})"`, kiste(-0.16 * g, 0.16 * g, -0.12 * g, 0.12 * g, 0, H, SCHALE_GOLD));
+  const erde = poly([[-0.13, -0.09], [0.13, -0.09], [0.13, 0.09], [-0.13, 0.09]].map(([gx, gy]) => isoRel(gx * g, gy * g, H)),
     'fill="#6b4a3a" stroke="#4a3a2a" stroke-width="0.6" stroke-linejoin="round"');
-  const edel = edelstein(...isoRel(0, 0.12, H / 2), 1.8, 1.4, '#3fb27f');
+  const edel = edelstein(...isoRel(0, 0.12 * g, H / 2), 1.8 * g, 1.4 * g, '#3fb27f');
   return fuss + korpus + erde + edel;
 }
 
@@ -195,21 +198,29 @@ function knospe(x, y, skal, welk) {
     pfad(`M0,${f(1 * skal)}Q${f(1.4 * skal)},${f(3 * skal)} ${f(2.4 * skal)},${f(7 * skal)}`, `fill="none" stroke="${c.d}" stroke-width="0.5" stroke-linecap="round"`));
 }
 
-// Nachtbluete: zwei Kraenze schmaler weisser Blaetter, gelbliche Kelchblaetter aussen, dichte Staubgefaesse
+// Nachtbluete (1,3-mal groesser als bisher): zwei Kraenze schmaler weisser Blaetter, wenige gelbliche Kelchblaetter aussen,
+// dichte Staubgefaesse, dazu drei Duft-Punkte, die langsam aufsteigen
 function koenBluete(cx, cy) {
+  const k = 1.3;
   const bluetenblatt = (L, W, fill, rand) =>
-    pfad(`M0,0Q${f(W)},${f(-L * 0.5)} 0,${f(-L)}Q${f(-W)},${f(-L * 0.5)} 0,0Z`, `fill="${fill}" stroke="${rand}" stroke-width="0.5" stroke-linejoin="round"`);
+    pfad(`M0,0Q${f(W)},${f(-L * 0.5)} 0,${f(-L)}Q${f(-W)},${f(-L * 0.5)} 0,0Z`, `fill="${fill}" stroke="${rand}" stroke-width="0.4" stroke-linejoin="round"`);
   let out = '';
-  for (let k = 0; k < 6; k++) out += an(cx, cy, 15 + k * 60, bluetenblatt(13, 2.8, '#e3d27a', '#8a7a2a'));
-  for (let k = 0; k < 14; k++) out += an(cx, cy, k * 360 / 14, bluetenblatt(12, 2.6, '#fffdf2', '#d8d0a8'));
-  for (let k = 0; k < 12; k++) out += an(cx, cy, 15 + k * 30, bluetenblatt(9, 2.2, '#ffffff', '#d8d0a8'));
+  for (let j = 0; j < 5; j++) out += an(cx, cy, 10 + j * 72, bluetenblatt(12 * k, 1.9 * k, '#e3d27a', '#8a7a2a'));
+  for (let j = 0; j < 18; j++) out += an(cx, cy, j * 360 / 18, bluetenblatt(12 * k, 1.5 * k, '#fffdf2', '#d8d0a8'));
+  for (let j = 0; j < 18; j++) out += an(cx, cy, 10 + j * 360 / 18, bluetenblatt(8.5 * k, 1.2 * k, '#ffffff', '#d8d0a8'));
   const r = zufall(91);
-  for (let k = 0; k < 22; k++) {
-    const a = r() * 2 * Math.PI, l = 2.6 + r() * 2.4;
+  for (let j = 0; j < 30; j++) {
+    const a = r() * 2 * Math.PI, l = (2.6 + r() * 2.4) * k;
     const x = cx + Math.cos(a) * l, y = cy + Math.sin(a) * l;
-    out += linie([cx, cy], [x, y], 'stroke="#f0b400" stroke-width="0.5" stroke-linecap="round"') + kreis(x, y, 0.5, 'fill="#ffd23f"');
+    out += linie([cx, cy], [x, y], 'stroke="#f0b400" stroke-width="0.4" stroke-linecap="round"') + kreis(x, y, 0.5 * k, 'fill="#ffd23f"');
   }
-  return out + kreis(cx, cy, 3.2, 'fill="#ffe066" stroke="#b8860b" stroke-width="0.4"');
+  out += kreis(cx, cy, 3.2 * k, 'fill="#ffe066" stroke="#b8860b" stroke-width="0.4"');
+  // Duft-Schimmer: drei kleine leuchtende Punkte, steigen langsam auf und blenden aus
+  [[cx - 9, cy + 6, 0], [cx + 8, cy + 8, 2], [cx + 1, cy + 12, 4]].forEach(([x, y, b]) => {
+    out += `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -22" dur="6s" begin="${b}s" repeatCount="indefinite"/>` +
+      `<circle cx="${f(x)}" cy="${f(y)}" r="1.2" fill="#fff7c2"><animate attributeName="opacity" values="0;0.9;0" dur="6s" begin="${b}s" repeatCount="indefinite"/></circle></g>`;
+  });
+  return out;
 }
 
 function koenigin(s, welk, optionen) {
@@ -259,60 +270,82 @@ function koenigin(s, welk, optionen) {
     koerper += knospe(enden[0][0], enden[0][1], 1.2, welk);
     if (s === 4) koerper += knospe(enden[1][0], enden[1][1], 1.1, welk);
   }
-  const funkel = [[-30, -54, 3, 0], [30, -40, 2.6, 0.6], [-24, -16, 2.2, 1.2], [26, -18, 2.6, 1.8], [4, -80, 3, 0.9], [-6, -30, 2.2, 2.2]];
+  const funkel = [[-30, -54, 3.6, 0], [30, -40, 3.2, 0.6], [-24, -16, 3.2, 1.2], [26, -18, 3.4, 1.8], [4, -80, 3.8, 0.9], [-6, -30, 3, 2.2]];
   return { hinten, koerper, vorne: '', funkel };
 }
 
 // ---------- Jadewein ----------
 const JADE = { mittel: '#4fd1c5', schatten: '#2fa89d', licht: '#a8f0e8' };
 const JADE_WELK = { mittel: '#c9b07a', schatten: '#a8875a', licht: '#e6d8a8' };
-// Blattbueschel am Holzbogen: [Seite (-1 links, 1 rechts), Position auf dem Bogen 0..1]
-const JADE_BUESCHEL = {
-  1: [[-1, 0.45], [1, 0.5]],
-  2: [[-1, 0.4], [1, 0.5], [-1, 0.8]],
-  3: [[-1, 0.35], [1, 0.4], [-1, 0.7], [1, 0.82]],
-  4: [[-1, 0.3], [1, 0.35], [-1, 0.6], [1, 0.7], [-1, 0.9]],
+// Rankbogen: zwei Pfosten (x = -25 und 25, Unterkante am Topfrand) und Rundbogen (Radius 25, Mitte (0,-55)); Hoehe 80, Breite 50
+const JADE_R = 25, JADE_LP = 55;
+const JADE_ANZ = { 1: 8, 2: 11, 3: 14, 4: 18 };
+// Traubenaufhaengungen am Bogen: [Winkel am Bogen (rad, 0 = rechts), Laenge, Anzahl Bluetenklauen, Seite (-1 links, 1 rechts)]
+const JADE_TRAUBEN = {
+  3: [[2.2, 16, 9, -1], [0.9, 18, 10, 1]],
+  4: [[2.6, 36, 22, -1], [2.0, 40, 24, -1], [1.1, 38, 24, 1], [0.55, 32, 20, 1]],
 };
-const JADE_BOGEN_L = [[-9, 0], [-17, -14], [-13, -34], [0, -38]];
-const JADE_BOGEN_R = [[9, 0], [17, -14], [13, -34], [0, -38]];
+// Punkt am Bogen-Gerüst bei Anteil u (0..1 ueber linken Pfosten, Rundbogen, rechten Pfosten): Position und Richtung nach aussen (rot in Grad, 0 = oben)
+function jadePunkt(u) {
+  const LB = Math.PI * JADE_R, ges = 2 * JADE_LP + LB;
+  const l = u * ges;
+  let x, y, nx, ny;
+  if (l <= JADE_LP) { x = -JADE_R; y = -l; nx = -1; ny = 0; }
+  else if (l <= JADE_LP + LB) {
+    const th = Math.PI * (1 - (l - JADE_LP) / LB);
+    x = JADE_R * Math.cos(th); y = -JADE_LP - JADE_R * Math.sin(th); nx = Math.cos(th); ny = -Math.sin(th);
+  } else { x = JADE_R; y = -JADE_LP + (l - JADE_LP - LB); nx = 1; ny = 0; }
+  return { x, y, rot: Math.atan2(nx, -ny) / RAD };
+}
 
-// Traube: Start, Ende, Kruemmung, Anzahl Bluetenklauen
-function jadeTraube(sx, sy, ex, ey, bend, n, welk) {
+// Haengende Traube: Ansatz (ax, ay), Laenge, n Bluetenklauen. Dicht oben, lockerer unten; Klauen folgen der Richtung der Traube.
+// Die ganze Traube schwingt leicht um den Ansatz (animateTransform rotate +-3 Grad, 4 s).
+function jadeTraube(ax, ay, laenge, n, seite, welk) {
   const c = welk ? JADE_WELK : JADE;
-  const A = [sx, sy], B = [ex, ey], C = [(sx + ex) / 2 + bend, (sy + ey) / 2];
+  const A = [ax, ay], B = [ax + seite * 2, ay + laenge], C = [ax + seite * 6, ay + laenge * 0.5];
+  const piv = `${f(ax)} ${f(ay)}`;
   let out = pfad(`M${p2(A)}Q${p2(C)} ${p2(B)}`, `fill="none" stroke="${welk ? '#8c8650' : '#3a6b3a'}" stroke-width="1" stroke-linecap="round"`);
   for (let k = 0; k < n; k++) {
-    const t = 0.15 + 0.85 * (k + 0.5) / n;
+    const t = 0.08 + 0.92 * Math.pow((k + 0.5) / n, 1.5);
     const [x, y] = qb(A, C, B, t);
-    const seite = k % 2 ? 1 : -1;
-    out += an(x + seite * 1.4, y, seite * 30,
-      pfad('M0,0C2.2,-0.6 3.4,1 2.8,3.2C2.2,1.8 1.2,1.4 0,0Z', `fill="${c.mittel}" stroke="${c.schatten}" stroke-width="0.4" stroke-linejoin="round"`) +
-      pfad('M0.4,0.4C1.4,0.2 2,1.2 1.8,2.2', `fill="none" stroke="${c.licht}" stroke-width="0.5" stroke-linecap="round"`));
+    // Tangente der Kurve an dieser Stelle
+    const tx = 2 * (1 - t) * (C[0] - A[0]) + 2 * t * (B[0] - C[0]);
+    const ty = 2 * (1 - t) * (C[1] - A[1]) + 2 * t * (B[1] - C[1]);
+    const sd = k % 2 ? 1 : -1;
+    const rot = Math.atan2(-tx, ty) / RAD + sd * 40;
+    out += an(x + sd * 1.6, y, rot,
+      pfad('M0,0C2.6,0.4 3.6,2.6 2.6,4.6C2.2,2.8 1.4,1.6 0,0Z', `fill="${c.mittel}" stroke="${c.schatten}" stroke-width="0.4" stroke-linejoin="round"`) +
+      pfad('M0.6,0.8C1.6,1.2 2,2.4 1.8,3.4', `fill="none" stroke="${c.licht}" stroke-width="0.5" stroke-linecap="round"`));
   }
-  return out;
+  return gruppe('', `<animateTransform attributeName="transform" type="rotate" values="-3 ${piv};3 ${piv};-3 ${piv}" dur="4s" repeatCount="indefinite"/>` + out);
 }
 
 function jadewein(s, welk) {
   const holz = welk ? '#c9b07a' : '#c98f5a';
-  const bogen = 'M-9,0C-17,-14 -13,-34 0,-38C13,-34 17,-14 9,0';
-  let koerper = holzLinie(bogen, 3, holz);
-  // Dreizaehlige Blaetter an beiden Seiten des Bogens
-  const Lb = 7 + 1.6 * s;
-  JADE_BUESCHEL[s].forEach(([seite, t], i) => {
-    const P = seite < 0 ? JADE_BOGEN_L : JADE_BOGEN_R;
-    const [x, y] = bez(P, t);
-    const blaetter = [-36, 0, 36].map((a, k) =>
-      an(0, 0, a, blatt(ovalKante(Lb, 0.45 * Lb, true), { L: Lb, W: 0.45 * Lb, ...(welk ? WELK : GRUEN[(i + k) % 2]) }))).join('');
-    koerper += an(x, y, seite * 55, blaetter);
-  });
-  if (s === 3) {
-    koerper += jadeTraube(2, -36, 4, -18, 1.5, 8, welk);
-  } else if (s === 4) {
-    koerper += jadeTraube(-6, -36, -15, -10, -2, 12, welk) +
-      jadeTraube(0, -38, 1, -6, 0, 12, welk) +
-      jadeTraube(6, -36, 16, -12, 2, 12, welk);
+  // Holz-Rankbogen: Pfosten, Rundbogen und zwei Querlatten
+  let koerper = holzLinie(`M-${JADE_R},0L-${JADE_R},-${JADE_LP}`, 3.4, holz) +
+    holzLinie(`M${JADE_R},0L${JADE_R},-${JADE_LP}`, 3.4, holz) +
+    holzLinie(`M-${JADE_R},-${JADE_LP}A${JADE_R},${JADE_R} 0 0 1 ${JADE_R},-${JADE_LP}`, 3.2, holz) +
+    holzLinie(`M-${JADE_R},-15L${JADE_R},-15`, 2, holz) + holzLinie(`M-${JADE_R},-36L${JADE_R},-36`, 2, holz);
+  // Dichte Belaubung: an jedem Punkt des Bogens ein dreizaehliges Blatt-Buschel, Blaetter zeigen nach aussen
+  const r = zufall(41 + s);
+  const Lb = 8 + 1.2 * s;
+  const N = JADE_ANZ[s];
+  for (let i = 0; i < N; i++) {
+    const p = jadePunkt((i + 0.5) / N);
+    const pal = welk ? WELK : GRUEN[i % 2];
+    let buschel = '';
+    for (const [dreh, fak] of [[-38, 0.9], [0, 1], [38, 0.9]]) {
+      const L = Lb * fak;
+      buschel += an(0, 0, p.rot + dreh + (r() - 0.5) * 20, blatt(ovalKante(L, 0.4 * L, false), { L, W: 0.4 * L, ...pal }));
+    }
+    koerper += an(p.x, p.y, 0, buschel);
   }
-  const funkel = [[-30, -60, 3, 0], [30, -52, 2.6, 0.5], [-24, -30, 2.2, 1.1], [26, -34, 2.4, 1.6], [2, -70, 3, 0.9]];
+  // Haengende Bluetentrauben
+  for (const [winkel, laenge, n, seite] of JADE_TRAUBEN[s] || []) {
+    koerper += jadeTraube(JADE_R * Math.cos(winkel), -JADE_LP - JADE_R * Math.sin(winkel), laenge, n, seite, welk);
+  }
+  const funkel = [[-36, -74, 3.4, 0], [36, -66, 3.2, 0.5], [-30, -36, 3, 1.1], [32, -40, 3.6, 1.6], [0, -94, 3.6, 0.9], [-6, -52, 3.2, 2]];
   return { hinten: '', koerper, vorne: '', funkel };
 }
 
@@ -471,28 +504,40 @@ const PINK_STUFE = {
   4: [[-58, 22, 19], [-30, 26, 21], [0, 28, 23], [30, 26, 21], [58, 22, 19]],
 };
 
-// Herzfoermiges, spitzes Blatt. Jedes dritte Blatt ist halb rosa, die uebrigen tragen rosa Panaschierung.
+// Pink Princess ist insgesamt 1,4-mal so gross wie bisher (Stiele, Blaetter, Topf)
+const PINK_K = 1.4;
+
+// Herzfoermiges, spitzes, glaenzendes Blatt. Dunkles Bordeaux-Gruen mit grossen rosa Flaechen.
+// Jedes dritte Blatt ist halb rosa, das Blatt Nr. 5 (i = 4) fast ganz rosa.
 function pinkBlatt(L, i, welk) {
-  const R = herzKante(L, 0.72 * L, true);
+  const W = 0.72 * L;
+  const R = herzKante(L, W, false);
   const ganz = p2pfad(R.concat(R.slice().reverse().map(([x, y]) => [-x, y])));
   const halb = i % 3 === 2;
-  const o = welk
-    ? { ...WELK, L, W: 0.72 * L }
-    : { hell: '#3b4a2f', dunkel: halb ? '#f39ac0' : '#5a2b3a', L, W: 0.72 * L, welk: false };
+  const fast = i === 4;
+  let o;
+  if (welk) o = { ...WELK, L, W };
+  else if (fast) o = { hell: '#f58fbd', dunkel: '#e8739f', L, W, welk: false };
+  else o = { hell: '#4a5a36', dunkel: halb ? '#f39ac0' : '#5e2a3e', L, W, welk: false };
   let out = blatt(R, o);
-  if (!welk && !halb) {
+  if (!welk && !fast && !halb) {
     const id = `pink${Math.round(L * 10)}`;
     const r = zufall(17 + i * 5 + Math.round(L));
     let flecken = '';
     for (let k = 0; k < 3; k++) {
-      const x = (r() < 0.5 ? -1 : 1) * (0.1 + 0.25 * r()) * L;
-      const y = -(0.3 + 0.5 * r()) * L;
-      const rr = (0.18 + 0.12 * r()) * L;
-      flecken += oval(x, y, rr, rr * 0.8, 'fill="#f39ac0"') + oval(x + rr * 0.15, y, rr * 0.55, rr * 0.45, 'fill="#e86fa5"');
+      const x = (r() < 0.5 ? -1 : 1) * (0.08 + 0.22 * r()) * L;
+      const y = -(0.25 + 0.5 * r()) * L;
+      const rr = (0.24 + 0.12 * r()) * L;
+      flecken += oval(x, y, rr, rr * 0.85, 'fill="#f39ac0"') + oval(x + rr * 0.15, y, rr * 0.55, rr * 0.5, 'fill="#ff9fcb"');
     }
     out += `<defs><clipPath id="${id}"><path d="${ganz}"/></clipPath></defs>` +
       gruppe(`clip-path="url(#${id})"`, flecken) +
       pfad(ganz, `fill="none" ${kontur(false)}`);
+  }
+  if (!welk) {
+    // helle Mittelader und Glanzstreifen
+    out += linie([0, -0.03 * L], [0, -0.9 * L], 'stroke="#f2f8d8" stroke-width="0.9" stroke-linecap="round" opacity="0.8"') +
+      linie([-0.36 * W, -0.3 * L], [-0.18 * W, -0.7 * L], 'stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"');
   }
   return out;
 }
@@ -500,16 +545,18 @@ function pinkBlatt(L, i, welk) {
 function pink(s, welk) {
   const tab = PINK_STUFE[s];
   let stiele = '', blaetter = '';
-  tab.forEach(([a0, S, L], i) => {
+  tab.forEach(([a0, S0, L0], i) => {
+    const S = S0 * PINK_K, L = L0 * PINK_K;
     const a = welk ? a0 * 1.25 : a0;
     const ex = S * Math.sin(a * RAD);
     const ey = -S * Math.cos(a * RAD) * (welk ? 0.6 : 1);
     stiele += stiel(`M0,0Q${f(ex * 0.1)},${f(ey * 0.7)} ${f(ex)},${f(ey)}`,
-      welk ? '#7d6a45' : '#6b2f45', welk ? '#a8a36a' : '#a84a68', welk ? '#c4c98f' : '#d88aa0', 1.8);
+      welk ? '#7d6a45' : '#6b2f45', welk ? '#a8a36a' : '#a84a68', welk ? '#c4c98f' : '#d88aa0', 2);
     const rot = welk ? (a0 < 0 ? -150 : 150) : a * 0.8;
     blaetter += an(ex, ey, rot, pinkBlatt(L, i, welk));
   });
-  return (s === 4 ? mossStab(26, welk) : '') + stiele + blaetter;
+  // Moosstab, seitlich versetzt, damit er zwischen den Stielen sichtbar bleibt
+  return (s === 4 ? gruppe('transform="translate(3,0)"', mossStab(44, welk)) : '') + stiele + blaetter;
 }
 
 // ---------- Drachenbaum ----------
@@ -557,32 +604,40 @@ function drache(s, welk) {
   // Drachenblut: rote Harztropfen am Stamm
   const tropfen = [[-2.2, -8], [2.0, -14], [-1.8, -20]];
   koerper += tropfen.slice(0, s <= 2 ? 2 : 3).map(([x, y]) => harztropfen(x, y)).join('');
-  const funkel = [[-40, -70, 3, 0], [40, -62, 2.6, 0.5], [-20, -50, 2.2, 1.2], [24, -38, 2.6, 1.8], [0, -80, 3, 0.9]];
+  const funkel = [[-40, -70, 3.6, 0], [40, -62, 3.2, 0.5], [-20, -50, 3, 1.2], [24, -38, 3.4, 1.8], [0, -80, 3.8, 0.9], [-6, -94, 3, 2.6]];
   return { hinten: '', koerper, vorne: '', funkel };
 }
 
 // ---------- Goldener Ginkgo-Bonsai ----------
 const GINK = { mittel: '#f2c94c', schatten: '#e0a92a', licht: '#ffe58a', rand: '#8a6a1a' };
 const GINK_WELK = { mittel: '#c9b07a', schatten: '#a8875a', licht: '#e6d8a8', rand: '#7d6a45' };
-// Stufen: h Stammhoehe, pols [x, y, rx, ry] je Laubpolster, L Blattlaenge, n Blaetter je Polster
+// Stufen: h Stammhoehe, pols [x, y, rx, ry] je Laubpolster (flach geschichtet), n Blaetter insgesamt
 const GINKGO = {
-  1: { h: 16, pols: [[-6, -12, 6, 3.6], [5, -15, 5.6, 3.4]], L: 6.2, n: 6 },
-  2: { h: 20, pols: [[-7, -13, 7, 4], [6, -18, 6.6, 3.8], [0, -24, 5.4, 3.2]], L: 6.8, n: 8 },
-  3: { h: 24, pols: [[-8, -14, 8.2, 4.6], [7, -20, 7.8, 4.4], [-2, -26, 7, 4]], L: 7.2, n: 10 },
-  4: { h: 28, pols: [[-9, -14, 9, 5], [8, -21, 8.6, 4.8], [-3, -27, 8, 4.4], [5, -33, 6.4, 3.8]], L: 7.6, n: 12 },
+  1: { h: 20, pols: [[-7, -15, 7.5, 3.6], [6, -19, 7, 3.4]], n: 25 },
+  2: { h: 24, pols: [[-8, -16, 8.2, 3.8], [6, -21, 7.6, 3.6], [-1, -27, 6, 3.2]], n: 30 },
+  3: { h: 28, pols: [[-9, -16, 9, 4.2], [7, -22, 8.4, 4], [-2, -28, 7.2, 3.6]], n: 35 },
+  4: { h: 32, pols: [[-12, -17, 12, 5.6], [10, -23, 11.4, 5.4], [-4, -30, 10.4, 5], [6, -37, 8.4, 4.4]], n: 40 },
 };
+// Blattlaenge eines Faecherblatts (Stiel bis Fanrand)
+const GINK_L = 5.2;
 
-// Faecherblatt des Ginkgo: Grund (0,0), Spitze am Fanrand, Einkerbung in der Mitte
+// Ginkgo-Blatt: Faecher mit kurzem Stiel, Kerbe in der Mitte des oberen Randes, feine strahlenfoermige Adern.
+// Grund (0,0), Fan nach oben. Farben: Gold, rechte Haelfte dunkler, Kontur #8a6a1a 0.5.
+const fachP = (a, r) => [r * Math.sin(a * RAD), -r * Math.cos(a * RAD)];
 function faecher(L, welk) {
   const c = welk ? GINK_WELK : GINK;
-  const W = L * 0.85;
-  const umriss = `M0,0C${f(-W)},${f(-L * 0.2)} ${f(-W * 1.05)},${f(-L * 0.85)} ${f(-W * 0.3)},${f(-L)}Q0,${f(-L * 0.8)} ${f(W * 0.3)},${f(-L)}C${f(W * 1.05)},${f(-L * 0.85)} ${f(W)},${f(-L * 0.2)} 0,0Z`;
-  const schatten = `M0,0C${f(W)},${f(-L * 0.2)} ${f(W * 1.05)},${f(-L * 0.85)} ${f(W * 0.3)},${f(-L)}L0,${f(-L * 0.8)}Z`;
-  return pfad(umriss, `fill="${c.mittel}" stroke="${c.rand}" stroke-width="0.6" stroke-linejoin="round"`) +
+  const kon = `stroke="${c.rand}" stroke-width="0.5" stroke-linejoin="round"`;
+  const umriss = `M0,0L${sp(fachP(-74, L))}Q${sp(fachP(-40, L * 1.08))} ${sp(fachP(0, L * 0.7))}Q${sp(fachP(40, L * 1.08))} ${sp(fachP(74, L))}Z`;
+  const schatten = `M0,0L${sp(fachP(0, L * 0.7))}Q${sp(fachP(40, L * 1.08))} ${sp(fachP(74, L))}Z`;
+  let adern = '';
+  for (const a of [-66, -44, -22, 0, 22, 44, 66]) {
+    adern += linie([0, 0], fachP(a, L * 0.88), `stroke="${c.licht}" stroke-width="0.35" stroke-linecap="round" opacity="0.8"`);
+  }
+  return linie([0, 0], [0, L * 0.35], `stroke="${welk ? '#7d6a45' : '#6b5a1a'}" stroke-width="0.6" stroke-linecap="round"`) +
+    pfad(umriss, `fill="${c.mittel}" ${kon}`) +
     pfad(schatten, `fill="${c.schatten}"`) +
-    linie([0, 0], [0, -L * 0.85], `stroke="${c.licht}" stroke-width="0.4" stroke-linecap="round"`) +
-    linie([0, 0], [-W * 0.45, -L * 0.9], `stroke="${c.licht}" stroke-width="0.35" stroke-linecap="round" opacity="0.7"`) +
-    linie([0, 0], [W * 0.45, -L * 0.9], `stroke="${c.licht}" stroke-width="0.35" stroke-linecap="round" opacity="0.7"`);
+    adern +
+    pfad(umriss, `fill="none" ${kon}`);
 }
 
 function ginkgo(s, welk) {
@@ -590,40 +645,49 @@ function ginkgo(s, welk) {
   const r = zufall(300 + s);
   const holz = welk ? '#c9b07a' : '#c98f5a';
   const h = G.h;
-  const d = `M0,2C-6,${f(-h * 0.13)} 5,${f(-h * 0.3)} 0,${f(-h * 0.5)}C-5,${f(-h * 0.7)} 4,${f(-h * 0.83)} 1,${f(-h)}`;
-  let koerper = holzLinie(d, 4.2, holz);
-  G.pols.forEach(([cx, cy, rx, ry], j) => {
+  // Stamm dicker und staerker geschwungen, mit sichtbarer Rinde (dunkle Risse entlang des Stamms)
+  const d = `M0,2C-9,${f(-h * 0.13)} 8,${f(-h * 0.3)} 0,${f(-h * 0.5)}C-8,${f(-h * 0.7)} 7,${f(-h * 0.83)} 1,${f(-h)}`;
+  let koerper = holzLinie(d, 6, holz) +
+    gruppe('transform="translate(-2,0)"', pfad(d, 'fill="none" stroke="#7a4a2a" stroke-width="0.6" stroke-dasharray="2.4 1.6" opacity="0.7"')) +
+    gruppe('transform="translate(2,0)"', pfad(d, 'fill="none" stroke="#7a4a2a" stroke-width="0.5" stroke-dasharray="1.6 2.2" stroke-dashoffset="1.5" opacity="0.6"'));
+  const je = Math.round(G.n / G.pols.length);
+  G.pols.forEach(([cx, cy, rx, ry]) => {
     koerper += linie([0, cy + ry * 0.4], [cx * 0.6, cy + ry * 0.5], 'stroke="#6b4a3a" stroke-width="1.4" stroke-linecap="round"') +
       oval(cx, cy + ry * 0.6, rx * 0.95, ry * 0.8, `fill="${welk ? '#a8875a' : '#b8862a'}" opacity="0.35"`);
+    // Lockere Wolke: Blaetter verteilt im Polster, nach Hoehe sortiert (hintere zuerst)
     const bl = [];
-    for (let k = 0; k < G.n; k++) {
-      const phi = r() * 2 * Math.PI, rho = Math.sqrt(r()) * 0.9;
-      bl.push({ x: cx + rx * rho * Math.cos(phi), y: cy + ry * rho * Math.sin(phi), rot: (r() - 0.5) * 140, k });
+    for (let k = 0; k < je; k++) {
+      const phi = r() * 2 * Math.PI, rho = Math.sqrt(r()) * 0.92;
+      bl.push({ x: cx + rx * rho * Math.cos(phi), y: cy + ry * rho * Math.sin(phi), rot: (r() - 0.5) * 120 });
     }
     bl.sort((p, q) => p.y - q.y);
-    for (const b of bl) koerper += an(b.x, b.y, b.rot, faecher(G.L, welk));
+    for (const b of bl) koerper += an(b.x, b.y, b.rot, faecher(GINK_L, welk));
   });
   // Stufe 4: einzelne Blaetter fallen langsam herab (Translation und Drehung in verschachtelten Gruppen)
+  // und ein paar Blaetter liegen flach auf dem Moos
   let vorne = '';
   if (s === 4 && !welk) {
     const fallend = [[-22, -30, -14, 6, 0], [18, -34, 26, 4, 2], [-6, -40, 4, 8, 3.5], [10, -26, 16, 6, 1.2]];
     for (const [x0, y0, x1, y1, b] of fallend) {
       vorne += `<g><animateTransform attributeName="transform" type="translate" values="${x0} ${y0};${x1} ${y1}" dur="6s" begin="${b}s" repeatCount="indefinite"/>` +
-        `<g><animateTransform attributeName="transform" type="rotate" values="-25;25;-25" dur="6s" begin="${b}s" repeatCount="indefinite"/>${faecher(4.2, false)}</g></g>`;
+        `<g><animateTransform attributeName="transform" type="rotate" values="-25;25;-25" dur="6s" begin="${b}s" repeatCount="indefinite"/>${faecher(GINK_L, false)}</g></g>`;
+    }
+    for (const [x, y, rot] of [[-9, 1, 20], [8, 2, -35], [1, 3, 70]]) {
+      vorne += an(x, y, rot, gruppe('transform="scale(1,0.5)"', faecher(GINK_L, false)));
     }
   }
-  const funkel = [[-18, -38, 2.6, 0], [18, -40, 2.2, 0.7], [-10, -28, 2, 1.3], [12, -22, 2.4, 1.9], [0, -46, 2.6, 0.9]];
+  const funkel = [[-20, -40, 3.6, 0], [20, -44, 3.2, 0.7], [-12, -26, 3.2, 1.3], [14, -20, 3.6, 1.9], [0, -52, 3.8, 0.9], [-2, -34, 3, 2.4]];
   return { hinten: '', koerper, vorne, funkel };
 }
 
 // Teile-Schnittstelle fuer die Typen, die nur einen SVG-Inhalt liefern
 const thaiTeile = (s, welk) => ({
   hinten: '', vorne: '', koerper: thai(s, welk),
-  funkel: [[-34, -62, 3, 0], [32, -56, 2.8, 0.4], [-30, -30, 2.2, 1.0], [34, -26, 2.6, 1.5], [0, -84, 3, 0.8], [-2, -46, 2, 1.9]],
+  funkel: [[-34, -62, 3.6, 0], [32, -56, 3.4, 0.4], [-30, -30, 3, 1.0], [34, -26, 3.2, 1.5], [0, -84, 3.8, 0.8], [-2, -46, 3, 1.9]],
 });
 const pinkTeile = (s, welk) => ({
   hinten: '', vorne: '', koerper: pink(s, welk),
-  funkel: [[-16, -30, 2.4, 0], [15, -24, 2.2, 0.6], [-12, -12, 1.8, 1.2], [13, -8, 2, 1.8], [0, -40, 2.4, 0.9]],
+  funkel: [[-22, -42, 3.4, 0], [21, -36, 3.2, 0.6], [-17, -18, 3, 1.2], [19, -14, 3.4, 1.8], [0, -58, 3.6, 0.9], [-3, -28, 3, 2.4]],
 });
 
 // ---------- Registrierung ----------
@@ -633,9 +697,9 @@ const TYP = {
   koenigin_der_nacht: { R: 14, H: 20, stein: '#9b6bd9', schein: [0, -44, 44], teile: koenigin },
   jadewein: { R: 14, H: 20, stein: '#3fc1a9', schein: [0, -30, 40], teile: jadewein },
   thai_constellation: { R: 14, H: 20, stein: '#5fb8e8', schein: [0, -40, 46], teile: thaiTeile },
-  pink_princess: { R: 10, H: 16, stein: '#f39ac0', schein: [0, -18, 26], teile: pinkTeile },
+  pink_princess: { R: 14, H: 22, stein: '#f39ac0', schein: [0, -25, 36], teile: pinkTeile },
   drachenbaum: { R: 14, H: 20, stein: '#b3122e', schein: [0, -44, 50], teile: drache },
-  gold_ginkgo: { R: 12, H: 5, stein: '#3fb27f', schein: [0, -18, 30], schale: true, teile: ginkgo },
+  gold_ginkgo: { R: 12, H: 6, stein: '#3fb27f', schein: [0, -24, 36], schale: 1.25, teile: ginkgo },
 };
 
 function zeichneRaritaet(typ, stufe, welk, ebene, optionen) {
@@ -643,7 +707,7 @@ function zeichneRaritaet(typ, stufe, welk, ebene, optionen) {
   const s = Math.min(4, Math.max(1, Math.round(Number(stufe) || 1)));
   const t = T.teile(s, !!welk, optionen || {});
   const H = T.H;
-  const topf = T.schale ? goldSchale(H) : goldTopf(T.R, H, T.stein);
+  const topf = T.schale ? goldSchale(H, T.schale) : goldTopf(T.R, H, T.stein);
   let out = '';
   // weicher goldener Schein hinter der Pflanze (nicht bei welk)
   if (!welk) {
@@ -671,7 +735,7 @@ export function silhouette(typ) {
   const T = TYP[typ];
   if (!T) return '';
   const t = T.teile(4, false, { tageszeit: 'tag' });
-  const topf = T.schale ? goldSchale(T.H) : goldTopf(T.R, T.H, T.stein);
+  const topf = T.schale ? goldSchale(T.H, T.schale) : goldTopf(T.R, T.H, T.stein);
   return gruppe('opacity="0.25"', einfarbig(topf + gruppe(`transform="translate(0,${-T.H})"`, t.koerper)));
 }
 

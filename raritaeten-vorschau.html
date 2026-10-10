@@ -15,8 +15,8 @@
     h1 { font-size: 22px; margin: 8px 0 12px; }
     h2 { font-size: 17px; margin: 18px 0 6px; }
     .reihe { display: flex; flex-wrap: wrap; gap: 12px; }
-    .kachel { width: 300px; }
-    .kachel svg { width: 300px; height: 300px; display: block; border-radius: 16px; box-shadow: 0 2px 6px rgba(107, 74, 58, 0.25); }
+    .kachel { width: 360px; }
+    .kachel svg { width: 360px; height: 360px; display: block; border-radius: 16px; box-shadow: 0 2px 6px rgba(107, 74, 58, 0.25); }
     .kachel .beschr { font-size: 13px; text-align: center; margin-top: 4px; }
   </style>
 </head>
@@ -27,10 +27,10 @@
   <script type="module">
     import { RARITAETEN, silhouette } from './js/grafik/raritaeten.js';
 
-    // Kachel: viewBox deckt Pflanze, Topf und abgefallene Blaetter ab (x -60..60, y -116..12)
+    // Kachel 360x360: quadratischer viewBox deckt Pflanze, Topf und abgefallene Blaetter ab (x -66..66, y -121..11)
     const kachel = (inhalt, beschriftung, hintergrund = '#fff8ec') =>
-      `<div class="kachel"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -116 120 128">` +
-      `<rect x="-60" y="-116" width="120" height="128" fill="${hintergrund}"/>${inhalt}</svg>` +
+      `<div class="kachel"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-66 -121 132 132">` +
+      `<rect x="-66" y="-121" width="132" height="132" fill="${hintergrund}"/>${inhalt}</svg>` +
       `<div class="beschr">${beschriftung}</div></div>`;
 
     const wurzel = document.getElementById('inhalt');
