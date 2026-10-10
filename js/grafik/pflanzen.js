@@ -1181,22 +1181,73 @@ function weissBlute(x, y, k, welk) {
 }
 
 // ---------- Basilikum ----------
-// Buschige Triebe mit gegenstaendigen, eifoermigen, leicht gewoelbten, glaenzenden Blaettern.
-// Stufe 4 mit weissen Bluetenquirlen an den Triebspitzen.
+// Aufrechte Triebe mit gegenstaendigen, eifoermigen, glattrandigen, leicht gewoelbten, glaenzenden Blaettern.
+// Blattpaare zur Triebspitze hin kleiner. Stufe 4 mit weissen Lippenbluetenquirlen an 2 bis 3 Triebspitzen.
 // Triebe: [Winkel gegen die Senkrechte, Triebhoehe, Blattpaare je Trieb]
 const BAS_TRIEBE = {
-  1: [[-32, 10, 2], [0, 13, 2], [30, 10, 2]],
-  2: [[-40, 12, 2], [-14, 16, 2], [12, 15, 2], [38, 11, 2]],
-  3: [[-48, 13, 3], [-22, 18, 3], [0, 20, 3], [22, 17, 3], [46, 13, 2]],
-  4: [[-52, 14, 3], [-28, 19, 3], [-8, 22, 3], [12, 21, 3], [32, 18, 3], [52, 14, 3]],
+  1: [[-22, 10, 2], [0, 13, 2], [22, 10, 2]],
+  2: [[-26, 12, 2], [-8, 16, 2], [10, 15, 2], [28, 11, 2]],
+  3: [[-30, 13, 3], [-14, 18, 3], [0, 20, 3], [14, 17, 3], [30, 13, 2]],
+  4: [[-34, 14, 3], [-18, 19, 3], [-4, 22, 3], [10, 21, 3], [24, 18, 3], [38, 14, 3]],
 };
+// Stufe 4: Triebe (Index in BAS_TRIEBE[4]) mit Bluetenquirl an der Spitze
+const BAS_BLUETEN = [1, 2, 4];
+// Basilikum-Toene: Grund, Licht, Glanzstreifen, Adern, Rand (welk: Erdtoene, Rand braeunlich)
+const BAS = { grund: '#5e9a52', licht: '#7fb069', glanz: '#b9dd9a', ader: '#477d43' };
+const BAS_WELK = { grund: '#a8a36a', licht: '#c4c98f', glanz: '#d8d6a0', ader: '#8c8650' };
 
-// Bluetenquirl: sechs kleine weisse Bluetchen um eine gruene Mitte
-function quirl(x, y) {
+// Basilikumblatt: Grund (0,0), Spitze (0,-L), eifoermig mit breiter Mitte im unteren Drittel und glattem Rand.
+// Rechte Haelfte dunkler, linke heller und etwas schmaler (leichte Woelbung), Glanzstreifen links neben der
+// Mittelader, Mittelader und zwei feine Seitenadern je Seite.
+function basilBlatt(L, W, welk) {
+  const c = welk ? BAS_WELK : BAS;
+  // Eiform mit breiter Mitte bei t 0.35 (unteres Drittel) und stumpf gerundeter Spitze (kein Zacken)
+  const breite = (t) => {
+    const c0 = 0.35;
+    const q = t < c0 ? (t - c0) / c0 : (t - c0) / (1 - c0);
+    return W * Math.sqrt(Math.max(0, 1 - q * q));
+  };
+  const R = [], lk = [];
+  for (let i = 0; i <= 30; i++) {
+    const t = i / 30;
+    R.push([breite(t), -L * t]);
+  }
+  for (let i = 30; i >= 0; i--) {
+    const [x, y] = R[i];
+    lk.push([-0.9 * x, y]);
+  }
+  const rand = welk ? 'stroke="#a6845a" stroke-width="0.8" stroke-linejoin="round"' : `stroke="#2f5a30" stroke-width="0.6" stroke-linejoin="round"`;
+  let out = pfad(p2pfad(R), `fill="${c.grund}"`) + pfad(p2pfad(lk), `fill="${c.licht}"`);
+  // Glanzstreifen: schmal, links neben der Mittelader
+  const glanz = [];
+  for (let i = 8; i <= 20; i++) {
+    const t = i / 30;
+    glanz.push([-0.55 * breite(t), -L * t]);
+  }
+  for (let i = 20; i >= 8; i--) {
+    const t = i / 30;
+    glanz.push([-0.33 * breite(t), -L * t]);
+  }
+  out += pfad(p2pfad(glanz), `fill="${c.glanz}" opacity="0.75"`);
+  out += pfad(p2pfad(R.concat(lk)), `fill="none" ${rand}`);
+  // Mittelader und Seitenadern (je Seite zwei)
+  out += linie([0, 0], [0, -L * 0.92], `stroke="${c.ader}" stroke-width="0.6" stroke-linecap="round"`);
+  for (const t of [0.35, 0.6]) {
+    for (const sd of [-1, 1]) {
+      out += linie([0, -L * t], [sd * breite(t + 0.15) * 0.75, -L * (t + 0.15)], `stroke="${c.ader}" stroke-width="0.45" stroke-linecap="round" opacity="0.7"`);
+    }
+  }
+  return out;
+}
+
+// Weisser Lippenbluetenquirl: fuenf kleine Lippenbluetchen um eine gruene Mitte
+function lippenQuirl(x, y) {
   let out = '';
-  for (let k = 0; k < 6; k++) {
-    const a = k * 60 * RAD;
-    out += kreis(x + 1.6 * Math.cos(a), y + 1.1 * Math.sin(a), 0.9, 'fill="#ffffff" stroke="#9ccc7a" stroke-width="0.4"');
+  for (let k = 0; k < 5; k++) {
+    const w = k * 72 - 90;
+    const a = w * RAD;
+    const bx = x + 1.7 * Math.cos(a), by = y + 1.7 * Math.sin(a);
+    out += oval(bx, by, 1.1, 0.75, `transform="rotate(${w} ${f(bx)} ${f(by)})" fill="#ffffff" stroke="#9ccc7a" stroke-width="0.4"`);
   }
   return out + kreis(x, y, 0.8, 'fill="#7fb069"');
 }
@@ -1204,21 +1255,23 @@ function quirl(x, y) {
 function basilikum(s, welk) {
   const r = zufall(31 + s);
   let stiele = '', blaetter = '', bluten = '';
-  for (const [a0, h0, paare] of BAS_TRIEBE[s]) {
+  BAS_TRIEBE[s].forEach(([a0, h0, paare], idx) => {
     const a = welk ? a0 * 1.2 : a0;
     const h = h0 * (welk ? 0.8 : 1);
     const tip = [h * Math.sin(a * RAD), -h * Math.cos(a * RAD)];
     stiele += stiel(`M0,0L${sp(tip)}`, welk, 1.6);
     const ts = paare === 2 ? [0.5, 0.85] : [0.4, 0.65, 0.9];
-    ts.forEach((t, k) => {
+    for (const t of ts) {
       const N = [tip[0] * t, tip[1] * t];
       for (const sd of [-1, 1]) {
-        const L = (welk ? 5.5 : 7) * (0.85 + 0.3 * r());
-        blaetter += an(N[0], N[1], a * 0.4 + sd * (welk ? 75 : 48), blatt(ovalKante(L, 0.45 * L, true), { L, W: 0.45 * L, ...farben(k + (sd > 0 ? 1 : 0), welk) }));
+        // Blattpaar gegenstaendig, zur Triebspitze hin kleiner (t = Lage am Trieb)
+        const L = (welk ? 5.5 : 7) * (0.85 + 0.3 * r()) * (1 - 0.35 * t);
+        const stielchen = linie([0, 1.2], [0, 0], `stroke="${welk ? '#7d6a45' : '#2f5a30'}" stroke-width="0.8" stroke-linecap="round"`);
+        blaetter += an(N[0], N[1], a + sd * (welk ? 55 : 42), stielchen + basilBlatt(L, 0.32 * L, welk));
       }
-    });
-    if (s === 4) bluten += quirl(tip[0], tip[1]);
-  }
+    }
+    if (s === 4 && BAS_BLUETEN.includes(idx)) bluten += lippenQuirl(tip[0], tip[1]);
+  });
   return stiele + blaetter + bluten;
 }
 

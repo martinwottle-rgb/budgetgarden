@@ -17,21 +17,88 @@ let zaehler = 0;
 // Attributwert sicher machen (fuer data-id und data-ort)
 const escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+// ---------- Tageszeit ----------
+
+const ZEITEN = ['morgen', 'tag', 'abend', 'nacht'];
+// Tageszeit aus der lokalen Uhrzeit: 5 bis 8 morgen, 8 bis 18 tag, 18 bis 21 abend, sonst nacht
+export function tageszeitAus(date) {
+  const h = date.getHours();
+  if (h >= 5 && h < 8) return 'morgen';
+  if (h >= 8 && h < 18) return 'tag';
+  if (h >= 18 && h < 21) return 'abend';
+  return 'nacht';
+}
+
+// Himmel-Verlauf je Tageszeit (oben nach unten). tag nutzt den Verlauf aus hilfen.js (uid-himmel).
+const HIMMEL = {
+  morgen: ['#ffd9c7', '#fff1e0'],
+  abend: ['#c99ad6', '#f6b47a'],
+  nacht: ['#2c3a66', '#4a5a8c'],
+};
+const himmelId = (uid, zeit) => (zeit === 'tag' ? `${uid}-himmel` : `${uid}-himmel-${zeit}`);
+function himmelDefs(uid, zeit) {
+  const c = HIMMEL[zeit];
+  if (!c) return '';
+  return '<defs>' + `<linearGradient id="${himmelId(uid, zeit)}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${c[0]}"/><stop offset="1" stop-color="${c[1]}"/></linearGradient>` + '</defs>';
+}
+
+// Wolkenfarbe und Deckkraft je Tageszeit
+const WOLKE = { abend: ['#f7b8c8', 0.9], nacht: ['#7d8db3', 0.45] };
+
+// Sterne in der Nacht (deterministisch, eigener Zufallsgenerator), 15 bis 25 Stueck, verteilt auf beide Waende
+function sternPunkte(G) {
+  const r = zufall(5051);
+  const n = 15 + Math.floor(r() * 11);
+  const liste = [];
+  for (let k = 0; k < n; k++) {
+    liste.push({ w: k % 2 ? 'B' : 'A', s: 0.2 + r() * (G - 0.4), t: 40 + r() * 165, r: 0.6 + r() * 0.7 });
+  }
+  return liste;
+}
+
+// Raum-Stimmung ueber Boden und Inhalt (Raumhuelle: Boden plus beide Waende). Nur abend und nacht.
+function raumtoenung(G, zeit) {
+  const [farbe, deckkraft] = zeit === 'nacht' ? ['#1f2a55', 0.22] : ['#ffb46b', 0.08];
+  const huelle = [iso(0, G, 0), iso(G, G, 0), iso(G, 0, 0), iso(G, 0, 220), iso(0, 0, 220), iso(0, G, 220)];
+  return poly(huelle, `fill="${farbe}" opacity="${deckkraft}"`);
+}
+
 // ---------- Boden und Wande ----------
 
 const WM = { A: 'matrix(48,24,0,-1,400,315)', B: 'matrix(-48,24,0,-1,400,315)' };
 // Punkt auf Wand A (entlang gy=0, Parameter s = gx) oder B (entlang gx=0, s = gy); t = Hoehe z
 const wp = (w, s, t) => (w === 'A' ? iso(s, 0, t) : iso(0, s, t));
 
-function wand(w, uid, G, faktor) {
+function wand(w, uid, G, faktor, zeit, sterne) {
   let s = '';
   // Clip-Pfad = Glasflaeche der Wand: Wolken werden nur innerhalb des Glases gezeichnet
   const clipId = `${uid}-glas${w}`;
   s += `<clipPath id="${clipId}">` + poly([wp(w, 0, 30), wp(w, G, 30), wp(w, G, 220), wp(w, 0, 220)], '') + '</clipPath>';
-  s += poly([wp(w, 0, 30), wp(w, G, 30), wp(w, G, 220), wp(w, 0, 220)], `fill="url(#${uid}-himmel)" ${KON}`);
+  s += poly([wp(w, 0, 30), wp(w, G, 30), wp(w, G, 220), wp(w, 0, 220)], `fill="url(#${himmelId(uid, zeit)})" ${KON}`);
+  // Himmel-Deko im Glas: Sterne (nacht), Mondsichel (nacht, Wand A), blasse Sonne tief (morgen, Wand A)
+  let himmel = '';
+  for (const st of sterne) {
+    if (st.w !== w) continue;
+    const p = wp(w, st.s, st.t);
+    himmel += kreis(p[0], p[1], st.r, 'fill="#fff6d5" opacity="0.85"');
+  }
+  if (zeit === 'nacht' && w === 'A') {
+    // Mondsichel: Vollkreis mit Maske, die einen versetzten Kreis ausspart
+    const m = wp('A', 2.25 * faktor, 125);
+    s += `<mask id="${uid}-mond" maskUnits="userSpaceOnUse" x="-500" y="-500" width="1400" height="1400">` +
+      `<rect x="-500" y="-500" width="1400" height="1400" fill="#ffffff"/>` +
+      kreis(m[0] + 3.2, m[1] - 2.2, 7, 'fill="#000000"') + '</mask>';
+    himmel += kreis(m[0], m[1], 8, `fill="#f4f1d6" mask="url(#${uid}-mond)"`);
+  }
+  if (zeit === 'morgen' && w === 'A') {
+    const q = wp('A', 2.25 * faktor, 75);
+    himmel += kreis(q[0], q[1], 11, 'fill="#fff3d6" opacity="0.35"') + kreis(q[0], q[1], 6.5, 'fill="#fff8e6" opacity="0.95"');
+  }
   // Wolken, in Wandkoordinaten (s, t) ueber Transformationsmatrix
   const wolken = [[1.4, 185, 1.1], [3.7, 118, 0.9], [5.0, 200, 1.0]];
-  s += `<g clip-path="url(#${clipId})"><g transform="${WM[w]}" fill="#ffffff" opacity="0.9">` + wolken.map(([cx0, cy, sc]) => {
+  const [wolkenFarbe, wolkenDeckkraft] = WOLKE[zeit] || ['#ffffff', 0.9];
+  s += `<g clip-path="url(#${clipId})">` + himmel + `<g transform="${WM[w]}" fill="${wolkenFarbe}" opacity="${wolkenDeckkraft}">` + wolken.map(([cx0, cy, sc]) => {
     const cx = cx0 * faktor;
     return `<ellipse cx="${cx - 0.18 * sc}" cy="${cy}" rx="${0.2 * sc}" ry="${9 * sc}"/>` +
     `<ellipse cx="${cx + 0.12 * sc}" cy="${cy + 4 * sc}" rx="${0.22 * sc}" ry="${11 * sc}"/>` +
@@ -118,16 +185,18 @@ function efeu(rnd, G, faktor) {
   return s;
 }
 
-function lichterkette(uid, G, faktor) {
+function lichterkette(uid, G, faktor, zeit) {
   let s = '';
   const straenge = [[iso(0, G, 200), iso(0, 0, 206)], [iso(0, 0, 206), iso(G, 0, 200)]];
   const n = Math.round(9 * faktor);
+  // Abend und Nacht leuchten deutlich, morgen und tag nur schwach
+  const schein = zeit === 'abend' || zeit === 'nacht' ? 0.7 : 0.3;
   for (const [a, b] of straenge) {
     const c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 40];
     s += pfad(`M${p2(a)} Q${p2(c)} ${p2(b)}`, 'fill="none" stroke="#6b4a3a" stroke-width="1"');
     for (let i = 1; i <= n; i++) {
       const q = qb(a, c, b, i / (n + 1));
-      s += kreis(q[0], q[1], 7, `fill="url(#${uid}-glow)"`);
+      s += kreis(q[0], q[1], 7, `fill="url(#${uid}-glow)" opacity="${schein}"`);
       s += kreis(q[0], q[1], 2.8, `fill="#ffe08a" ${KON}`);
     }
   }
@@ -282,15 +351,21 @@ export function zeichneSzene(container, zustand) {
   const rnd = zufall(4217);
   const G = [6, 7, 8].includes(z.groesse) ? z.groesse : BASIS;
   const faktor = G / BASIS;
+  // Tageszeit: ohne Angabe aus der lokalen Uhrzeit
+  const zeit = ZEITEN.includes(z.tageszeit) ? z.tageszeit : tageszeitAus(new Date());
+  // abend und nacht: Raum-Stimmung ueber Boden und Inhalt, Laternen und Lichterkette bleiben hell darueber
+  const getoent = zeit === 'abend' || zeit === 'nacht';
+  const sterne = zeit === 'nacht' ? sternPunkte(G) : [];
 
-  // Hintere Teile: Bodenplatte, Dielen, Wande, Dach, Efeu, Lichter
+  // Hintere Teile: Bodenplatte, Dielen, Wande, Dach, Efeu, Lichter (tag und morgen; sonst siehe unten)
   let hinten = bodenplatte(uid, G);
-  hinten += sonnenlicht(uid);
-  hinten += wand('A', uid, G, faktor) + wand('B', uid, G, faktor);
+  if (zeit === 'tag' || zeit === 'morgen') hinten += sonnenlicht(uid);
+  hinten += himmelDefs(uid, zeit);
+  hinten += wand('A', uid, G, faktor, zeit, sterne) + wand('B', uid, G, faktor, zeit, sterne);
   hinten += dach(G);
   hinten += efeu(rnd, G, faktor);
   hinten += haken();
-  hinten += lichterkette(uid, G, faktor);
+  if (!getoent) hinten += lichterkette(uid, G, faktor, zeit);
 
   // Moebel: Sortierschluessel gx+gy des Ursprungs. Darauf stehende Objekte folgen direkt danach.
   const moebelEintraege = [];
@@ -305,6 +380,8 @@ export function zeichneSzene(container, zustand) {
 
   // Pflanzen und Deko: auf Moebel-Stellplatz oder frei auf dem Boden
   const bodenEintraege = [];
+  // Laternen bei abend und nacht: nach der Raum-Stimmung gezeichnet, damit sie hell bleiben
+  const lichtEintraege = [];
   const objekte = [
     ...(z.pflanzen || []).map((p) => ({ ...p, art: 'pflanze' })),
     ...(z.deko || []).map((d) => ({ ...d, art: 'deko' })),
@@ -315,6 +392,7 @@ export function zeichneSzene(container, zustand) {
     const aufMoebel = 'moebel' in o.ort;
     const inhalt = o.art === 'pflanze' ? def.zeichne(o.stufe, welk, aufMoebel ? 'brett' : 'boden') : def.zeichne();
     const attr = `data-art="${o.art}" data-id="${escAttr(o.id)}"`;
+    const istLicht = getoent && o.art === 'deko' && o.typ === 'laterne';
     if (def.haengend) {
       // Haengende Deko sitzt am Haken und wird nach allen Objekten mit gleicher oder kleinerer Tiefe gezeichnet
       const h = Object.prototype.hasOwnProperty.call(HAKEN, o.ort.haken) ? HAKEN[o.ort.haken] : null;
@@ -324,10 +402,16 @@ export function zeichneSzene(container, zustand) {
     if (aufMoebel) {
       const e = moebelById.get(o.ort.moebel);
       const pos = e && platzFeld(e.m, o.ort.platz);
-      if (pos) e.aufsatz.push(platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr));
+      if (pos) {
+        const svg = platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr);
+        if (istLicht) lichtEintraege.push({ key: e.key + 0.5, svg });
+        else e.aufsatz.push(svg);
+      }
     } else if (o.ort.feld) {
       const [gx, gy] = o.ort.feld;
-      bodenEintraege.push({ key: gx + gy + 1, svg: platziert(iso(gx + 0.5, gy + 0.5, 0), inhalt, attr) });
+      const svg = platziert(iso(gx + 0.5, gy + 0.5, 0), inhalt, attr);
+      if (istLicht) lichtEintraege.push({ key: gx + gy + 1, svg });
+      else bodenEintraege.push({ key: gx + gy + 1, svg });
     }
   }
 
@@ -344,8 +428,12 @@ export function zeichneSzene(container, zustand) {
   // Markierungen liegen ueber dem Boden, aber unter Zaun und Blumenkasten
   const marken = markierungenSvg(z.markierungen, z.moebel);
 
-  // Lichtstrahl; vorn: Zaun und Blumenkasten
-  const strahl = sonnenstrahl();
+  // Lichtstrahl; Raum-Stimmung (abend, nacht); Lichter danach; vorn: Zaun und Blumenkasten
+  const strahl = zeit === 'tag' || zeit === 'morgen' ? sonnenstrahl() : '';
+  const stimmung = getoent ? raumtoenung(G, zeit) : '';
+  const lichter = getoent
+    ? lichterkette(uid, G, faktor, zeit) + lichtEintraege.sort((a, b) => a.key - b.key).map((o) => o.svg).join('')
+    : '';
   const vorn = zaun(G) + blumenkasten(G);
 
   // Ausschnitt: eng um das Gewaechshaus. Sonst: wie bisher, bei 6 x 6 unveraendert 0 0 800 644, groesser wachsend.
@@ -364,7 +452,7 @@ export function zeichneSzene(container, zustand) {
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${breite} ${hoehe}" width="100%">` +
     defs(uid) + `<rect x="${x0}" y="${y0}" width="${breite}" height="${hoehe}" fill="#a9d3a5"/>` +
-    hinten + inhalt + marken + strahl + vorn + '</svg>';
+    hinten + inhalt + marken + strahl + stimmung + lichter + vorn + '</svg>';
 
   container.innerHTML = '';
   container.insertAdjacentHTML('beforeend', svg);

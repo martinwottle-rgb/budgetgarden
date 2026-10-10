@@ -29,25 +29,6 @@ function quader(x0, x1, y0, y1, z0, z1, f, kon = KON) {
     flaeche([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], `fill="${f.oben}" ${kon}`);
 }
 
-// Konvexe Huelle (Andrew, Bildschirmkoordinaten)
-function konvexeHuelle(pts) {
-  const s = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const kreuz = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const unten = [], oben = [];
-  for (const p of s) {
-    while (unten.length >= 2 && kreuz(unten[unten.length - 2], unten[unten.length - 1], p) <= 0) unten.pop();
-    unten.push(p);
-  }
-  for (let i = s.length - 1; i >= 0; i--) {
-    const p = s[i];
-    while (oben.length >= 2 && kreuz(oben[oben.length - 2], oben[oben.length - 1], p) <= 0) oben.pop();
-    oben.push(p);
-  }
-  oben.pop();
-  unten.pop();
-  return unten.concat(oben);
-}
-
 // Geschlossener weicher Pfad durch die Punkte (Catmull-Rom als kubische Bezierkurven)
 function glatt(pts) {
   const n = pts.length;
@@ -113,27 +94,39 @@ function laterne() {
     kreis(0, -29, 2.6, 'fill="none" stroke="#a86b43" stroke-width="0.7"');
 }
 
+// Ebene der Kissen, knapp vor der Rueckenlehne (Lehne bei y -3.6)
+const KISSEN_EBENE_Y = -2.7;
+
+// Ein kleines, weiches Kissen: runde, prall gefuellte Form mit eingedellter Mitte. Umriss mit vier leicht
+// abstehenden Ecken und eingezogenen Randmitten. Schraeg (Drehung in Grad) an die Lehne gelehnt, oben etwas nach hinten.
+// Schatten rechts unten als dunklere Kante (Versatz des hellen Koerpers nach links oben), Glanzlicht links oben,
+// Dellenschatten und Knopf in der Mitte. (cx, cz): Mitte auf der Ebene, hell/dunkel: Grundton und Schattenton.
+function kissenKlein(cx, cz, drehung, hell, dunkel) {
+  const a = 4.4, b = 3.6; // Halbbreite und Halbhoehe
+  const T = drehung * Math.PI / 180;
+  const cT = Math.cos(T), sT = Math.sin(T);
+  // u: waagerecht entlang der Lehne, v: senkrecht, w: Woelbung nach vorn (zum Betrachter)
+  const punkt = (u, v, w = 0) => P(cx + u * cT, KISSEN_EBENE_Y + u * sT - 0.3 * v + w, cz + v);
+  // Umriss: 24 Punkte; Ecken (45 Grad) stehen ab, Randmitten (0, 90, ...) sind eingezogen
+  const rand = [];
+  for (let k = 0; k < 24; k++) {
+    const phi = k * 15 * Math.PI / 180;
+    const r = 1 - 0.1 * Math.cos(4 * phi);
+    rand.push(punkt(a * r * Math.cos(phi), b * r * Math.sin(phi)));
+  }
+  const koerper = rand.map(([x, y]) => [x - 1.1, y - 1.4]);
+  const knopf = punkt(0, 0, 0.9);
+  const glanz = punkt(-0.45 * a, 0.5 * b, 0.6);
+  return pfad(glatt(rand), `fill="${dunkel}" ${KB}`) +
+    pfad(glatt(koerper), `fill="${hell}" ${KB}`) +
+    oval(glanz[0], glanz[1], 1.6, 0.9, `fill="#ffffff" opacity="0.55" transform="rotate(-25 ${f(glanz[0])} ${f(glanz[1])})"`) +
+    oval(knopf[0], knopf[1], 2.2, 1.2, `fill="${dunkel}" opacity="0.35"`) +
+    kreis(knopf[0], knopf[1], 0.6, `fill="${dunkel}"`);
+}
+
+// Zwei kleinere Kissen: rosa links, salbeigruen rechts, beide an der Lehne
 function kissen() {
-  // Auf der Sitzflaeche (z 11): Umriss, Ecken stehen leicht ab
-  const basis = [[-9.2, -3.5, 11], [8.4, -3.6, 11], [9.0, 2.8, 11], [-8.8, 3.1, 11]];
-  // Oberseite: hinten (zur Lehne) hoch, vorn niedriger, Mitte eingedellt
-  const oben = [
-    [-8.2, -3.0, 15.4], [0, -3.0, 16.0], [7.4, -3.0, 15.4], [8.2, -0.2, 14.0],
-    [7.2, 2.4, 12.6], [0, 2.5, 12.4], [-7.2, 2.4, 12.6], [-8.0, -0.2, 14.0],
-  ];
-  const S = (pts) => pts.map(([x, y, z]) => P(x, y, z));
-  const umriss = konvexeHuelle(S([...basis, ...oben]));
-  const schatten = konvexeHuelle(S([basis[1], basis[2], basis[3], oben[2], oben[3], oben[4], oben[5], oben[6]]));
-  const glanzLinks = konvexeHuelle(S([[-7.4, -2.6, 15.2], [-1.6, -2.6, 15.7], [-7.0, 0.6, 13.8], [-4.2, -0.4, 14.2]]));
-  const glanzRechts = konvexeHuelle(S([[2.4, -2.4, 15.6], [6.4, -2.4, 15.0], [6.6, -0.6, 13.8], [3.2, -0.8, 14.0]]));
-  // Mulde in der Mitte: Falte als weicher Bogen
-  const falte = `M${p2(P(-5.0, -1.6, 14.2))}Q${p2(P(0, 0.5, 11.6))} ${p2(P(5.0, -1.2, 14.0))}`;
-  return pfad(glatt(umriss), `fill="#f2b8b5" ${KB}`) +
-    pfad(glatt(schatten), 'fill="#d99a97"') +
-    pfad(glatt(glanzLinks), 'fill="#ffffff" opacity="0.55"') +
-    pfad(glatt(glanzRechts), 'fill="#ffffff" opacity="0.4"') +
-    pfad(falte, 'fill="none" stroke="#d99a97" stroke-width="0.8" stroke-linecap="round"') +
-    pfad(glatt(umriss), `fill="none" ${KB}`);
+  return kissenKlein(-6.6, 14.8, 10, '#f2b8b5', '#d99a97') + kissenKlein(5.8, 14.8, -12, '#b9d3a8', '#98b889');
 }
 
 function bank() {

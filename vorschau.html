@@ -21,6 +21,13 @@
       max-width: 800px;
       margin: 0 auto;
     }
+    .zeiten {
+      max-width: 800px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
   </style>
 </head>
 <body>
@@ -29,6 +36,14 @@
 
   <h2>B: besorgt, welk</h2>
   <div id="szene-b" class="szene"></div>
+
+  <h2>Tageszeiten: morgen, tag, abend, nacht</h2>
+  <div class="zeiten">
+    <div><h2>morgen</h2><div id="szene-morgen" class="szene"></div></div>
+    <div><h2>tag</h2><div id="szene-tag" class="szene"></div></div>
+    <div><h2>abend</h2><div id="szene-abend" class="szene"></div></div>
+    <div><h2>nacht</h2><div id="szene-nacht" class="szene"></div></div>
+  </div>
 
   <script type="module">
     import { zeichneSzene } from './js/szene.js';
@@ -47,25 +62,39 @@
       { id: 'p6', typ: 'sonnenblume', stufe: 3, ort: { feld: [4, 2] } }
     ];
 
+    const deko = [
+      { id: 'd1', typ: 'laterne', ort: { feld: [2, 2] } },
+      { id: 'd2', typ: 'bank', ort: { feld: [4, 4] } },
+      { id: 'd3', typ: 'giesskanne', ort: { feld: [2, 4] } },
+      { id: 'd4', typ: 'katze', ort: { moebel: 'm1', platz: 1 } },
+      { id: 'd5', typ: 'haengeampel', ort: { haken: 'h1' } }
+    ];
+
     zeichneSzene(document.getElementById('szene-a'), {
       moebel,
       pflanzen,
-      deko: [
-        { id: 'd1', typ: 'laterne', ort: { feld: [2, 2] } },
-        { id: 'd2', typ: 'bank', ort: { feld: [4, 4] } },
-        { id: 'd3', typ: 'giesskanne', ort: { feld: [2, 4] } },
-        { id: 'd4', typ: 'katze', ort: { moebel: 'm1', platz: 1 } },
-        { id: 'd5', typ: 'haengeampel', ort: { haken: 'h1' } }
-      ],
-      welk: false
+      deko,
+      welk: false,
+      tageszeit: 'tag'
     });
 
     zeichneSzene(document.getElementById('szene-b'), {
       moebel,
       pflanzen,
       deko: [],
-      welk: true
+      welk: true,
+      tageszeit: 'tag'
     });
+
+    for (const zeit of ['morgen', 'tag', 'abend', 'nacht']) {
+      zeichneSzene(document.getElementById('szene-' + zeit), {
+        moebel,
+        pflanzen,
+        deko,
+        welk: false,
+        tageszeit: zeit
+      });
+    }
   </script>
 </body>
 </html>
