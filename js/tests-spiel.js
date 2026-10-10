@@ -472,6 +472,56 @@ test('wochenRueckblick: überzogene Woche und ohne Ausgaben', () => {
   gleich(S.wochenRueckblick(mitGehalt('2026-10-01'), '2026-10-05').topKategorie, null, 'ohne Ausgaben keine Top-Kategorie');
 });
 
+// Sieben Tage mit je einem kleinen Eintrag (1 EUR), Gehalt 3100 EUR: Woche 5. bis 11. Oktober im Budget, Serie 7
+function siebenTageFixture() {
+  const d = mitGehalt('2026-10-05');
+  ['05', '06', '07', '08', '09', '10', '11'].forEach((t, i) => {
+    d.buchungen.push({ id: 'k' + i, art: 'ausgabe', name: 'Kleinkram', betrag: EUR(1), datum: '2026-10-' + t, kategorie: 'lebensmittel', notiz: '' });
+  });
+  return d;
+}
+
+// Summe der erfüllten Challenges einer gespeicherten Woche
+const chSamenGespeichert = (d, wb) => d.spiel.challenges[wb]
+  .filter(c => c.erfuellt)
+  .reduce((s, c) => s + pool(c.id).samen, 0);
+
+test('wochenRueckblick: Samen entsprechen den Gutschriften der Bewertung', () => {
+  const d0 = siebenTageFixture();
+  const wb = '2026-10-05';
+  const r = S.bewerte(d0, '2026-10-12');
+  const soll = 7 * 10 + 7 * 2 + 30 + 50 + chSamenGespeichert(r.daten, wb);
+  gleich(r.daten.spiel.besteSerie, 7, 'Serie 7 erreicht');
+  gleich(r.daten.spiel.samen - d0.spiel.samen, soll, 'Differenz der Samen vor/nach bewerte = 7x10 + 7x2 + 30 + 50 + Challenges');
+  gleich(S.wochenRueckblick(r.daten, wb).samen, soll, 'Rückblick-Samen gleich Gutschriften');
+});
+
+test('wochenRueckblick: alter Spielstand ohne samen-Felder nutzt die Schätzung', () => {
+  const wb = '2026-10-05';
+  const alt = structuredClone(S.bewerte(siebenTageFixture(), '2026-10-12').daten);
+  alt.spiel.bewertet.tage.forEach(t => delete t.samen);
+  alt.spiel.bewertet.wochen.forEach(w => delete w.samen);
+  alt.spiel.bewertet.zeitraeume.forEach(z => delete z.samen);
+  const rb = S.wochenRueckblick(alt, wb);
+  // Schätzung wie bisher: 10 je Tag im Budget, 50 Woche, erfüllte Challenges
+  gleich(rb.samen, 7 * 10 + 50 + chSamenGespeichert(alt, wb), 'Fallback: 7x10 + 50 + Challenges');
+  gleich(rb.erfuellt, true, 'Woche erfüllt');
+});
+
+test('bewerte: Samen je Tag und Summe fest fuer ein festes Szenario', () => {
+  // Tag 1 (1. Okt.): 500 EUR, nur Eintrag +2. Tage 2 bis 8: je 1 EUR, Eintrag +2 und Budget +10, Serie 7 am 8. Tag +30.
+  // Erwartung: 50 + 2 + 7 x 12 + 30 = 166 Samen, XP 116
+  const d0 = mitGehalt('2026-10-01');
+  d0.buchungen.push({ id: 'g1', art: 'ausgabe', name: 'Großeinkauf', betrag: EUR(500), datum: '2026-10-01', kategorie: 'shopping', notiz: '' });
+  for (let t = 2; t <= 8; t++) {
+    d0.buchungen.push({ id: 'g' + t, art: 'ausgabe', name: 'Kleinkram', betrag: EUR(1), datum: '2026-10-0' + t, kategorie: 'lebensmittel', notiz: '' });
+  }
+  const r = S.bewerte(d0, '2026-10-09');
+  gleich(r.daten.spiel.samen, 166, 'Samen gesamt');
+  gleich(r.daten.spiel.xp, 116, 'XP gesamt');
+  gleich(r.daten.spiel.bewertet.tage.map(t => t.samen), [2, 12, 12, 12, 12, 12, 12, 42], 'Samen je Tag');
+});
+
 // ---------- Raritaeten (SPEC.md, Abschnitt Raritäten) ----------
 
 // Bewertung am Starttag: es werden keine Tage bewertet, nur die Freischaltungen geprueft

@@ -473,16 +473,18 @@ function abschliessen(d, zr, gut) {
     uebertrag: a.uebertrag
   });
   const imBudget = a.rest >= 0;
-  d.spiel.bewertet.zeitraeume.push({ start: zr.start, erfuellt: imBudget });
+  const samenVorher = d.spiel.samen;
   if (imBudget) {
     d.spiel.offeneAbschluesse.push({ zeitraumStart: zr.start, zeitraumEnde: zr.ende, rest: a.rest });
     gut('zeitraum', `Zeitraum im Budget (${kurz(zr.start)} bis ${kurz(zr.ende)})`, 200);
   }
+  d.spiel.bewertet.zeitraeume.push({ start: zr.start, erfuellt: imBudget, samen: d.spiel.samen - samenVorher });
 }
 
 // Woche bewerten. Eine Woche, die einen Zeitraumwechsel enthaelt, wird am Wochenziel des ersten Teils geprueft
 // und am Teil des folgenden Zeitraums; Challenges nur im Zeitraum des Montags.
 function wocheBewerten(d, wb, gut) {
+  const samenVorher = d.spiel.samen;
   const so = L.datumPlusTage(wb, 6);
   const zrA = L.zeitraum(d, wb);
   let erfuellt = L.wocheErfuellt(d, wb, zrA);
@@ -490,7 +492,6 @@ function wocheBewerten(d, wb, gut) {
     const folgeStart = L.datumPlusTage(zrA.ende, 1);
     erfuellt = erfuellt && L.wocheErfuellt(d, folgeStart, L.zeitraum(d, folgeStart));
   }
-  d.spiel.bewertet.wochen.push({ start: wb, erfuellt });
   if (erfuellt) gut('woche', `Woche im Budget (${kurz(wb)} bis ${kurz(so)})`, 50);
 
   const challenges = challengesDerWoche(wb).map(c => ({ c, ok: c.pruefe(d, wb, zrA) }));
@@ -498,6 +499,7 @@ function wocheBewerten(d, wb, gut) {
   for (const { c, ok } of challenges) {
     if (ok) gut('challenge', `Challenge erfüllt: ${c.text}`, c.samen);
   }
+  d.spiel.bewertet.wochen.push({ start: wb, erfuellt, samen: d.spiel.samen - samenVorher });
 }
 
 // Alle abgeschlossenen, noch nicht bewerteten Zeitraeume, Tage und Wochen bewerten.
@@ -527,6 +529,7 @@ export function bewerte(daten, heute) {
   const bekannteTage = new Set(sp.bewertet.tage.map(t => t.datum));
   for (let tag = start; tag < heute; tag = L.datumPlusTage(tag, 1)) {
     if (bekannteTage.has(tag)) continue;
+    const samenVorher = sp.samen;
     const erfuellt = L.tagErfuellt(d, tag);
     if (erfuellt) {
       sp.serie += 1;
@@ -537,7 +540,7 @@ export function bewerte(daten, heute) {
     }
     if (buchungenAm(d, tag) > 0) gut('eintrag', `Eintrag am ${kurz(tag)}`, 2);
     sp.besteSerie = Math.max(sp.besteSerie, sp.serie);
-    sp.bewertet.tage.push({ datum: tag, erfuellt });
+    sp.bewertet.tage.push({ datum: tag, erfuellt, samen: sp.samen - samenVorher });
   }
 
   // 3. Komplette Wochen (Montag ab Startdatum, Sonntag vor heute)
@@ -995,7 +998,9 @@ export function verkaufen(daten, kategorie, id) {
 // ---------- Wochenrückblick ----------
 
 // Rückblick auf eine Woche (Montag bis Sonntag, geschnitten mit dem Zeitraum).
-// Samen: gespeicherte Bewertung, sonst neu aus den Regeln (10 pro Tag im Budget, 50 Woche, Challenges).
+// Samen: die tatsächlichen Gutschriften der ganzen Woche (Mo bis So) aus bewertet.tage und bewertet.wochen.
+// Fehlt ein Eintrag oder sein Feld samen (alte Spielstände, noch nicht bewertet), wird nur dieser Teil
+// nach den Regeln geschätzt (10 pro Tag im Budget, 50 Woche, Challenges).
 export function wochenRueckblick(daten, wochenbeginn) {
   const zr = L.zeitraum(daten, wochenbeginn);
   const f = fenster(wochenbeginn, zr);
@@ -1005,6 +1010,14 @@ export function wochenRueckblick(daten, wochenbeginn) {
   const bewertetTage = new Map((daten.spiel.bewertet.tage || []).map(t => [t.datum, t.erfuellt]));
   const tageImBudget = tage.filter(t => (bewertetTage.has(t) ? bewertetTage.get(t) : L.tagErfuellt(daten, t))).length;
 
+  const gespeicherteTage = new Map((daten.spiel.bewertet.tage || []).map(t => [t.datum, t]));
+  const samenTage = tageIn({ von: wochenbeginn, bis: L.datumPlusTage(wochenbeginn, 6) }).reduce((s, t) => {
+    const g = gespeicherteTage.get(t);
+    if (g && Number.isFinite(g.samen)) return s + g.samen;
+    const imBudget = g ? g.erfuellt : (t >= f.von && t <= f.bis && L.tagErfuellt(daten, t));
+    return s + (imBudget ? 10 : 0);
+  }, 0);
+
   const gespeicherteWoche = (daten.spiel.bewertet.wochen || []).find(w => w.start === wochenbeginn);
   const erfuellt = gespeicherteWoche ? gespeicherteWoche.erfuellt : ausgegeben <= W;
 
@@ -1013,6 +1026,9 @@ export function wochenRueckblick(daten, wochenbeginn) {
     ? gespeicherte.filter(c => c.erfuellt).map(c => challengePool.find(p => p.id === c.id)).filter(Boolean)
     : challengesDerWoche(wochenbeginn).filter(c => c.pruefe(daten, wochenbeginn, zr));
   const samenChallenges = erfuellteChallenges.reduce((s, c) => s + c.samen, 0);
+  const samenWoche = gespeicherteWoche && Number.isFinite(gespeicherteWoche.samen)
+    ? gespeicherteWoche.samen
+    : (erfuellt ? 50 : 0) + samenChallenges;
 
   const summen = new Map();
   for (const b of daten.buchungen || []) {
@@ -1032,7 +1048,7 @@ export function wochenRueckblick(daten, wochenbeginn) {
     ausgegeben,
     gespart: W - ausgegeben,
     tageImBudget,
-    samen: tageImBudget * 10 + (erfuellt ? 50 : 0) + samenChallenges,
+    samen: samenTage + samenWoche,
     topKategorie,
     erfuellt
   };
