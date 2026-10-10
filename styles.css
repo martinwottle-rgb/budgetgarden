@@ -1444,3 +1444,173 @@ body.vollbild header#kopf { display: none; }
 
 .zi11-backup { margin: 10px 2px 12px; font-size: 14px; font-weight: 700; color: var(--braun-2); }
 .zi11-backup-alt { color: #d9822b; }
+
+/* 1.1 buchen */
+.bu11-schnell { margin-top: 2px; }
+.bu11-schnell[hidden] { display: none; }
+.bu11-schnell-chips { padding-bottom: 2px; }
+.bu11-schnell-chip {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  font-size: 15px;
+}
+.bu11-schnell-chip:active { transform: translateY(2px); }
+
+.bu11-undo {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(96px + var(--sicht-unten));
+  z-index: 65;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 18px;
+  border-radius: 999px;
+  background: var(--braun);
+  color: var(--creme);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 8px 20px rgba(107, 74, 58, 0.3);
+}
+
+.bu11-undo-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bu11-undo-knopf {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--braun);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.bu11-undo-knopf:active { transform: translateY(2px); }
+
+.bu11-zr-kopf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bu11-zr-mitte {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.bu11-zr-mitte .ue-zeitraum-titel {
+  font-size: 17px;
+  white-space: nowrap;
+}
+
+.bu11-pfeil {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sand);
+  color: var(--braun);
+  font: inherit;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bu11-pfeil:active { transform: translateY(2px); }
+.bu11-pfeil[disabled] { opacity: 0.35; pointer-events: none; }
+
+.bu11-kat[hidden] { display: none; }
+.bu11-fehler { min-height: 1.2em; margin-top: 10px; }
+
+/* 1.1 spiel */
+.sp11-marke {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #d6cdc4;
+  color: var(--braun);
+  font-size: 13px;
+  font-weight: 800;
+}
+.sp11-marke.sp11-geschafft { background: var(--positiv); }
+.sp11-marke.sp11-auf_kurs { background: #a9d3a5; }
+.sp11-marke.sp11-gefaehrdet { background: #f0a050; }
+.sp11-marke.sp11-verpasst { background: #d6cdc4; }
+.sp11-balken {
+  position: relative;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: rgba(107, 74, 58, 0.12);
+  overflow: hidden;
+}
+.sp11-balken > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: #a9d3a5;
+  transition: width 0.5s ease;
+}
+.sp11-geschafft .sp11-balken > span { background: var(--positiv); }
+.sp11-gefaehrdet .sp11-balken > span { background: #f0a050; }
+.sp11-verpasst .sp11-balken > span { background: #b5aaa0; }
+.sp11-fortschritt { margin-top: 4px; }
+
+.sp11-hinweis {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--sicht-unten) + 96px);
+  z-index: 60;
+  max-width: 448px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 10px 10px 16px;
+  border-radius: 16px;
+  background: var(--braun);
+  color: var(--creme);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 8px 20px rgba(107, 74, 58, 0.3);
+}
+.sp11-hinweis { flex-wrap: wrap; }
+.sp11-hinweis > span { flex: 1 1 160px; }
+.sp11-hinweis-knopf { flex: 0 0 auto; min-height: 44px; white-space: nowrap; }
+
+.sp11-rueck { display: flex; flex-direction: column; gap: 8px; }
+.sp11-rueck-zeile { display: flex; justify-content: space-between; gap: 12px; font-weight: 700; }
+.sp11-rueck-zeile span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.sp11-rueck-gespart { margin-top: 6px; font-size: 22px; font-weight: 800; }
+.sp11-rueck-drueber { margin-top: 6px; font-weight: 700; color: var(--braun); }
+
+/* 1.1 buchen: Speichern bleibt über der Tab-Leiste sichtbar */
+.bu11-sticky {
+  position: sticky;
+  bottom: calc(92px + var(--sicht-unten));
+  z-index: 5;
+  padding-top: 8px;
+  background: linear-gradient(to bottom, rgba(169, 211, 165, 0), var(--mint, #a9d3a5) 30%);
+}

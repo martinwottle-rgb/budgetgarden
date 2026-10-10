@@ -4,7 +4,7 @@
 
 import * as L from '../logik.js';
 import { zeichneSzene, vorschau, einpassen } from '../szene.js';
-import { welk, challengesDerWoche, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
+import { welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { MOEBEL } from '../grafik/moebel.js';
 import { DEKO } from '../grafik/deko.js';
@@ -83,17 +83,23 @@ export function zeige(container, ctx, param) {
 
   // Wochen-Challenges: zwei kleine Karten
   container.append(el('div', { class: 'abschnitt', text: `Wochen-Challenges · ${kurzDatum(wochenStart)} bis ${kurzDatum(wochenEnde)}` }));
-  const challenges = challengesDerWoche(wochenStart).map(c => {
-    const ok = c.pruefe(d, wochenStart, h.zr);
-    const beloh = el('div', { class: 'klein challenge-lohn' }, svgBox(muenzSvg(16), 'muenze-klein'), ` ${zahl(c.samen)} Samen`);
-    return el('section', { class: 'karte challenge' },
-      el('div', { class: ok ? 'challenge-status positiv' : 'challenge-status klein', text: ok ? 'Geschafft' : 'Noch offen' }),
-      el('div', { class: 'challenge-text', text: c.text }),
-      beloh,
-      el('div', { class: 'balken' }, el('span', { style: 'width:' + (ok ? 100 : 0) + '%' }))
-    );
-  });
+  const challenges = challengesDerWoche(wochenStart).map(c => challengeKarte(c, challengeStatus(d, c, wochenStart, hd)));
   container.append(el('div', { class: 'raster' }, challenges));
+}
+
+const ZUSTAND_TEXT = { geschafft: 'Geschafft', auf_kurs: 'Auf Kurs', gefaehrdet: 'Gefährdet', verpasst: 'Verpasst' };
+
+// Challenge-Karte: farbige Marke für den Zustand, Fortschrittsbalken mit Text (ist von soll)
+function challengeKarte(c, s) {
+  const prozent = s.soll > 0 ? Math.min(100, (s.ist / s.soll) * 100) : (s.ist > 0 ? 100 : 0);
+  const beloh = el('div', { class: 'klein challenge-lohn' }, svgBox(muenzSvg(16), 'muenze-klein'), ` ${zahl(c.samen)} Samen`);
+  return el('section', { class: 'karte challenge sp11-karte sp11-' + s.zustand },
+    el('div', { class: 'sp11-marke sp11-' + s.zustand, text: ZUSTAND_TEXT[s.zustand] }),
+    el('div', { class: 'challenge-text', text: c.text }),
+    beloh,
+    el('div', { class: 'sp11-balken', role: 'img', 'aria-label': s.text }, el('span', { style: 'width:' + prozent.toFixed(1) + '%' })),
+    el('div', { class: 'sp11-fortschritt klein', text: s.text })
+  );
 }
 
 // ---------- Modus: Platzwahl (Shop), Verschieben, Einrichten ----------

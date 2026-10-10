@@ -127,74 +127,135 @@ function wochenWerte(daten, wochenbeginn, zr) {
   return { W, ausgegeben };
 }
 
+// art: 'zaehl' (ist soll erreichen) oder 'grenze' (ist darf soll nicht überschreiten).
+// fortschritt(daten, wochenbeginn, zr, heute) zählt nur Tage bis einschließlich heute.
 export const challengePool = [
   {
     id: 'zwei_ohne_ausgaben',
     text: '2 Tage ohne Ausgaben',
     samen: 50,
-    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => L.ausgabenAm(daten, t) === 0).length >= 2
+    art: 'zaehl',
+    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => L.ausgabenAm(daten, t) === 0).length >= 2,
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => L.ausgabenAm(daten, t) === 0).length,
+      soll: 2,
+      einheit: 'Tage'
+    })
   },
   {
     id: 'woche_15_unter',
     text: 'Woche 15 % unter Wochenbudget',
     samen: 60,
+    art: 'grenze',
     pruefe: (daten, wb, zr) => {
       const w = wochenWerte(daten, wb, zr);
       return w.ausgegeben * 100 <= w.W * 85;
+    },
+    fortschritt: (daten, wb, zr, heute) => {
+      const { W } = wochenWerte(daten, wb, zr);
+      const ausgegeben = bisHeute(tageIn(fenster(wb, zr)), heute).reduce((s, t) => s + L.ausgabenAm(daten, t), 0);
+      return { ist: ausgegeben, soll: Math.floor(W * 85 / 100), einheit: 'cent' };
     }
   },
   {
     id: 'jeden_tag_eintragen',
     text: 'Jeden Tag etwas eintragen',
     samen: 70,
+    art: 'grenze',
     pruefe: (daten, wb, zr) => {
       const tage = tageIn(fenster(wb, zr));
       return tage.length > 0 && tage.every(t => buchungenAm(daten, t) > 0);
-    }
+    },
+    // Heute zählt nicht als Verstoß, der Eintrag kann noch nachkommen
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: tageIn(fenster(wb, zr)).filter(t => t < heute && buchungenAm(daten, t) === 0).length,
+      soll: 0,
+      einheit: 'verbot'
+    })
   },
   {
     id: 'keine_essen_gehen',
     text: 'Keine Ausgabe in Essen gehen',
     samen: 50,
+    art: 'grenze',
     pruefe: (daten, wb, zr) => {
       const f = fenster(wb, zr);
       return !(daten.buchungen || []).some(b => b.art === 'ausgabe' && b.kategorie === 'essen' && b.datum >= f.von && b.datum <= f.bis);
+    },
+    fortschritt: (daten, wb, zr, heute) => {
+      const f = fenster(wb, zr);
+      return {
+        ist: (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.kategorie === 'essen' && b.datum >= f.von && b.datum <= f.bis && b.datum <= heute).length,
+        soll: 0,
+        einheit: 'verbot'
+      };
     }
   },
   {
     id: 'fuenf_im_budget',
     text: '5 Tage im Budget',
     samen: 70,
-    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => L.tagErfuellt(daten, t)).length >= 5
+    art: 'zaehl',
+    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => L.tagErfuellt(daten, t)).length >= 5,
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => L.tagErfuellt(daten, t)).length,
+      soll: 5,
+      einheit: 'Tage'
+    })
   },
   {
     id: 'hoechstens_drei_gross',
     text: 'Höchstens 3 Ausgaben über 20 €',
     samen: 40,
+    art: 'grenze',
     pruefe: (daten, wb, zr) => {
       const f = fenster(wb, zr);
       return (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.betrag > 2000 && b.datum >= f.von && b.datum <= f.bis).length <= 3;
+    },
+    fortschritt: (daten, wb, zr, heute) => {
+      const f = fenster(wb, zr);
+      return {
+        ist: (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.betrag > 2000 && b.datum >= f.von && b.datum <= f.bis && b.datum <= heute).length,
+        soll: 3,
+        einheit: 'Ausgaben'
+      };
     }
   },
   {
     id: 'kein_tag_150',
     text: 'Kein Tag über 150 % des Tagesbudgets',
     samen: 60,
+    art: 'grenze',
     pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).every(t => {
       const a = L.ausgabenAm(daten, t);
       return a === 0 || a * 100 <= L.tagesbudget(daten, t) * 150;
+    }),
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => {
+        const a = L.ausgabenAm(daten, t);
+        return a !== 0 && a * 100 > L.tagesbudget(daten, t) * 150;
+      }).length,
+      soll: 0,
+      einheit: 'verbot'
     })
   },
   {
     id: 'vier_tage_eintrag',
     text: 'Mindestens 4 Tage mit Eintrag',
     samen: 50,
-    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => buchungenAm(daten, t) > 0).length >= 4
+    art: 'zaehl',
+    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => buchungenAm(daten, t) > 0).length >= 4,
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => buchungenAm(daten, t) > 0).length,
+      soll: 4,
+      einheit: 'Tage'
+    })
   },
   {
     id: 'drei_am_stueck',
     text: 'Drei Tage am Stück im Budget',
     samen: 45,
+    art: 'zaehl',
     pruefe: (daten, wb, zr) => {
       let beste = 0;
       let lauf = 0;
@@ -203,9 +264,23 @@ export const challengePool = [
         beste = Math.max(beste, lauf);
       }
       return beste >= 3;
+    },
+    fortschritt: (daten, wb, zr, heute) => {
+      let beste = 0;
+      let lauf = 0;
+      for (const t of bisHeute(tageIn(fenster(wb, zr)), heute)) {
+        lauf = L.tagErfuellt(daten, t) ? lauf + 1 : 0;
+        beste = Math.max(beste, lauf);
+      }
+      return { ist: beste, soll: 3, einheit: 'Tage' };
     }
   }
 ];
+
+// Tage bis einschließlich heute (Datumsvergleich als Text, ISO-Format)
+function bisHeute(tage, heute) {
+  return tage.filter(t => t <= heute);
+}
 
 // Hash des Datums als Seed, Mulberry32 als Zufallsgenerator
 function zufallAusDatum(text) {
@@ -232,6 +307,43 @@ export function challengesDerWoche(wochenbeginn) {
     [reihe[i], reihe[j]] = [reihe[j], reihe[i]];
   }
   return reihe.slice(0, 2).map(i => challengePool[i]);
+}
+
+const EINHEIT_TEXT = { Tage: 'Tagen' };
+
+// Anzeigetext zu Fortschritt. verbot: 0 erlaubt; cent: Luft bis zum Limit
+function challengeText(art, ist, soll, einheit) {
+  if (einheit === 'cent') {
+    return ist <= soll ? `Noch ${L.euro(soll - ist)} Luft` : `${L.euro(ist - soll)} über dem Limit`;
+  }
+  if (einheit === 'verbot') {
+    return ist === 0 ? 'Bisher ohne Verstoß' : `${ist} ${ist === 1 ? 'Verstoß' : 'Verstöße'} bisher`;
+  }
+  const wort = EINHEIT_TEXT[einheit] || einheit;
+  return art === 'grenze' ? `${ist} von höchstens ${soll} ${wort}` : `${ist} von ${soll} ${wort}`;
+}
+
+// Stand einer Challenge für die Anzeige. zustand: geschafft, auf_kurs, gefaehrdet oder verpasst.
+// Vergangene Woche: pruefe() entscheidet. Laufende Woche: Grenzen sind verpasst, sobald ein Verstoß da ist;
+// Zählziele sind gefaehrdet, wenn genau so viele Tage fehlen, wie noch übrig sind.
+export function challengeStatus(daten, challenge, wochenbeginn, heute) {
+  const zr = L.zeitraum(daten, wochenbeginn);
+  const { ist, soll, einheit } = challenge.fortschritt(daten, wochenbeginn, zr, heute);
+  const so = L.datumPlusTage(wochenbeginn, 6);
+  let zustand;
+  if (so < heute) {
+    zustand = challenge.pruefe(daten, wochenbeginn, zr) ? 'geschafft' : 'verpasst';
+  } else if (challenge.art === 'grenze') {
+    zustand = ist <= soll ? 'auf_kurs' : 'verpasst';
+  } else {
+    const fehlt = soll - ist;
+    const uebrig = tageIn(fenster(wochenbeginn, zr)).filter(t => t > heute).length;
+    if (fehlt <= 0) zustand = 'geschafft';
+    else if (fehlt > uebrig) zustand = 'verpasst';
+    else if (fehlt === uebrig) zustand = 'gefaehrdet';
+    else zustand = 'auf_kurs';
+  }
+  return { zustand, ist, soll, einheit, text: challengeText(challenge.art, ist, soll, einheit) };
 }
 
 // ---------- Abzeichen ----------
@@ -750,4 +862,50 @@ export function verkaufen(daten, kategorie, id) {
   liste.splice(idx, 1);
   d.spiel.samen += erloes;
   return { daten: d };
+}
+
+// ---------- Wochenrückblick ----------
+
+// Rückblick auf eine Woche (Montag bis Sonntag, geschnitten mit dem Zeitraum).
+// Samen: gespeicherte Bewertung, sonst neu aus den Regeln (10 pro Tag im Budget, 50 Woche, Challenges).
+export function wochenRueckblick(daten, wochenbeginn) {
+  const zr = L.zeitraum(daten, wochenbeginn);
+  const f = fenster(wochenbeginn, zr);
+  const tage = tageIn(f);
+  const { W, ausgegeben } = wochenWerte(daten, wochenbeginn, zr);
+
+  const bewertetTage = new Map((daten.spiel.bewertet.tage || []).map(t => [t.datum, t.erfuellt]));
+  const tageImBudget = tage.filter(t => (bewertetTage.has(t) ? bewertetTage.get(t) : L.tagErfuellt(daten, t))).length;
+
+  const gespeicherteWoche = (daten.spiel.bewertet.wochen || []).find(w => w.start === wochenbeginn);
+  const erfuellt = gespeicherteWoche ? gespeicherteWoche.erfuellt : ausgegeben <= W;
+
+  const gespeicherte = daten.spiel.challenges[wochenbeginn];
+  const erfuellteChallenges = gespeicherte
+    ? gespeicherte.filter(c => c.erfuellt).map(c => challengePool.find(p => p.id === c.id)).filter(Boolean)
+    : challengesDerWoche(wochenbeginn).filter(c => c.pruefe(daten, wochenbeginn, zr));
+  const samenChallenges = erfuellteChallenges.reduce((s, c) => s + c.samen, 0);
+
+  const summen = new Map();
+  for (const b of daten.buchungen || []) {
+    if (b.art === 'ausgabe' && b.datum >= f.von && b.datum <= f.bis && b.betrag > 0) {
+      summen.set(b.kategorie, (summen.get(b.kategorie) || 0) + b.betrag);
+    }
+  }
+  let topKategorie = null;
+  for (const [id, betrag] of summen) {
+    if (!topKategorie || betrag > topKategorie.betrag) topKategorie = { id, betrag };
+  }
+
+  return {
+    von: f.von,
+    bis: f.bis,
+    W,
+    ausgegeben,
+    gespart: W - ausgegeben,
+    tageImBudget,
+    samen: tageImBudget * 10 + (erfuellt ? 50 : 0) + samenChallenges,
+    topKategorie,
+    erfuellt
+  };
 }

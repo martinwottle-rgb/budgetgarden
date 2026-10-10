@@ -384,6 +384,94 @@ test('Haengeampel: Ampel über bestehendem Regal scheitert', () => {
   gleich(S.freiePlaetze(r1.daten, 'deko', 'haengeampel').some(o => o.haken === 'h1'), false, 'h1 nicht frei');
 });
 
+// ---------- Challenge-Fortschritt und Wochenrückblick ----------
+
+// Gehalt 3100 EUR, Woche 5. bis 11. Oktober 2026: Essen 20 EUR am Montag, Schuhe 30 EUR am Mittwoch
+function wochenFixture() {
+  const d = mitGehalt('2026-10-01');
+  d.buchungen.push({ id: 'w1', art: 'ausgabe', name: 'Essen', betrag: EUR(20), datum: '2026-10-05', kategorie: 'essen', notiz: '' });
+  d.buchungen.push({ id: 'w2', art: 'ausgabe', name: 'Schuhe', betrag: EUR(30), datum: '2026-10-07', kategorie: 'shopping', notiz: '' });
+  return d;
+}
+
+const pool = (id) => S.challengePool.find(c => c.id === id);
+
+test('challengePool: jede Challenge hat art und fortschritt', () => {
+  gleich(S.challengePool.every(c => (c.art === 'zaehl' || c.art === 'grenze') && typeof c.fortschritt === 'function'), true, 'art und fortschritt');
+});
+
+test('fortschritt: zählt nur Tage bis heute', () => {
+  const d = wochenFixture();
+  const wb = '2026-10-05';
+  const zr = L.zeitraum(d, wb);
+  gleich(pool('zwei_ohne_ausgaben').fortschritt(d, wb, zr, '2026-10-06'), { ist: 1, soll: 2, einheit: 'Tage' }, 'Mo bis Di: nur Dienstag ohne Ausgabe');
+  gleich(pool('zwei_ohne_ausgaben').fortschritt(d, wb, zr, '2026-10-08').ist, 2, 'Di und Do ohne Ausgabe');
+  gleich(pool('woche_15_unter').fortschritt(d, wb, zr, '2026-10-06').ist, EUR(20), 'Betrag: nur Ausgaben bis heute');
+});
+
+test('challengeStatus: laufende Woche, Zählziel auf Kurs', () => {
+  const d = wochenFixture();
+  const s = S.challengeStatus(d, pool('zwei_ohne_ausgaben'), '2026-10-05', '2026-10-06');
+  gleich(s.zustand, 'auf_kurs', 'ein Tag von zwei, noch fünf Tage übrig');
+  gleich(s.text, '1 von 2 Tagen', 'Text');
+});
+
+test('challengeStatus: geschafft und gefährdet bei Zählzielen', () => {
+  const d = wochenFixture();
+  const geschafft = S.challengeStatus(d, pool('zwei_ohne_ausgaben'), '2026-10-05', '2026-10-08');
+  gleich(geschafft.zustand, 'geschafft', 'zwei Tage ohne Ausgabe erreicht');
+  gleich(geschafft.text, '2 von 2 Tagen', 'Text geschafft');
+  // Eintraege am Montag und Mittwoch: 2 von 4, am Freitag fehlen 2 und genau 2 Tage sind übrig
+  const gefaehrdet = S.challengeStatus(d, pool('vier_tage_eintrag'), '2026-10-05', '2026-10-09');
+  gleich(gefaehrdet.zustand, 'gefaehrdet', 'alle restlichen Tage müssen zählen');
+  gleich(gefaehrdet.text, '2 von 4 Tagen', 'Text gefährdet');
+});
+
+test('challengeStatus: Verbot verpasst bei Verstoß, Betragsgrenze zeigt Luft', () => {
+  const d = wochenFixture();
+  const verstoss = S.challengeStatus(d, pool('keine_essen_gehen'), '2026-10-05', '2026-10-06');
+  gleich(verstoss.zustand, 'verpasst', 'Essen gehen am Montag');
+  gleich(verstoss.text, '1 Verstoß bisher', 'Text Verstoß');
+  gleich(pool('keine_essen_gehen').fortschritt(d, '2026-10-05', L.zeitraum(d, '2026-10-05'), '2026-10-06').einheit, 'verbot', 'Einheit verbot');
+  const W = L.tagesbudget(d, '2026-10-05') * 7;
+  const luft = S.challengeStatus(d, pool('woche_15_unter'), '2026-10-05', '2026-10-06');
+  gleich(luft.zustand, 'auf_kurs', 'bis 85 % des Wochenbudgets noch Luft');
+  gleich(luft.text, 'Noch ' + L.euro(Math.floor(W * 85 / 100) - EUR(20)) + ' Luft', 'Text Luft');
+  gleich(S.challengeStatus(d, pool('hoechstens_drei_gross'), '2026-10-05', '2026-10-06').text, '0 von höchstens 3 Ausgaben', 'Obergrenze');
+});
+
+test('challengeStatus: vergangene Woche entscheidet pruefe()', () => {
+  const d = wochenFixture();
+  gleich(S.challengeStatus(d, pool('zwei_ohne_ausgaben'), '2026-10-05', '2026-10-12').zustand, 'geschafft', 'Woche vorbei, Zählziel erreicht');
+  gleich(S.challengeStatus(d, pool('keine_essen_gehen'), '2026-10-05', '2026-10-12').zustand, 'verpasst', 'Woche vorbei, Verbot gebrochen');
+});
+
+test('wochenRueckblick: Zahlen einer Woche im Budget', () => {
+  const d = wochenFixture();
+  const wb = '2026-10-05';
+  const r = S.wochenRueckblick(d, wb);
+  const W = L.tagesbudget(d, wb) * 7;
+  gleich([r.von, r.bis], ['2026-10-05', '2026-10-11'], 'Zeitraum der Woche');
+  gleich(r.ausgegeben, EUR(50), 'ausgegeben');
+  gleich(r.W, W, 'Wochenbudget');
+  gleich(r.gespart, W - EUR(50), 'gespart = W - ausgegeben');
+  gleich(r.tageImBudget, 7, 'alle 7 Tage im Budget');
+  gleich(r.topKategorie, { id: 'shopping', betrag: EUR(30) }, 'größte Kategorie');
+  gleich(r.erfuellt, true, 'Woche erfüllt');
+  const bonus = S.challengesDerWoche(wb).filter(c => c.pruefe(d, wb, L.zeitraum(d, wb))).reduce((s, c) => s + c.samen, 0);
+  gleich(r.samen, 70 + 50 + bonus, 'Samen: 7 Tage à 10, Woche 50, Challenges');
+});
+
+test('wochenRueckblick: überzogene Woche und ohne Ausgaben', () => {
+  const d = wochenFixture();
+  d.buchungen.push({ id: 'w3', art: 'ausgabe', name: 'Urlaub', betrag: EUR(1000), datum: '2026-10-06', kategorie: 'freizeit', notiz: '' });
+  const r = S.wochenRueckblick(d, '2026-10-05');
+  gleich(r.erfuellt, false, 'Woche überzogen');
+  gleich(r.gespart < 0, true, 'gespart negativ');
+  gleich(r.tageImBudget, 6, 'nur der Dienstag liegt drüber');
+  gleich(S.wochenRueckblick(mitGehalt('2026-10-01'), '2026-10-05').topKategorie, null, 'ohne Ausgaben keine Top-Kategorie');
+});
+
 // ---------- Speicher ----------
 
 test('standardDaten und importText: Rundweg', () => {

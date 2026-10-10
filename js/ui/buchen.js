@@ -14,8 +14,65 @@ const HINWEIS = {
 };
 const NICHTS = 'Nichts ausgegeben';
 
-// Entwurf, der ein Neuaufbauen des Bildschirms übersteht (nur beim Anlegen einer eigenen Kategorie)
+const SCHNELL_TAGE = 60;   // Zeitraum der Schnellbuchung in Tagen
+const SCHNELL_MAX = 6;     // höchstens so viele Chips
+const HALTEN_MS = 500;     // so lange drücken, dann nur vorfüllen
+const UNDO_MS = 6000;      // so lange ist „Rückgängig“ sichtbar
+
+// Entwurf, der ein Neuaufbauen des Bildschirms übersteht (nur beim Anlegen einer eigenen Kategorie
+// oder nach einer Schnellbuchung)
 let merkeEntwurf = null;
+
+// Häufigste Ausgaben der letzten 60 Tage: gleiche Summe, Kategorie und Notiz, mindestens 2 Vorkommen.
+// Sortiert nach Häufigkeit, dann nach dem letzten Datum.
+function schnellKandidaten(d, heute) {
+  const von = L.datumPlusTage(heute, -SCHNELL_TAGE);
+  const gruppen = new Map();
+  for (const b of d.buchungen || []) {
+    if (b.art !== 'ausgabe' || !(b.betrag > 0) || b.datum < von || b.datum > heute) continue;
+    const notiz = (b.notiz || '').trim();
+    const schluessel = [b.betrag, b.kategorie, notiz.toLowerCase()].join('|');
+    let g = gruppen.get(schluessel);
+    if (!g) {
+      g = { betrag: b.betrag, kategorie: b.kategorie, notiz, anzahl: 0, letzt: '' };
+      gruppen.set(schluessel, g);
+    }
+    g.anzahl++;
+    if (b.datum >= g.letzt) {
+      g.letzt = b.datum;
+      g.notiz = notiz;
+    }
+  }
+  return [...gruppen.values()]
+    .filter(g => g.anzahl >= 2)
+    .sort((a, b) => (b.anzahl - a.anzahl) || (a.letzt < b.letzt ? 1 : a.letzt > b.letzt ? -1 : 0))
+    .slice(0, SCHNELL_MAX);
+}
+
+// Rückgängig-Leiste nach einer Schnellbuchung. ctx.toast kennt keine Knöpfe, daher ein eigenes Element.
+function undoZeigen(ctx, eintrag, text) {
+  document.querySelectorAll('.bu11-undo').forEach(e => e.remove());
+  let timer = null;
+  const leiste = el('div', { class: 'bu11-undo', role: 'status' },
+    el('span', { class: 'bu11-undo-text', text }),
+    el('button', {
+      type: 'button', class: 'bu11-undo-knopf', text: 'Rückgängig',
+      onclick: () => {
+        clearTimeout(timer);
+        leiste.remove();
+        const aktuell = ctx.daten.buchungen || [];
+        if (!aktuell.some(b => b.id === eintrag.id)) {
+          ctx.toast('Die Buchung ist schon weg.');
+          return;
+        }
+        ctx.speichern({ ...ctx.daten, buchungen: aktuell.filter(b => b.id !== eintrag.id) });
+        ctx.toast('Buchung rückgängig gemacht.');
+      }
+    })
+  );
+  document.body.append(leiste);
+  timer = setTimeout(() => leiste.remove(), UNDO_MS);
+}
 
 export function zeige(container, ctx, param) {
   const d = ctx.daten;
@@ -83,8 +140,58 @@ export function zeige(container, ctx, param) {
     onchange: (e) => { if (e.target.value) z.datum = e.target.value; markiere(); }
   });
 
+  // ---------- Schnellbuchung ----------
+  const kandidaten = z.id ? [] : schnellKandidaten(d, heute);
+  const schnellChips = el('div', { class: 'chips bu11-schnell-chips' }, kandidaten.map(g => {
+    const kat = kategorieVon(d, g.kategorie);
+    let timer = null;
+    let lang = false;
+    return el('button', {
+      type: 'button', class: 'chip bu11-schnell-chip', text: `${kat.emoji} ${g.notiz || kat.name} ${euro(g.betrag)}`,
+      onpointerdown: () => {
+        lang = false;
+        timer = setTimeout(() => { lang = true; schnellVorfuellen(g); }, HALTEN_MS);
+      },
+      onpointerup: () => clearTimeout(timer),
+      onpointerleave: () => clearTimeout(timer),
+      onpointercancel: () => clearTimeout(timer),
+      oncontextmenu: (e) => e.preventDefault(),
+      onclick: () => {
+        if (lang) { lang = false; return; }
+        schnellBuchen(g);
+      }
+    });
+  }));
+  const schnellZeile = el('div', { class: 'bu11-schnell' },
+    el('div', { class: 'beschriftung', text: 'Schnell' }),
+    schnellChips
+  );
+
+  // Antippen bucht sofort für das Datum im Formular. Der Entwurf (Betrag, Notiz, Datum) bleibt erhalten.
+  function schnellBuchen(g) {
+    const kat = kategorieVon(ctx.daten, g.kategorie);
+    const eintrag = {
+      id: neueId('b'), art: 'ausgabe', name: g.notiz || kat.name, betrag: g.betrag,
+      datum: z.datum || heute, kategorie: g.kategorie, notiz: g.notiz
+    };
+    merkeEntwurf = { ...z };
+    ctx.speichern({ ...ctx.daten, buchungen: [...ctx.daten.buchungen, eintrag] });
+    undoZeigen(ctx, eintrag, `Gebucht: ${eintrag.name} ${euro(eintrag.betrag)}`);
+  }
+
+  // Langes Drücken: nur das Formular mit dieser Ausgabe füllen, nichts buchen
+  function schnellVorfuellen(g) {
+    z.betrag = betragText(g.betrag);
+    z.kategorie = g.kategorie;
+    z.notiz = g.notiz;
+    betragFeld.value = z.betrag;
+    notizFeld.value = z.notiz;
+    markiere();
+  }
+
   function markiere() {
     artKnoepfe.forEach(b => b.classList.toggle('aktiv', b.dataset.art === z.art));
+    schnellZeile.hidden = z.art !== 'ausgabe' || !kandidaten.length;
     hinweis.textContent = HINWEIS[z.art];
     katChips.querySelectorAll('[data-kat]').forEach(b => b.classList.toggle('aktiv', b.dataset.kat === z.kategorie));
     chipHeute.classList.toggle('aktiv', z.datum === heute);
@@ -224,7 +331,7 @@ export function zeige(container, ctx, param) {
     type: 'button', class: 'knopf knopf-primaer knopf-voll', text: z.id ? 'Änderung speichern' : 'Speichern',
     onclick: speichernen
   });
-  const aktionen = el('div', { class: 'aktionen' }, speichernKnopf,
+  const aktionen = el('div', { class: 'aktionen bu11-sticky' }, speichernKnopf,
     z.id
       ? el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Bearbeiten abbrechen', onclick: () => ctx.navigiere('buchen') })
       : el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Heute nichts ausgegeben', onclick: nichtsAusgegeben })
@@ -238,6 +345,7 @@ export function zeige(container, ctx, param) {
     el('section', { class: 'karte formular' },
       el('div', { class: 'reiter', role: 'tablist' }, artKnoepfe),
       hinweis,
+      schnellZeile,
       el('div', { class: 'beschriftung', text: 'Betrag' }),
       betragFeld,
       el('div', { class: 'beschriftung', text: 'Kategorie' }),

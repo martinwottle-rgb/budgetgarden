@@ -3,11 +3,13 @@
 // Alle Zahlen kommen aus logik.js, nichts wird hier neu gerechnet außer den Auswertungen.
 
 import * as L from '../logik.js';
-import { el, euro, balken, kategorieVon, kurzDatum, langDatum } from './bausteine.js';
+import { el, euro, balken, kategorieVon, kurzDatum, langDatum, tage, parseBetrag, betragText } from './bausteine.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const WOCHENTAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const ART_TEXT = { ausgabe: 'Ausgabe', einnahme: 'Einnahme', fixkosten: 'Fixkosten' };
+const ARTEN = [['ausgabe', 'Ausgabe'], ['einnahme', 'Einnahme'], ['fixkosten', 'Fixkosten']];
+const NICHTS = 'Nichts ausgegeben';
 
 // SVG-Element mit Attributen und Kindern, ohne innerHTML
 function svg(tag, attr = {}, ...kinder) {
@@ -39,21 +41,38 @@ function istImZeitraum(datum, zr) {
   return datum >= zr.start && datum <= zr.ende;
 }
 
-export function zeige(container, ctx) {
+// Stichtag aus dem Aufruf (Zeitraum blättern). Nie in der Zukunft, nie vor dem Startdatum.
+function stichtagVon(d, heute, param) {
+  const s = param && param.stichtag;
+  const st = (d.einstellungen && d.einstellungen.startDatum) || '';
+  if (!s || s > heute || (st && s < st)) return heute;
+  return s;
+}
+
+// Nur echte Kalenderdaten im Format JJJJ-MM-TT
+function gueltigesDatum(iso) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso || '') && L.datumPlusTage(iso, 0) === iso;
+}
+
+export function zeige(container, ctx, param) {
   const d = ctx.daten;
   const heute = ctx.heute;
-  const zr = L.zeitraum(d, heute);
+  const jetzt = L.zeitraum(d, heute);
+  const zr = L.zeitraum(d, stichtagVon(d, heute, param));
+  const istAktuell = zr.start === jetzt.start;
   const vb = L.verfuegbar(d, zr);
   const ausgegeben = L.ausgabenZwischen(d, zr.start, zr.ende);
   const tagesInfo = L.heute(d, heute);
+  // Wochenkarte: die Woche von heute, sonst die letzte Woche des angesehenen Zeitraums
+  const anker = istAktuell ? heute : zr.ende;
 
   container.append(
     el('h1', { class: 'titel', text: 'Übersicht' }),
-    zeitraumKarte(zr, vb, ausgegeben, heute, tagesInfo),
+    zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell),
     el('div', { class: 'abschnitt', text: 'Kalender dieses Zeitraums' }),
     kalenderKarte(ctx, zr, heute),
-    el('div', { class: 'abschnitt', text: 'Diese Woche' }),
-    wochenKarte(ctx, zr, heute),
+    el('div', { class: 'abschnitt', text: istAktuell ? 'Diese Woche' : 'Letzte Woche des Zeitraums' }),
+    wochenKarte(ctx, zr, anker, istAktuell ? heute : null),
     el('div', { class: 'abschnitt', text: 'Ausgaben nach Kategorie' }),
     kategorieKarte(d, zr),
     el('div', { class: 'abschnitt', text: 'Vergleich mit früheren Zeiträumen' }),
@@ -65,9 +84,23 @@ export function zeige(container, ctx) {
 
 // ---------- Zeitraum ----------
 
-function zeitraumKarte(zr, vb, ausgegeben, heute, tagesInfo) {
+function zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell) {
+  const d = ctx.daten;
   const rest = vb.V - ausgegeben;
   const tagNr = L.tageZwischen(zr.start, heute) + 1;
+
+  // Vorheriger Zeitraum = Zeitraum des Tages vor dem Start; nicht vor dem Startdatum der App.
+  // Nächster Zeitraum nur, solange der angesehene Zeitraum nicht der aktuelle ist.
+  const vorStichtag = L.datumPlusTage(zr.start, -1);
+  const st = (d.einstellungen && d.einstellungen.startDatum) || '';
+  const frueherOk = !st || vorStichtag >= st;
+  const naechsterStichtag = L.datumPlusTage(zr.ende, 1);
+
+  const pfeil = (zeichen, ziel, ok, beschriftung) => el('button', {
+    type: 'button', class: 'bu11-pfeil', text: zeichen, 'aria-label': beschriftung,
+    disabled: ok ? null : true,
+    onclick: () => ctx.navigiere('uebersicht', { stichtag: ziel })
+  });
 
   const posten = el('div', { class: 'ue-posten' }, vb.posten.map(p => el('div', { class: 'ue-posten-zeile' },
     el('span', { text: p.name }),
@@ -75,9 +108,15 @@ function zeitraumKarte(zr, vb, ausgegeben, heute, tagesInfo) {
   )));
 
   return el('section', { class: 'karte ue-zeitraum' },
-    el('div', { class: 'klein', text: 'Zeitraum' }),
-    el('div', { class: 'ue-zeitraum-titel', text: `${datumLang(zr.start)} bis ${datumLang(zr.ende)}` }),
-    el('div', { class: 'klein', text: `Tag ${tagNr} von ${zr.tage}` }),
+    el('div', { class: 'bu11-zr-kopf' },
+      pfeil('‹', vorStichtag, frueherOk, 'Früherer Zeitraum'),
+      el('div', { class: 'bu11-zr-mitte' },
+        el('div', { class: 'klein', text: istAktuell ? 'Zeitraum' : 'Vergangener Zeitraum' }),
+        el('div', { class: 'ue-zeitraum-titel', text: `${datumLang(zr.start)} bis ${datumLang(zr.ende)}` })
+      ),
+      pfeil('›', naechsterStichtag, !istAktuell, 'Nächster Zeitraum')
+    ),
+    el('div', { class: 'klein', text: istAktuell ? `Tag ${tagNr} von ${zr.tage}` : tage(zr.tage) }),
     el('details', { class: 'ue-details' },
       el('summary', { class: 'ue-summe' },
         el('span', { text: 'Verfügbar' }),
@@ -96,11 +135,13 @@ function zeitraumKarte(zr, vb, ausgegeben, heute, tagesInfo) {
       )
     ),
     balken(ausgegeben, vb.V),
-    el('div', { class: 'ue-heute klein' },
-      `Heute: Tagesbudget ${euro(tagesInfo.B)}, Rest heute `,
-      el('span', { class: tagesInfo.rest < 0 ? 'negativ' : 'positiv', text: euro(tagesInfo.rest) }),
-      '.'
-    )
+    istAktuell
+      ? el('div', { class: 'ue-heute klein' },
+        `Heute: Tagesbudget ${euro(tagesInfo.B)}, Rest heute `,
+        el('span', { class: tagesInfo.rest < 0 ? 'negativ' : 'positiv', text: euro(tagesInfo.rest) }),
+        '.'
+      )
+      : null
   );
 }
 
@@ -147,7 +188,7 @@ function tagSheet(ctx, datum) {
   const ausgegeben = L.ausgabenAm(d, datum);
   const buchungen = (d.buchungen || []).filter(b => b.datum === datum).slice().reverse();
 
-  ctx.sheet(el('div', {},
+  const blatt = ctx.sheet(el('div', {},
     el('div', { class: 'klein', text: `Zeitraum ${datumLang(zr.start)} bis ${datumLang(zr.ende)}` }),
     el('h2', { class: 'dialog-titel', text: langDatum(datum) }),
     el('div', { class: 'ue-kennzahlen' },
@@ -168,7 +209,10 @@ function tagSheet(ctx, datum) {
     buchungen.length
       ? el('div', { class: 'liste' }, buchungen.map(b => {
         const kat = kategorieVon(d, b.kategorie);
-        return el('div', { class: 'listen-zeile ue-zeile-statisch' },
+        return el('button', {
+          type: 'button', class: 'listen-zeile',
+          onclick: () => { blatt.schliessen(); buchungSheet(ctx, b); }
+        },
           el('span', { class: 'symbol-kreis', 'aria-hidden': 'true', text: kat.emoji }),
           el('span', { class: 'text' },
             el('div', { class: 'titelzeile', text: b.name }),
@@ -183,9 +227,10 @@ function tagSheet(ctx, datum) {
 
 // ---------- Woche ----------
 
-function wochenKarte(ctx, zr, heute) {
+// anker: Tag, dessen Woche gezeigt wird. markHeute: Tag für die Heute-Markierung (nur im aktuellen Zeitraum)
+function wochenKarte(ctx, zr, anker, markHeute) {
   const d = ctx.daten;
-  const montag = L.wochenbeginn(heute);
+  const montag = L.wochenbeginn(anker);
   const tageWerte = [];
   for (let i = 0; i < 7; i++) {
     const datum = L.datumPlusTage(montag, i);
@@ -243,7 +288,7 @@ function wochenKarte(ctx, zr, heute) {
     linie.length > 1 ? svg('polyline', { points: linie.join(' '), class: 'ue-budget-linie' }) : null,
     ...tageWerte.map((t, i) => svg('text', {
       x: (spalte * i + spalte / 2).toFixed(1), y: HOEHE - 18, 'text-anchor': 'middle',
-      class: 'ue-tag-beschriftung' + (t.datum === heute ? ' heute' : '') + (t.im ? '' : ' aus')
+      class: 'ue-tag-beschriftung' + (t.datum === markHeute ? ' heute' : '') + (t.im ? '' : ' aus')
     }, document.createTextNode(WOCHENTAGE[i]))),
     ...tageWerte.map((t, i) => svg('text', {
       x: (spalte * i + spalte / 2).toFixed(1), y: HOEHE - 4, 'text-anchor': 'middle',
@@ -251,7 +296,7 @@ function wochenKarte(ctx, zr, heute) {
     }, document.createTextNode(Number(t.datum.slice(8)).toString())))
   );
 
-  const w = L.woche(d, heute);
+  const w = L.woche(d, anker);
   return el('section', { class: 'karte' },
     chart,
     el('div', { class: 'ue-woche-werte' },
@@ -399,33 +444,140 @@ function buchungenKarte(ctx, zr) {
   return el('section', {}, chips, liste_el);
 }
 
-// Sheet für eine Buchung mit Löschen (Rückfrage)
+// Sheet für eine Buchung: Ansicht mit Bearbeiten und Löschen (Rückfrage).
+// Bearbeiten ersetzt den Inhalt des Sheets durch ein Formular, Speichern ersetzt die Buchung mit gleicher id.
 function buchungSheet(ctx, b) {
-  const kat = kategorieVon(ctx.daten, b.kategorie);
-  const sheet = ctx.sheet(el('div', {},
-    el('div', { class: 'klein', text: `${ART_TEXT[b.art]} · ${langDatum(b.datum)} · ${kat.emoji} ${kat.name}` }),
-    el('h2', { class: 'dialog-titel', text: b.name }),
-    el('div', { class: 'betrag-mittel ' + (b.art === 'einnahme' ? 'positiv' : (b.betrag ? 'negativ' : '')), text: betragZeichen(b) }),
-    b.notiz && b.notiz !== b.name ? el('p', { class: 'klein', text: b.notiz }) : null,
-    el('div', { class: 'aktionen' },
-      el('button', {
-        type: 'button', class: 'knopf knopf-gefahr knopf-voll', text: 'Löschen',
-        onclick: async () => {
-          sheet.schliessen();
-          const ok = await ctx.dialog({
-            titel: 'Buchung löschen?',
-            text: `„${b.name}“ über ${euro(b.betrag)} wird entfernt.`,
-            knoepfe: [
-              { text: 'Abbrechen', wert: false, art: 'leise' },
-              { text: 'Löschen', wert: true, art: 'gefahr' }
-            ]
-          });
-          if (ok === true) {
-            ctx.speichern({ ...ctx.daten, buchungen: ctx.daten.buchungen.filter(x => x.id !== b.id) });
-            ctx.toast('Buchung gelöscht.');
+  const inhalt = el('div', {});
+  const blatt = ctx.sheet(inhalt);
+  // Der Eintrag „Nichts ausgegeben“ (0 Euro) ist nur löschbar
+  const nichtsEintrag = b.betrag === 0 && b.notiz === NICHTS;
+
+  function ansicht() {
+    const kat = kategorieVon(ctx.daten, b.kategorie);
+    // replaceChildren macht aus null den Text „null“, daher nur echte Elemente übergeben
+    inhalt.replaceChildren(...[
+      el('div', { class: 'klein', text: `${ART_TEXT[b.art]} · ${langDatum(b.datum)} · ${kat.emoji} ${kat.name}` }),
+      el('h2', { class: 'dialog-titel', text: b.name }),
+      el('div', { class: 'betrag-mittel ' + (b.art === 'einnahme' ? 'positiv' : (b.betrag ? 'negativ' : '')), text: betragZeichen(b) }),
+      b.notiz && b.notiz !== b.name ? el('p', { class: 'klein', text: b.notiz }) : null,
+      el('div', { class: 'aktionen' },
+        nichtsEintrag ? null : el('button', {
+          type: 'button', class: 'knopf knopf-primaer knopf-voll', text: 'Bearbeiten',
+          onclick: () => formular()
+        }),
+        el('button', {
+          type: 'button', class: 'knopf knopf-gefahr knopf-voll', text: 'Löschen',
+          onclick: async () => {
+            blatt.schliessen();
+            const ok = await ctx.dialog({
+              titel: 'Buchung löschen?',
+              text: `„${b.name}“ über ${euro(b.betrag)} wird entfernt.`,
+              knoepfe: [
+                { text: 'Abbrechen', wert: false, art: 'leise' },
+                { text: 'Löschen', wert: true, art: 'gefahr' }
+              ]
+            });
+            if (ok === true) {
+              ctx.speichern({ ...ctx.daten, buchungen: ctx.daten.buchungen.filter(x => x.id !== b.id) });
+              ctx.toast('Buchung gelöscht.');
+            }
           }
-        }
-      })
-    )
-  ));
+        })
+      )
+    ].filter(Boolean));
+  }
+
+  function formular() {
+    const z = { art: b.art, betrag: betragText(b.betrag), kategorie: b.kategorie, notiz: b.notiz || '', datum: b.datum };
+
+    const artKnoepfe = ARTEN.map(([k, t]) => el('button', {
+      type: 'button', 'data-art': k, text: t,
+      onclick: () => { z.art = k; markiere(); }
+    }));
+    const betragFeld = el('input', {
+      class: 'feld feld-betrag', type: 'text', inputmode: 'decimal', placeholder: '0,00 €',
+      autocomplete: 'off', value: z.betrag,
+      oninput: (e) => { z.betrag = e.target.value; }
+    });
+    // Kategorie gibt es bei Einnahmen nicht, dort bleibt die bisherige Kategorie unverändert gespeichert
+    const katChips = el('div', { class: 'chips' }, ctx.daten.kategorien.map(k => el('button', {
+      type: 'button', class: 'chip', 'data-kat': k.id, text: `${k.emoji} ${k.name}`,
+      onclick: () => { z.kategorie = k.id; markiere(); }
+    })));
+    const katZeile = el('div', { class: 'bu11-kat' },
+      el('div', { class: 'beschriftung', text: 'Kategorie' }),
+      katChips
+    );
+    const notizFeld = el('input', {
+      class: 'feld', type: 'text', placeholder: 'z. B. Wocheneinkauf', maxlength: 80,
+      autocomplete: 'off', value: z.notiz,
+      oninput: (e) => { z.notiz = e.target.value; }
+    });
+    const datumFeld = el('input', {
+      class: 'feld datum-feld', type: 'date', value: z.datum,
+      onchange: (e) => { z.datum = e.target.value; }
+    });
+    const fehlerZeile = el('div', { class: 'klein negativ bu11-fehler', role: 'alert' });
+
+    function markiere() {
+      artKnoepfe.forEach(k => k.classList.toggle('aktiv', k.dataset.art === z.art));
+      katZeile.hidden = z.art === 'einnahme';
+      katChips.querySelectorAll('[data-kat]').forEach(k => k.classList.toggle('aktiv', k.dataset.kat === z.kategorie));
+    }
+
+    function speichernen() {
+      fehlerZeile.textContent = '';
+      const cent = parseBetrag(z.betrag);
+      if (cent === null) {
+        fehlerZeile.textContent = 'Bitte einen Betrag eingeben, zum Beispiel 12,50.';
+        betragFeld.focus();
+        return;
+      }
+      if (cent <= 0) {
+        fehlerZeile.textContent = 'Der Betrag muss über 0 liegen.';
+        betragFeld.focus();
+        return;
+      }
+      if (!gueltigesDatum(z.datum)) {
+        fehlerZeile.textContent = 'Bitte ein gültiges Datum wählen.';
+        datumFeld.focus();
+        return;
+      }
+      const aktuell = ctx.daten.buchungen || [];
+      if (!aktuell.some(x => x.id === b.id)) {
+        ctx.toast('Diese Buchung gibt es nicht mehr.');
+        blatt.schliessen();
+        return;
+      }
+      const notiz = z.notiz.trim();
+      const kat = kategorieVon(ctx.daten, z.kategorie);
+      const eintrag = {
+        id: b.id, art: z.art, name: notiz || kat.name, betrag: cent,
+        datum: z.datum, kategorie: z.kategorie, notiz
+      };
+      blatt.schliessen();
+      ctx.speichern({ ...ctx.daten, buchungen: aktuell.map(x => (x.id === b.id ? eintrag : x)) });
+      ctx.toast('Buchung geändert: ' + euro(cent));
+    }
+
+    inhalt.replaceChildren(
+      el('h2', { class: 'dialog-titel', text: 'Buchung bearbeiten' }),
+      el('div', { class: 'reiter', role: 'tablist' }, artKnoepfe),
+      el('div', { class: 'beschriftung', text: 'Betrag' }),
+      betragFeld,
+      katZeile,
+      el('div', { class: 'beschriftung', text: 'Notiz (optional)' }),
+      notizFeld,
+      el('div', { class: 'beschriftung', text: 'Datum' }),
+      datumFeld,
+      fehlerZeile,
+      el('div', { class: 'aktionen' },
+        el('button', { type: 'button', class: 'knopf knopf-primaer knopf-voll', text: 'Änderung speichern', onclick: speichernen }),
+        el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Abbrechen', onclick: () => ansicht() })
+      )
+    );
+    markiere();
+  }
+
+  ansicht();
 }

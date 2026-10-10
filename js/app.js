@@ -3,9 +3,9 @@
 
 import * as L from './logik.js';
 import { laden, speichern as persistieren, standardDaten } from './speicher.js';
-import { bewerte, levelAus, restVerwenden, ABZEICHEN } from './spiel.js';
+import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick } from './spiel.js';
 import { swRegistrieren } from './push.js';
-import { el, muenzSvg, zahl, heutigesDatum, svgBox, kurzDatum } from './ui/bausteine.js';
+import { el, muenzSvg, zahl, heutigesDatum, svgBox, kurzDatum, tage, kategorieVon } from './ui/bausteine.js';
 import * as garten from './ui/garten.js';
 import * as buchen from './ui/buchen.js';
 import * as uebersicht from './ui/uebersicht.js';
@@ -38,6 +38,8 @@ let zaehlt = false;        // true während der Zähl-Animation
 let laufNummer = 0;        // Zähl-Animation, die veraltet ist, bricht ab
 const ebenenStapel = [];   // offene Sheets und Dialoge, oberstes zuletzt
 let dialogeLaufen = false; // Abschluss- und Gehaltsdialoge laufen gerade
+let swRegistrierung = null; // Service-Worker-Registrierung, für Update-Prüfung
+let updateGezeigt = false;  // Update-Hinweis schon angezeigt
 
 // ---------- Kontext ----------
 
@@ -58,6 +60,7 @@ let letzterTag = ctx.heute; // für den Tageswechsel ohne Neustart
 
 function starte() {
   swRegistrieren();
+  updatesBeobachten();
   const vorhanden = laden();
   let daten = vorhanden || standardDaten(ctx.heute);
   kopf.muenzsymbol.append(svgBox(muenzSvg(30)));
@@ -96,6 +99,55 @@ document.addEventListener('visibilitychange', () => {
   else render();
   dialogeNachStart();
 });
+
+// Beim Zurückkehren in die App nach neuer Version suchen
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && swRegistrierung) swRegistrierung.update().catch(() => {});
+});
+
+// ---------- Update-Hinweis ----------
+
+// Registrierung holen (push.js gibt sie nicht zurück), auf neue Versionen achten und einmal beim Start prüfen
+async function updatesBeobachten() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    swRegistrierung = (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.ready);
+  } catch (fehler) {
+    console.error(fehler);
+    return;
+  }
+  swRegistrierung.addEventListener('updatefound', () => {
+    const neu = swRegistrierung.installing;
+    if (!neu) return;
+    neu.addEventListener('statechange', () => {
+      if (neu.state === 'installed' && navigator.serviceWorker.controller) updateHinweisZeigen();
+    });
+  });
+  swRegistrierung.update().catch(() => {});
+}
+
+function updateHinweisZeigen() {
+  if (updateGezeigt) return;
+  updateGezeigt = true;
+  hinweisUnten('', 'Neue Version · Jetzt aktualisieren', () => location.reload(), { bleibt: true });
+}
+
+// Kleiner Hinweis unten über der Tab-Leiste mit einem Knopf. bleibt: ohne Zeitlimit, bis zum Antippen.
+function hinweisUnten(text, knopfText, aktion, { bleibt = false } = {}) {
+  let hinweis = null;
+  const knopf = el('button', {
+    type: 'button',
+    class: 'knopf knopf-primaer sp11-hinweis-knopf',
+    text: knopfText,
+    onclick: () => {
+      hinweis.remove();
+      aktion();
+    }
+  });
+  hinweis = el('div', { class: 'sp11-hinweis', role: 'status' }, text ? el('span', { text }) : null, knopf);
+  document.body.append(hinweis);
+  if (!bleibt) setTimeout(() => hinweis.remove(), 9000);
+}
 
 // ---------- Speichern ----------
 
@@ -336,13 +388,16 @@ function klasseFuer(art) {
 
 // ---------- Dialoge nach dem Start und nach dem Tageswechsel ----------
 
-// Nacheinander: offene Monatsabschlüsse, dann die Gehaltsfrage. Nie zwei Abläufe gleichzeitig.
+// Nacheinander: offene Monatsabschlüsse, dann die Gehaltsfrage, dann der Wochenrückblick, dann die Backup-Erinnerung.
+// Nie zwei Abläufe gleichzeitig.
 async function dialogeNachStart() {
   if (dialogeLaufen || !ctx.daten.einstellungen.ersteinrichtungFertig) return;
   dialogeLaufen = true;
   try {
     await abschluesseZeigen();
     await gehaltZeigen();
+    await rueckblickZeigen();
+    backupPruefen();
   } finally {
     dialogeLaufen = false;
   }
@@ -422,6 +477,49 @@ async function gehaltZeigen() {
     speichern({ ...ctx.daten, gehaltseingaenge });
     return;
   }
+}
+
+// Wochenrückblick: einmal für die Vorwoche, ab deren Montag der Start liegt. Merken, bevor der Dialog offen ist.
+async function rueckblickZeigen() {
+  const e = ctx.daten.einstellungen;
+  const vorwoche = L.datumPlusTage(L.wochenbeginn(ctx.heute), -7);
+  if (!e.startDatum || vorwoche < e.startDatum || e.rueckblickGezeigt === vorwoche) return;
+  speichern({ ...ctx.daten, einstellungen: { ...e, rueckblickGezeigt: vorwoche } });
+
+  const r = wochenRueckblick(ctx.daten, vorwoche);
+  const d = ctx.daten;
+  const zeilen = [
+    el('div', { class: 'klein', text: `${kurzDatum(r.von)} bis ${kurzDatum(r.bis)}` }),
+    el('div', { class: 'sp11-rueck-zeile' }, el('span', { text: 'Ausgegeben' }), el('span', { text: `${L.euro(r.ausgegeben)} von ${L.euro(r.W)}` })),
+    el('div', { class: 'sp11-rueck-zeile' }, el('span', { text: 'Tage im Budget' }), el('span', { text: tage(r.tageImBudget) })),
+    el('div', { class: 'sp11-rueck-zeile' }, el('span', { text: 'Samen verdient' }), el('span', { text: zahl(r.samen) }))
+  ];
+  if (r.topKategorie) {
+    const k = kategorieVon(d, r.topKategorie.id);
+    zeilen.push(el('div', { class: 'sp11-rueck-zeile' },
+      el('span', { text: 'Größte Ausgabe' }),
+      el('span', { text: `${k.emoji} ${k.name}, ${L.euro(r.topKategorie.betrag)}` })));
+  }
+  zeilen.push(r.gespart >= 0
+    ? el('div', { class: 'sp11-rueck-gespart positiv', text: `Gespart: ${L.euro(r.gespart)}` })
+    : el('div', { class: 'sp11-rueck-drueber', text: `Diesmal ${L.euro(-r.gespart)} drüber, neue Woche, neues Glück` }));
+
+  await ctx.dialog({
+    titel: 'Deine Woche 🌿',
+    inhalt: el('div', { class: 'sp11-rueck' }, zeilen),
+    knoepfe: [{ text: 'Weiter', art: 'primaer' }]
+  });
+}
+
+// Backup-Erinnerung: startDatum älter als 30 Tage, letzter Export älter als 30 Tage (oder nie), höchstens einmal pro 7 Tage
+function backupPruefen() {
+  const e = ctx.daten.einstellungen;
+  const h = ctx.heute;
+  if (!e.startDatum || L.tageZwischen(e.startDatum, h) <= 30) return;
+  if (e.letzterExport && L.tageZwischen(e.letzterExport, h) <= 30) return;
+  if (e.backupErinnert && L.tageZwischen(e.backupErinnert, h) < 7) return;
+  speichern({ ...ctx.daten, einstellungen: { ...e, backupErinnert: h } });
+  hinweisUnten('Zeit für ein Backup? Einstellungen → Export', 'Zu den Einstellungen', () => navigiere('einstellungen'));
 }
 
 
