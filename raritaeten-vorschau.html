@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de-DE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raritäten-Vorschau</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #a9d3a5;
+      color: #6b4a3a;
+      font-family: ui-rounded, system-ui, sans-serif;
+    }
+    h1 { font-size: 22px; margin: 8px 0 12px; }
+    h2 { font-size: 17px; margin: 18px 0 6px; }
+    .reihe { display: flex; flex-wrap: wrap; gap: 12px; }
+    .kachel { width: 300px; }
+    .kachel svg { width: 300px; height: 300px; display: block; border-radius: 16px; box-shadow: 0 2px 6px rgba(107, 74, 58, 0.25); }
+    .kachel .beschr { font-size: 13px; text-align: center; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Raritäten-Vorschau</h1>
+  <div id="inhalt"></div>
+
+  <script type="module">
+    import { RARITAETEN, silhouette } from './js/grafik/raritaeten.js';
+
+    // Kachel: viewBox deckt Pflanze, Topf und abgefallene Blaetter ab (x -60..60, y -116..12)
+    const kachel = (inhalt, beschriftung, hintergrund = '#fff8ec') =>
+      `<div class="kachel"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -116 120 128">` +
+      `<rect x="-60" y="-116" width="120" height="128" fill="${hintergrund}"/>${inhalt}</svg>` +
+      `<div class="beschr">${beschriftung}</div></div>`;
+
+    const wurzel = document.getElementById('inhalt');
+    let html = '';
+
+    for (const [typ, r] of Object.entries(RARITAETEN)) {
+      let kacheln = '';
+      for (let s = 1; s <= 4; s++) {
+        kacheln += kachel(r.zeichne(s), `Stufe ${s}`);
+      }
+      if (typ === 'koenigin_der_nacht') {
+        kacheln += kachel(r.zeichne(4, false, 'boden', { tageszeit: 'tag' }), 'Stufe 4, Tag');
+        kacheln += kachel(r.zeichne(4, false, 'boden', { tageszeit: 'nacht' }), 'Stufe 4, Nacht', '#1d2a4a');
+      }
+      kacheln += kachel(r.zeichne(4, true), 'welk');
+      kacheln += kachel(`<g transform="translate(0,0)">${silhouette(typ)}</g>`, 'Silhouette (gesperrt)');
+      html += `<h2>${r.name} (${r.groesse}), Bedingung: ${r.bedingung}</h2><div class="reihe">${kacheln}</div>`;
+    }
+    wurzel.innerHTML = html;
+  </script>
+</body>
+</html>
