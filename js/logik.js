@@ -84,11 +84,16 @@ export function euro(cent) {
 
 // ---------- Fälligkeiten und Zeitraum ----------
 
+// Die Reihe läuft vom eingetragenen Datum aus in beide Richtungen: Eingetragen wird die NÄCHSTE
+// Fälligkeit, frühere Termine desselben Vertrags gab es also schon.
 export function faelligkeiten(vertrag, von, bis) {
-  const tag = zerlege(vertrag.ersteFaelligkeit).t;
+  const ef = zerlege(vertrag.ersteFaelligkeit);
+  const tag = ef.t;
   const schritt = Math.max(1, vertrag.intervall || 1);
+  const v = zerlege(von);
+  const monateZurueck = Math.max(0, (ef.j - v.j) * 12 + (ef.m - v.m));
   const ergebnis = [];
-  for (let k = 0; ; k++) {
+  for (let k = -Math.ceil(monateZurueck / schritt) - 1; ; k++) {
     const d = datumPlusMonate(vertrag.ersteFaelligkeit, k * schritt, tag);
     if (d > bis) break;
     if (vertrag.ende && d > vertrag.ende) break;
@@ -135,11 +140,11 @@ export function verfuegbar(daten, zr) {
     if (v.ende && v.ende < zr.start) continue;
     // Geglättete Ausgaben (Intervall > 1) werden schon vor der ersten Fälligkeit zurückgelegt,
     // sonst fehlt das Geld, wenn sie zum ersten Mal abgebucht werden.
-    const geglaettet = v.art === 'ausgabe' && (v.intervall || 1) > 1;
-    if (!geglaettet && v.ersteFaelligkeit > zr.ende) continue;
+    // Monatliche Verträge zählen in jedem Zeitraum genau einmal, auch wenn die eingetragene
+    // (nächste) Fälligkeit schon im Folgemonat liegt.
 
     if (v.art === 'einnahme') {
-      const n = faelligkeiten(v, zr.start, zr.ende).length;
+      const n = (v.intervall || 1) === 1 ? 1 : faelligkeiten(v, zr.start, zr.ende).length;
       if (n > 0) posten.push({ name: v.name, betrag: n * v.betrag, art: 'einnahme' });
     } else if (v.art === 'ausgabe') {
       posten.push({ name: v.name, betrag: -rundeCent(v.betrag / Math.max(1, v.intervall || 1)), art: 'fixkosten' });

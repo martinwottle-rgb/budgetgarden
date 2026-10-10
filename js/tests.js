@@ -324,6 +324,40 @@ test('Erste Woche zaehlt erst ab Starttag', () => {
   gleich(w.W, 20000, 'W = 2 Tage x 100 EUR');
 });
 
+test('Nutzerfall: Start mitten im Monat, Vertraege mit naechster Faelligkeit im Folgemonat', () => {
+  const v = (id, art, name, betrag, intervall, ef, istGehalt) =>
+    ({ id, art, name, betrag, intervall, ersteFaelligkeit: ef, kategorie: 'x', istGehalt: !!istGehalt, ende: null });
+  const d = basis(1, {
+    einstellungen: { gehaltstag: 1, startDatum: '2026-10-10', ersteinrichtungFertig: true, push: { abonniert: false } },
+    vertraege: [
+      v('g', 'einnahme', 'Gehalt', 270000, 1, '2026-10-01', true),
+      v('m', 'ausgabe', 'Miete', 150000, 1, '2026-11-01'),
+      v('h', 'ausgabe', 'Handy', 30000, 1, '2026-11-15'),
+      v('s', 'ausgabe', 'Strom', 30000, 1, '2026-11-03'),
+    ],
+  });
+  const zr = L.zeitraum(d, '2026-10-10');
+  gleich(zr.start + ' ' + zr.ende, '2026-10-01 2026-10-31', 'Zeitraum');
+  // 600 EUR frei, davon 22 von 31 Tagen: 425,81 EUR, also 19,36 EUR pro Tag
+  gleich(L.verfuegbar(d, zr).V, 42581, 'V anteilig');
+  gleich(L.tagesbudget(d, '2026-10-10'), 1936, 'Tagesbudget 425,81 / 22 = 19,355');
+});
+
+test('Monatliche Einnahme mit naechster Faelligkeit im Folgemonat zaehlt diesen Monat', () => {
+  const d = basis(1, { vertraege: [
+    { id: 'k', art: 'einnahme', name: 'Kindergeld', betrag: 25500, intervall: 1, ersteFaelligkeit: '2026-12-05', kategorie: 'x', istGehalt: false, ende: null },
+  ] });
+  gleich(L.verfuegbar(d, L.zeitraum(d, '2026-11-10')).V, 25500, 'einmal im November');
+});
+
+test('Vierteljaehrliche Einnahme: frueherer Termin im Zeitraum wird erkannt', () => {
+  const d = basis(1, { vertraege: [
+    { id: 'q', art: 'einnahme', name: 'Bonus', betrag: 30000, intervall: 3, ersteFaelligkeit: '2027-02-10', kategorie: 'x', istGehalt: false, ende: null },
+  ] });
+  gleich(L.verfuegbar(d, L.zeitraum(d, '2026-11-20')).V, 30000, 'November (10.11. = Feb minus 3 Monate)');
+  gleich(L.verfuegbar(d, L.zeitraum(d, '2026-12-20')).V, 0, 'Dezember ohne Termin');
+});
+
 // ---------- Ausgabe ----------
 
 const zeilen = document.getElementById('zeilen');
