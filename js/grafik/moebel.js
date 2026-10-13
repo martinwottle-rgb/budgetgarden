@@ -317,6 +317,187 @@ function metallZeichnen(gx, gy, drehung) {
   return s;
 }
 
+// ---------- Neue Moebel (Teil 2): Ziegelbrett, Gaertnertisch, Wandregal, Rattan-Etagere ----------
+const ZIEGEL = { oben: '#cf7a57', links: '#b85c3c', rechts: '#9a4a2e' };
+const FICHTE = { oben: '#f3d9ae', links: '#e0bd8a', rechts: '#c9a06e' };
+const GUSS = { oben: '#6f8f7a', links: '#3f5a48', rechts: '#2f4538' };
+const RATTAN = { oben: '#e9bd86', links: '#d9a56b', rechts: '#b8844f' };
+const HOLZ_DUNKEL = { oben: '#c98f5a', links: '#a86b43', rechts: '#8f5a35' };
+const LOCH = 'fill="#5a2e1c" stroke="#3d1f12" stroke-width="0.6"';
+let musterZaehler = 0;
+
+// Farben lokaler Seiten: lokal +v liegt je nach Drehung auf +gy (links) oder +gx (rechts), lokal +u umgekehrt
+const farbeV = (m, farben) => (m.drehung === 90 ? farben.rechts : farben.links);
+const farbeU = (m, farben) => (m.drehung === 90 ? farben.links : farben.rechts);
+
+// Ellipse in der waagerechten Ebene z (lokal, Radien ru, rv in Feldern), als Polygon
+function ellipseAuf(m, u, v, z, ru, rv, attr, n = 16) {
+  const pts = [];
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * 2 * Math.PI;
+    pts.push(pkt(m, u + ru * Math.cos(a), v + rv * Math.sin(a), z));
+  }
+  return poly(pts, attr);
+}
+
+// Gebogenes Rohr entlang von Bildschirmpunkten: Kontur, Koerper in farben.links, Glanzlinie in farben.oben
+function rohr(punkte, dicke, farben, zusatz = '') {
+  const d = punkte.map((p, i) => (i ? 'L' : 'M') + p2(p)).join('');
+  const hell = punkte.map((p, i) => (i ? 'L' : 'M') + p2([p[0] - dicke * 0.25, p[1]])).join('');
+  return pfad(d, `fill="none" stroke="#2b3f33" stroke-width="${f(dicke + 1.4)}" stroke-linejoin="round" stroke-linecap="round"`) +
+    pfad(d, `fill="none" stroke="${farben.links}" stroke-width="${dicke}" stroke-linejoin="round" stroke-linecap="round"`) +
+    zusatz +
+    pfad(hell, `fill="none" stroke="${farben.oben}" stroke-width="${f(dicke * 0.3)}" stroke-linecap="round" opacity="0.9"`);
+}
+
+// Ziegelbrett: rohes Fichtenbrett mit Astloch, leicht schief, auf zwei Ziegelstapeln
+function ziegelbrettZeichnen(gx, gy, drehung) {
+  const m = { gx, gy, drehung };
+  let s = schatten(m, 2, 1);
+  for (const uc of [0.5, 1.5]) {
+    for (const [z0, z1] of [[0, 9], [9, 18]]) {
+      s += quader(m, uc - 0.22, uc + 0.22, 0.26, 0.74, z0, z1, ZIEGEL);
+      const zm = (z0 + z1) / 2;
+      // Mauerfugen: waagerecht in halber Hoehe auf beiden Sichtseiten, senkrecht mittig auf der Vorderseite
+      s += linie(pkt(m, uc - 0.22, 0.74, zm), pkt(m, uc + 0.22, 0.74, zm), FUGE);
+      s += linie(pkt(m, uc + 0.22, 0.26, zm), pkt(m, uc + 0.22, 0.74, zm), FUGE);
+      s += linie(pkt(m, uc, 0.74, z0 + 1), pkt(m, uc, 0.74, z1 - 1), FUGE);
+      // Lochung auf der Oberseite
+      for (const du of [-0.09, 0.09]) s += ellipseAuf(m, uc + du, 0.5, z1, 0.04, 0.12, LOCH);
+    }
+  }
+  // Brett: Oberseite faellt leicht von u = 0 nach u = 2, Unterseite liegt flach auf den Ziegeln
+  const zo = (u) => 25.4 - 0.4 * u;
+  const zu = 18;
+  const A = (u, v, z) => pkt(m, u, v, z);
+  const [u0, u1, v0, v1] = [0.02, 1.98, 0.2, 0.8];
+  s += poly([A(u0, v0, zo(u0)), A(u1, v0, zo(u1)), A(u1, v1, zo(u1)), A(u0, v1, zo(u0))], `fill="${FICHTE.oben}" ${KON12}`);
+  s += poly([A(u0, v1, zu), A(u1, v1, zu), A(u1, v1, zo(u1)), A(u0, v1, zo(u0))], `fill="${farbeV(m, FICHTE)}" ${KON12}`);
+  s += poly([A(u1, v0, zu), A(u1, v1, zu), A(u1, v1, zo(u1)), A(u1, v0, zo(u1))], `fill="${farbeU(m, FICHTE)}" ${KON12}`);
+  // Maserung in Laengsrichtung, Astloch mit dunklem Rand
+  for (const v of [0.36, 0.62]) {
+    s += linienzug([0.1, 0.5, 0.9, 1.3, 1.7, 1.9].map((u) => A(u, v, zo(u))), 'stroke="#b98a5a" stroke-width="0.7" stroke-linecap="round" opacity="0.7"');
+  }
+  s += ellipseAuf(m, 1.2, 0.5, zo(1.2), 0.07, 0.11, 'fill="#9a6a40" stroke="#7a4a2c" stroke-width="0.6"');
+  s += ellipseAuf(m, 1.2, 0.5, zo(1.2), 0.04, 0.06, 'fill="#5a3a22"');
+  return s;
+}
+
+// Gusseisen-Stirnseite bei lokalem u: zwei verschnoerkelte Beine mit Spirale am Fuss, Bogen und Zarge
+function gussStirn(m, u) {
+  let s = '';
+  for (const vc of [0.12, 0.88]) {
+    const sg = vc < 0.5 ? 1 : -1;
+    // Fussplatte, Spirale nach aussen
+    s += ellipseAuf(m, u, vc, 1.2, 0.07, 0.12, `fill="${GUSS.links}" ${KON12}`);
+    const spirale = [];
+    for (let k = 0; k <= 28; k++) {
+      const a = (k / 28) * 2.6 * Math.PI, r = 0.075 * (1 - k / 34);
+      spirale.push(pkt(m, u, vc - sg * 0.07 + r * Math.cos(a), 6 + 60 * r * Math.sin(a)));
+    }
+    // Bein mit S-Schwung vom Fuss bis unter die Zarge
+    const bein = [];
+    for (let k = 0; k <= 14; k++) {
+      const t = k / 14;
+      bein.push(pkt(m, u, vc + sg * 0.045 * Math.sin(2 * Math.PI * t) * (1 - 0.4 * t), 2 + 70 * t));
+    }
+    s += rohr(bein, 2.8, GUSS) + rohr(spirale, 2.0, GUSS);
+    s += ellipseAuf(m, u, vc, 74, 0.05, 0.05, `fill="${GUSS.oben}" ${KON12}`, 10);
+  }
+  // Bogen zwischen den Beinen, unter der Zarge
+  const bogen = [];
+  for (let k = 0; k <= 12; k++) {
+    const t = k / 12;
+    bogen.push(pkt(m, u, 0.12 + 0.76 * t, 40 - 22 * Math.sin(Math.PI * t)));
+  }
+  s += rohr(bogen, 2.2, GUSS);
+  // Zarge unter der Tischplatte
+  s += rohr([pkt(m, u, 0.12, 68), pkt(m, u, 0.88, 68)], 3, GUSS);
+  return s;
+}
+
+// Untere Gitterablage aus Metallstegen zwischen den Stirnseiten (z 9 bis 11)
+function gitterablage(m) {
+  let s = '';
+  for (const v of [0.1, 0.9]) s += quader(m, 0.12, 1.88, v - 0.03, v + 0.03, 9, 11, GUSS);
+  for (const u of [0.12, 1.88]) s += quader(m, u - 0.03, u + 0.03, 0.1, 0.9, 9, 11, GUSS);
+  for (const v of [0.3, 0.5, 0.7]) s += quader(m, 0.12, 1.88, v - 0.015, v + 0.015, 9, 10.2, GUSS);
+  for (const u of [0.5, 1.0, 1.5]) s += quader(m, u - 0.015, u + 0.015, 0.1, 0.9, 9, 10.2, GUSS);
+  return s;
+}
+
+// Gaertnertisch Gusseisen: Gestell aus zwei Stirnseiten, Gitterablage, fuenf Holzlatten als Platte
+function gaertnertischZeichnen(gx, gy, drehung) {
+  const m = { gx, gy, drehung };
+  let s = schatten(m, 2, 1);
+  s += gussStirn(m, 0.12);
+  s += gitterablage(m);
+  s += gussStirn(m, 1.88);
+  for (const [v0, v1] of [[0.02, 0.18], [0.22, 0.38], [0.42, 0.58], [0.62, 0.78], [0.82, 0.98]]) {
+    s += quader(m, 0, 2, v0, v1, 74, 80, HOLZ) + maser(m, 0, 2, v0, v1, 74, 80, 1);
+  }
+  return s;
+}
+
+// Wandregal: schmaler Holzsockel, Rueckwand, zwei Bretter auf schwarzen Winkeln
+function wandregalZeichnen(gx, gy, drehung) {
+  const m = { gx, gy, drehung };
+  let s = schatten(m, 2, 0.6);
+  s += quader(m, 0.04, 1.96, 0.1, 0.5, 0, 4, HOLZ_DUNKEL);
+  s += quader(m, 0, 2, 0, 0.03, 4, 100, HOLZ_DUNKEL);
+  for (const zb of [42, 96]) {
+    // Winkel: Strebe von der Wand zur Unterseite des Bretts
+    for (const uc of [0.3, 1.7]) {
+      s += prisma(m, uc - 0.04, uc + 0.04, [[0.03, zb], [0.5, zb], [0.5, zb - 4], [0.1, zb - 20], [0.03, zb - 20]], METALL);
+    }
+    s += quader(m, 0, 2, 0.03, 0.55, zb, zb + 4, HOLZ) + maser(m, 0, 2, 0.03, 0.55, zb, zb + 4, 2);
+  }
+  return s;
+}
+
+// Rattan-Geflecht: Zylinder wie zylinder() in moebel.js, Seitenflaeche mit Flechtmuster (Muster in Bildkoordinaten)
+function geflochten(cx, cy, r, z0, z1, farben) {
+  const id = 'flecht-' + (++musterZaehler);
+  const [ox, oy] = iso(cx, cy, 0);
+  const rx = 48 * Math.SQRT2 * r, ry = 24 * Math.SQRT2 * r;
+  const yT = oy - z1, yB = oy - z0;
+  const seite = `M${p2([ox - rx, yT])}A${f(rx)},${f(ry)} 0 0 0 ${p2([ox + rx, yT])}L${p2([ox + rx, yB])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox - rx, yB])}Z`;
+  const rechteSeite = `M${p2([ox, yT - ry])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox, yT + ry])}L${p2([ox, yB + ry])}A${f(rx)},${f(ry)} 0 0 0 ${p2([ox, yB - ry])}Z`;
+  let s = `<defs><pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse">` +
+    `<path d="M0,0 L5,5 M5,0 L0,5" stroke="#a86b43" stroke-width="0.9" fill="none" opacity="0.7"/></pattern></defs>`;
+  s += pfad(seite, `fill="${farben.links}"`) + pfad(rechteSeite, `fill="${farben.rechts}"`) + pfad(seite, `fill="url(#${id})"`);
+  s += pfad(seite, `fill="none" ${KON12}`);
+  s += oval(ox, yT, rx, ry, `fill="${farben.oben}" ${KON12}`);
+  s += oval(ox, yT, rx * 0.8, ry * 0.8, 'fill="none" stroke="#b8844f" stroke-width="0.7" opacity="0.8"');
+  return s;
+}
+
+// Rattan-Etagere: drei gebogene Beine, Mittelstab, drei runde Ebenen mit Flechtmuster
+function etagereZeichnen(gx, gy, drehung) {
+  const m = { gx, gy, drehung };
+  const [cx, cy] = feldPunkt(gx, gy, drehung, 0.5, 0.5);
+  let s = schatten(m, 1, 1);
+  // Beine: hinten zuerst (Winkel 165 und 285 Grad), vorne zuletzt (45 Grad)
+  for (const w of [165, 285, 45]) {
+    const a = (w * Math.PI) / 180;
+    const bein = [];
+    for (let k = 0; k <= 14; k++) {
+      const t = k / 14;
+      const R = 0.36 * (1 - t) + 0.1 * t + 0.07 * Math.sin(Math.PI * t);
+      bein.push(pkt(m, 0.5 + R * Math.cos(a), 0.5 + R * Math.sin(a), 2 + 34 * t));
+    }
+    s += rohr(bein, 3.2, RATTAN, linienzug(bein, `stroke="${RATTAN.rechts}" stroke-width="1" stroke-dasharray="1.5 1.5"`));
+  }
+  // Mittelstab vom unteren bis zum oberen Boden
+  s += rohr([pkt(m, 0.5, 0.5, 36), pkt(m, 0.5, 0.5, 108)], 3.4, RATTAN);
+  // Drei Ebenen von unten nach oben
+  for (const [r, z0, z1] of [[0.46, 36, 40], [0.36, 70, 74], [0.27, 104, 108]]) {
+    s += geflochten(cx, cy, r, z0, z1, RATTAN);
+  }
+  s += ellipseAuf(m, 0.5, 0.5, 110, 0.06, 0.06, `fill="${RATTAN.oben}" ${KON12}`, 12);
+  return s;
+}
+
 export const MOEBEL = {
   tisch_natur: {
     name: 'Pflanzentisch Naturholz',
@@ -373,5 +554,36 @@ export const MOEBEL = {
     tiefe: 1,
     plaetze: [{ dx: 0.5, dy: 0.5, z: 138 }, { dx: 1.5, dy: 0.5, z: 138 }, { dx: 0.5, dy: 0.5, z: 80 }, { dx: 1.5, dy: 0.5, z: 80 }],
     zeichne: (gx, gy, drehung = 0) => metallZeichnen(gx, gy, drehung),
+  },
+  ziegelbrett: {
+    name: 'Brett auf Ziegeln',
+    breite: 2,
+    tiefe: 1,
+    plaetze: [{ dx: 0.5, dy: 0.5, z: 25.2 }, { dx: 1.5, dy: 0.5, z: 24.8 }],
+    zeichne: (gx, gy, drehung = 0) => ziegelbrettZeichnen(gx, gy, drehung),
+  },
+  gaertnertisch_guss: {
+    name: 'Gärtnertisch Gusseisen',
+    breite: 2,
+    tiefe: 1,
+    plaetze: [{ dx: 0.5, dy: 0.5, z: 80 }, { dx: 1.5, dy: 0.5, z: 80 }],
+    zeichne: (gx, gy, drehung = 0) => gaertnertischZeichnen(gx, gy, drehung),
+  },
+  wandregal: {
+    name: 'Wandregal',
+    breite: 2,
+    tiefe: 1,
+    plaetze: [
+      { dx: 0.5, dy: 0.3, z: 46 }, { dx: 1.5, dy: 0.3, z: 46 },
+      { dx: 0.5, dy: 0.3, z: 100 }, { dx: 1.5, dy: 0.3, z: 100 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => wandregalZeichnen(gx, gy, drehung),
+  },
+  rattan_etagere: {
+    name: 'Rattan-Etagere',
+    breite: 1,
+    tiefe: 1,
+    plaetze: [{ dx: 0.44, dy: 0.46, z: 40 }, { dx: 0.56, dy: 0.52, z: 74 }, { dx: 0.48, dy: 0.56, z: 108 }],
+    zeichne: (gx, gy, drehung = 0) => etagereZeichnen(gx, gy, drehung),
   },
 };

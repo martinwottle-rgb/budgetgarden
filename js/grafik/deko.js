@@ -311,10 +311,270 @@ function haengeampel() {
   return gruppe(tr(AMPEL_SCHALE, 1.5), s + inhalt);
 }
 
+// ---------- Neue Deko (Teil 2): Teppich, Vogelhaus, Gartenzwerg, Windspiel, Lichterglas, Springbrunnen ----------
+const STEIN = { oben: '#ece9e3', links: '#d9d6cf', rechts: '#b9b5ac' };
+const HOLZ_D = { links: '#a86b43', rechts: '#8f5a35', oben: '#c98f5a' };
+const METALL_S = { oben: '#eef3f6', links: '#b8c4cc', rechts: '#8f9ba3' };
+const WASSER = '#8fd3ea';
+
+// Bildschirm-Halbachsen einer waagerechten Kreisscheibe mit Radius r (Deko-Einheiten)
+const ebeneRx = (r) => 0.9 * Math.SQRT2 * r;
+const ebeneRy = (r) => 0.45 * Math.SQRT2 * r;
+
+// Waagerechte Kreisscheibe mit Mittelpunkt auf der Achse, Hoehe z
+function scheibe(z, r, attr) {
+  return oval(0, -z, ebeneRx(r), ebeneRy(r), attr);
+}
+
+// Senkrechter Zylinder um die Achse (0, 0), Radius r, Hoehe z0 bis z1. Licht links, Schatten rechts
+function zylinderD(r, z0, z1, farben, kon = KON) {
+  const rx = ebeneRx(r), ry = ebeneRy(r);
+  const yT = -z1, yB = -z0;
+  const seite = `M${p2([-rx, yT])}A${f(rx)},${f(ry)} 0 0 0 ${p2([rx, yT])}L${p2([rx, yB])}A${f(rx)},${f(ry)} 0 0 1 ${p2([-rx, yB])}Z`;
+  const schattenseite = `M${p2([0, yT - ry])}A${f(rx)},${f(ry)} 0 0 1 ${p2([0, yT + ry])}L${p2([0, yB + ry])}A${f(rx)},${f(ry)} 0 0 0 ${p2([0, yB - ry])}Z`;
+  return pfad(seite, `fill="${farben.links}"`) + pfad(schattenseite, `fill="${farben.rechts}"`) +
+    pfad(seite, `fill="none" ${kon}`) + oval(0, yT, rx, ry, `fill="${farben.oben}" ${kon}`);
+}
+
+// Flaeche in einer Ebene x = const (achse 'x') oder y = const (achse 'y'), Kreis mit Radius r um (x, y, z)
+function lochEbene(x, y, z, r, achse, attr) {
+  const pts = [];
+  for (let k = 0; k < 16; k++) {
+    const t = (k / 16) * 2 * Math.PI, c = Math.cos(t) * r, s = Math.sin(t) * r;
+    pts.push(achse === 'y' ? P(x + c, y, z + s) : P(x, y + c, z + s));
+  }
+  return poly(pts, attr);
+}
+
+// Senkrechte Scheibe in der Ebene y = const, Mittelpunkt (x, y, z), Radius r
+function scheibeVert(x, y, z, r, attr) {
+  const pts = [];
+  for (let k = 0; k < 24; k++) {
+    const t = (k / 24) * 2 * Math.PI;
+    pts.push(P(x + r * Math.cos(t), y, z + r * Math.sin(t)));
+  }
+  return poly(pts, attr);
+}
+
+// Teppich: flach liegender Flickenteppich, Segmente in Rosa, Salbei und Creme in Ringen, Fransen am Rand
+function teppich() {
+  const a = 23, b = 16, z = 0.4;
+  const kante = (sc, t) => P(a * sc * Math.cos(t), b * sc * Math.sin(t), z);
+  let s = '';
+  // Fransen: kurze Faeden radial nach aussen
+  for (let k = 0; k < 72; k++) {
+    const t = (k / 72) * 2 * Math.PI;
+    s += linie(kante(1, t), kante(1.12, t), 'stroke="#ece0c4" stroke-width="1.2" stroke-linecap="round"');
+  }
+  const farben = ['#f2b8b5', '#b9d3a8', '#f5ecd8'];
+  const rnd = zufall(91);
+  const ringe = [[1, 0.8], [0.8, 0.6], [0.6, 0.4], [0.4, 0.2], [0.2, 0]];
+  const N = 10;
+  ringe.forEach(([sa, si], ri) => {
+    // Segmentgrenzen mit leichtem Zufallsversatz, je Ring versetzt, damit der Flicken lebendig wirkt
+    const grenzen = [];
+    for (let k = 0; k <= N; k++) {
+      grenzen.push((k / N) * 2 * Math.PI + (k === 0 || k === N ? 0 : (rnd() - 0.5) * 0.22));
+    }
+    for (let k = 0; k < N; k++) {
+      const t0 = grenzen[k], t1 = grenzen[k + 1];
+      const aussen = [], innen = [];
+      for (let j = 0; j <= 3; j++) {
+        const t = t0 + ((t1 - t0) * j) / 3;
+        aussen.push(kante(sa, t));
+        innen.push(kante(si, t));
+      }
+      s += poly([...aussen, ...innen.reverse()], `fill="${farben[(ri + k) % 3]}" stroke="#e3d2b5" stroke-width="0.6" stroke-linejoin="round"`);
+    }
+  });
+  const umriss = [];
+  for (let k = 0; k < 24; k++) umriss.push(kante(1, (k / 24) * 2 * Math.PI));
+  s += pfad(glatt(umriss), 'fill="none" stroke="#c9a27a" stroke-width="0.9"');
+  return s;
+}
+
+// Vogelhaus: Pfahl, Holzkasten mit Einflugloch und Sitzstange, Schindeldach, Rotkehlchen auf dem First
+function vogelhaus() {
+  let s = oval(0, 0, 13, 6.5, 'fill="#6b4a3a" opacity="0.18"');
+  s += quader(-3, 3, -3, 3, 0, 1.6, HOLZ_D);
+  s += quader(-0.8, 0.8, -0.8, 0.8, 1.6, 33, HOLZ_D);
+  // Kasten mit Brettern (Fugen auf der Vorderseite)
+  s += quader(-6, 6, -5, 5, 33, 41, HOLZ);
+  for (const x of [-4, -2, 0, 2, 4]) s += linie(P(x, 5, 33.5), P(x, 5, 40.5), 'stroke="#a86b43" stroke-width="0.6"');
+  s += lochEbene(0, 5, 37, 1.7, 'y', 'fill="#3d2b20" stroke="#6b4a3a" stroke-width="0.8"');
+  // Sitzstange unter dem Einflugloch
+  s += linie(P(0, 5, 35), P(0, 8.6, 35), 'stroke="#6b4a3a" stroke-width="2.2" stroke-linecap="round"');
+  s += linie(P(0, 5, 35), P(0, 8.6, 35), 'stroke="#c98f5a" stroke-width="1.1" stroke-linecap="round"');
+  // Dach: hinterer Dachhang, Giebel, vorderer Dachhang
+  s += flaeche([[-7.2, -6.8, 40], [7.2, -6.8, 40], [7.2, 0, 45], [-7.2, 0, 45]], `fill="#a8533a" ${KON}`);
+  s += flaeche([[7.2, -6.8, 40], [7.2, 6.8, 40], [7.2, 0, 45]], `fill="#8f4a33" ${KON}`);
+  s += flaeche([[-7.2, 6.8, 40], [7.2, 6.8, 40], [7.2, 0, 45], [-7.2, 0, 45]], `fill="#c4644a" ${KON}`);
+  // Schindeln: vier Reihen von der Traufe zum First, versetzte Stossfugen
+  const z = (y) => 40 + ((6.8 - y) / 6.8) * 5;
+  for (let j = 0; j < 4; j++) {
+    const ya = 6.8 - j * 1.7, yb = ya - 1.7;
+    s += linie(P(-7.2, ya, z(ya)), P(7.2, ya, z(ya)), 'stroke="#8f4a33" stroke-width="0.7"');
+    const versatz = (j % 2) * 1.2;
+    for (let k = 0; k < 7; k++) {
+      const x = -7.2 + versatz + k * 2.4;
+      if (x > -7.2 && x < 7.2) s += linie(P(x, ya, z(ya)), P(x, yb, z(yb)), 'stroke="#8f4a33" stroke-width="0.6"');
+    }
+  }
+  // Rotkehlchen auf dem First
+  const [bx, by] = P(2.5, 0, 45);
+  s += poly([[bx - 1.8, by - 2.2], [bx - 6.4, by - 1.2], [bx - 5.8, by + 0.4], [bx - 1.4, by - 0.4]], 'fill="#6b5240" stroke="#4a3426" stroke-width="0.6" stroke-linejoin="round"');
+  s += oval(bx, by - 3.2, 3.2, 2.6, `fill="#8a6a4a" ${KON}`);
+  s += oval(bx + 1.3, by - 2.4, 2.1, 2.1, 'fill="#ec8a3e"');
+  s += kreis(bx + 2.8, by - 6.4, 2.1, `fill="#8a6a4a" ${KON}`);
+  s += kreis(bx + 3.2, by - 4.6, 1.5, 'fill="#ec8a3e"');
+  s += poly([[bx + 4.7, by - 6.8], [bx + 6.6, by - 6.1], [bx + 4.7, by - 5.4]], 'fill="#4a3426"');
+  s += kreis(bx + 3.4, by - 6.8, 0.5, 'fill="#1f1510"');
+  return s;
+}
+
+// Gartenzwerg: Zipfelmuetze, weisser Bart, blaue Jacke, braune Hose, Schaufel (Blick von vorn, Hoehe ca. 22)
+function gartenzwerg() {
+  const K = 'stroke="#6b4a3a" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"';
+  let s = oval(0, 0, 6, 2.8, 'fill="#6b4a3a" opacity="0.18"');
+  // Stiefel und Hose
+  s += oval(-2.6, -1.2, 2.3, 1.5, `fill="#4a3426" ${K}`) + oval(2.6, -1.2, 2.3, 1.5, `fill="#4a3426" ${K}`);
+  s += pfad('M-4.2,-6 L-4.6,-1.8 L-0.6,-1.8 L-0.2,-6 Z', `fill="#8a6a4a" ${K}`);
+  s += pfad('M0.2,-6 L0.6,-1.8 L4.6,-1.8 L4.2,-6 Z', `fill="#7a5a3c" ${K}`);
+  // Arme seitlich, Jacke mit Schattenseite rechts
+  s += oval(-5.6, -9.5, 1.8, 3.2, `fill="#3f7fb0" ${K}`);
+  s += oval(5.8, -8.8, 1.8, 3.2, `fill="#3f7fb0" ${K}`);
+  s += pfad('M-5.4,-5.5 Q-6.2,-10 -4.2,-13.4 Q0,-14.6 4.2,-13.4 Q6.2,-10 5.4,-5.5 Q0,-4.6 -5.4,-5.5 Z', `fill="#3f7fb0" ${K}`);
+  s += pfad('M0.2,-13.9 Q6.2,-10 5.4,-5.5 Q0,-4.6 0.2,-4.6 Z', 'fill="#2f6494" opacity="0.6"');
+  s += pfad('M-3.6,-12 Q-4.4,-9 -4,-7', 'fill="none" stroke="#ffffff" stroke-width="0.9" opacity="0.5" stroke-linecap="round"');
+  s += linie([-5, -6.3], [5, -6.3], 'stroke="#4a3426" stroke-width="1"');
+  // Schaufel in der rechten Hand
+  s += linie([6.2, -9.5], [9.6, -2.8], 'stroke="#a86b43" stroke-width="1.1" stroke-linecap="round"');
+  s += pfad('M9.2,-3.4 Q11.4,-1.6 10.2,0.4 Q8.4,1.6 7.4,-0.6 Q7.6,-2.6 9.2,-3.4Z', `fill="#9aa6ad" ${K}`);
+  s += kreis(6, -9.4, 1.1, `fill="#f5d3b0" ${K}`);
+  // Kopf, Nase, Augen, Bart
+  s += kreis(0, -16.2, 3.6, `fill="#f5d3b0" ${K}`);
+  s += kreis(0, -15.4, 0.9, 'fill="#f2a58a"');
+  s += kreis(-1.3, -16.6, 0.45, 'fill="#3d2b20"') + kreis(1.3, -16.6, 0.45, 'fill="#3d2b20"');
+  s += pfad('M-3.4,-16 Q-3.8,-11 0,-10.2 Q3.8,-11 3.4,-16 Q2.4,-14.4 0,-14.6 Q-2.4,-14.4 -3.4,-16Z', `fill="#f7f7f2" ${K}`);
+  // Zipfelmuetze mit Bommel
+  s += pfad('M-4.4,-18.2 Q0,-19.8 4.4,-18.2 Q2.6,-21 1,-23.4 Q-1.2,-21 -4.4,-18.2Z', `fill="#d8332f" ${K}`);
+  s += pfad('M-2.6,-19.4 Q0,-20.4 2.6,-19.4', 'fill="none" stroke="#f0706a" stroke-width="0.7" opacity="0.8"');
+  s += kreis(1.4, -24, 1.2, `fill="#ffffff" ${K}`);
+  return gruppe('transform="scale(0.9)"', s);
+}
+
+// Windspiel: Holzstaender mit Querbalken, fuenf Klangstaebe und Holzscheibe; Pendelbewegung um den Aufhaengepunkt
+function windspiel() {
+  let s = oval(0, 0, 13, 6.5, 'fill="#6b4a3a" opacity="0.18"');
+  // Staender: Sockel, zwei Pfosten, Querbalken oben
+  s += quader(-10.5, 10.5, -3.5, 3.5, 0, 2.5, HOLZ_D);
+  s += quader(-9.2, -7.2, -1.2, 1.2, 2.5, 33, HOLZ_D) + quader(7.2, 9.2, -1.2, 1.2, 2.5, 33, HOLZ_D);
+  s += quader(-10, 10, -1.3, 1.3, 33, 36, HOLZ);
+  // Haengender Teil (schwingt um den Aufhaengepunkt in der Mitte des Balkens)
+  const pivot = P(0, 0, 33);
+  let hang = '';
+  for (const [x, y, L] of [[-7.2, 0, 24], [-3.6, 0, 20], [0, -1.2, 18], [3.6, 0, 22], [7.2, 0, 16]]) {
+    const zb = 33 - L;
+    hang += quader(x - 0.7, x + 0.7, y - 0.7, y + 0.7, zb, 33, METALL_S);
+    hang += linie(P(x - 0.35, y + 0.7, zb + 1.5), P(x - 0.35, y + 0.7, 31), 'stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" opacity="0.85"');
+  }
+  hang += linie(P(0, 1.2, 33), P(0, 1.2, 11.6), 'stroke="#8a6a4a" stroke-width="0.6"');
+  hang += scheibeVert(0, 1.2, 8, 3.4, `fill="${HOLZ.links}" ${KON}`);
+  hang += scheibeVert(0, 1.2, 8, 2.2, 'fill="none" stroke="#a86b43" stroke-width="0.6"');
+  hang += scheibeVert(0, 1.2, 8, 0.6, 'fill="#6b4a3a"');
+  const w = f(pivot[1]);
+  s += `<g><animateTransform attributeName="transform" type="rotate" values="-4 0 ${w};4 0 ${w};-4 0 ${w}" ` +
+    `dur="3s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.5;1" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"/>${hang}</g>`;
+  return s;
+}
+
+// Lichterglas: grosses Einmachglas mit Buegelverschluss, darin eine Lichterkette mit elf flackernden Lampen
+function lichterglas() {
+  const glasId = eindeutig('glas-verlauf');
+  const glowId = eindeutig('licht-glow');
+  const r = 8, H = 30;
+  let s = oval(0, 0, 12.5, 6.2, 'fill="#6b4a3a" opacity="0.18"');
+  s += `<defs><linearGradient id="${glasId}" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/><stop offset="0.55" stop-color="#e6f3ef" stop-opacity="0.22"/>` +
+    `<stop offset="1" stop-color="#c9e2dc" stop-opacity="0.4"/></linearGradient>` +
+    `<radialGradient id="${glowId}"><stop offset="0" stop-color="#ffe08a" stop-opacity="0.9"/>` +
+    `<stop offset="1" stop-color="#ffe08a" stop-opacity="0"/></radialGradient></defs>`;
+  // Glaskoerper
+  const rx = ebeneRx(r), ry = ebeneRy(r);
+  const seite = `M${p2([-rx, -H])}A${f(rx)},${f(ry)} 0 0 0 ${p2([rx, -H])}L${p2([rx, 0])}A${f(rx)},${f(ry)} 0 0 1 ${p2([-rx, 0])}Z`;
+  s += pfad(seite, `fill="url(#${glasId})" ${KON}`);
+  // Lichterkette: Draht mit Durchhang, elf Lampen
+  const N = 11;
+  const lampen = [];
+  for (let k = 0; k < N; k++) {
+    const t = k / (N - 1);
+    lampen.push(P(-6.2 + 12.4 * t, 0, 24.5 - 2 * t - 8.5 * Math.sin(Math.PI * t)));
+  }
+  s += pfad(lampen.map((p, i) => (i ? 'L' : 'M') + p2(p)).join(''), 'fill="none" stroke="#6b4a3a" stroke-width="0.6"');
+  lampen.forEach(([x, y], k) => {
+    const dauer = (2.2 + (k % 4) * 0.35).toFixed(2);
+    const start = (-(k * 0.41)).toFixed(2);
+    s += `<circle cx="${f(x)}" cy="${f(y)}" r="6" fill="url(#${glowId})"><animate attributeName="opacity" ` +
+      `values="0.45;1;0.7;0.95;0.45" dur="${dauer}s" begin="${start}s" repeatCount="indefinite"/></circle>`;
+    s += `<circle cx="${f(x)}" cy="${f(y)}" r="1.6" fill="#ffd65a" stroke="#c9a46a" stroke-width="0.4"><animate attributeName="opacity" ` +
+      `values="0.7;1;0.8;1;0.7" dur="${dauer}s" begin="${start}s" repeatCount="indefinite"/></circle>`;
+  });
+  // Glanz auf dem Glas
+  s += linie([-6.8, -4], [-6.8, -24], 'stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"');
+  s += linie([7.4, -6], [7.4, -22], 'stroke="#ffffff" stroke-width="0.8" stroke-linecap="round" opacity="0.35"');
+  // Deckel aus Metall und Buegelverschluss
+  s += zylinderD(8.7, H, H + 3.2, { oben: '#e4eaee', links: '#b3bfc6', rechts: '#7f8c94' });
+  s += pfad(`M${p2(P(-8.7, 0, H + 1.5))} Q${p2(P(0, 0, H + 14))} ${p2(P(8.7, 0, H + 1.5))}`, 'fill="none" stroke="#7f8c94" stroke-width="1.8" stroke-linecap="round"');
+  s += pfad(`M${p2(P(-8.7, 0, H + 1.5))} Q${p2(P(0, 0, H + 14))} ${p2(P(8.7, 0, H + 1.5))}`, 'fill="none" stroke="#e4eaee" stroke-width="0.6" stroke-linecap="round"');
+  s += kreis(...P(-8.7, 0, H + 1.5), 1.2, `fill="#8f9ba3" ${KON}`) + kreis(...P(8.7, 0, H + 1.5), 1.2, `fill="#8f9ba3" ${KON}`);
+  return s;
+}
+
+// Springbrunnen: Steinbecken in drei Ebenen mit Wasserflaechen, animierte Wasserbaender
+function springbrunnen() {
+  let s = oval(0, 0, 21, 10.5, 'fill="#6b4a3a" opacity="0.18"');
+  // Sockel und untere Schale
+  s += zylinderD(16, 0, 4, STEIN);
+  s += zylinderD(15, 4, 11, STEIN) + scheibe(11, 15, `fill="${STEIN.oben}" ${KON}`);
+  s += scheibe(10.6, 13.2, `fill="${WASSER}" stroke="#5fb3d6" stroke-width="0.8"`);
+  s += oval(-5, -10.9, 4, 1, 'fill="#ffffff" opacity="0.6"');
+  // Mittlere Saeule und Schale
+  s += zylinderD(2.8, 10, 24, STEIN);
+  s += zylinderD(9, 19, 24, STEIN) + scheibe(24, 9, `fill="${STEIN.oben}" ${KON}`);
+  s += scheibe(23.4, 7.6, `fill="${WASSER}" stroke="#5fb3d6" stroke-width="0.8"`);
+  s += oval(-3.5, -23.6, 3, 0.8, 'fill="#ffffff" opacity="0.6"');
+  // Obere Saeule und Schale
+  s += zylinderD(1.8, 24, 28, STEIN);
+  s += zylinderD(5, 28, 32, STEIN) + scheibe(32, 5, `fill="${STEIN.oben}" ${KON}`);
+  s += scheibe(31.4, 4.2, `fill="${WASSER}" stroke="#5fb3d6" stroke-width="0.8"`);
+  s += zylinderD(1.2, 31, 34, STEIN);
+  s += oval(0, -36, 2.6, 2.6, `fill="${STEIN.oben}" ${KON}`);
+  // Wasserstrahlen: Baender mit animiertem Strichmuster, je Ebene ein Kranz
+  const strahl = (rs, zs, re, ze, winkel) => {
+    const a = (winkel * Math.PI) / 180;
+    const S = P(rs * Math.cos(a), rs * Math.sin(a), zs), E = P(re * Math.cos(a), re * Math.sin(a), ze);
+    const C = [(S[0] + E[0]) / 2, (S[1] + E[1]) / 2 - 5];
+    const d = `M${p2(S)} Q${p2(C)} ${p2(E)}`;
+    const anim = '<animate attributeName="stroke-dashoffset" from="0" to="-9.6" dur="1.2s" repeatCount="indefinite"/>';
+    return `<path d="${d}" fill="none" stroke="#9ad8ef" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="2.6 2.2">${anim}</path>` +
+      `<path d="${d}" fill="none" stroke="#e9fbff" stroke-width="0.8" stroke-linecap="round" stroke-dasharray="2.6 2.2">${anim}</path>`;
+  };
+  for (const w of [30, 120, 210, 300]) s += strahl(0.5, 36, 4.3, 31.6, w);
+  for (const w of [0, 70, 140, 220, 290]) s += strahl(5.2, 31.5, 7.3, 23.6, w);
+  for (const w of [20, 100, 180, 260, 340]) s += strahl(9.2, 23.8, 12.2, 10.8, w);
+  return s;
+}
+
 export const DEKO = {
   laterne: { name: 'Laterne', zeichne: () => laterne() },
   bank: { name: 'Bank', zeichne: () => bank() },
   giesskanne: { name: 'Gießkanne', zeichne: () => giesskanne() },
   katze: { name: 'Katze', zeichne: () => katze() },
   haengeampel: { name: 'Hängeampel', haengend: true, zeichne: () => haengeampel() },
+  teppich: { name: 'Teppich', zeichne: () => teppich() },
+  vogelhaus: { name: 'Vogelhaus', zeichne: () => vogelhaus() },
+  gartenzwerg: { name: 'Gartenzwerg', zeichne: () => gartenzwerg() },
+  windspiel: { name: 'Windspiel', zeichne: () => windspiel() },
+  lichterkette: { name: 'Lichterglas', zeichne: () => lichterglas() },
+  springbrunnen: { name: 'Springbrunnen', zeichne: () => springbrunnen() },
 };
