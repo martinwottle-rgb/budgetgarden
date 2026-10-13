@@ -3,7 +3,10 @@
 // Alle Zahlen kommen aus logik.js, nichts wird hier neu gerechnet außer den Auswertungen.
 
 import * as L from '../logik.js';
-import { el, euro, balken, kategorieVon, kurzDatum, langDatum, tage, parseBetrag, betragText } from './bausteine.js';
+import { el, euro, balken, kategorieVon, kurzDatum, langDatum, tage, parseBetrag, betragText, zahl } from './bausteine.js';
+import * as statistik from './statistik.js';
+
+const VORSCHAU_MAX = 3; // so viele Zeiträume reicht die Vorschau nach vorn
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const WOCHENTAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -41,12 +44,19 @@ function istImZeitraum(datum, zr) {
   return datum >= zr.start && datum <= zr.ende;
 }
 
-// Stichtag aus dem Aufruf (Zeitraum blättern). Nie in der Zukunft, nie vor dem Startdatum.
-function stichtagVon(d, heute, param) {
+// Stichtag aus dem Aufruf (Zeitraum blättern). Nie vor dem Startdatum, nie hinter dem Ende der Vorschau.
+function stichtagVon(d, heute, param, maxEnde) {
   const s = param && param.stichtag;
   const st = (d.einstellungen && d.einstellungen.startDatum) || '';
-  if (!s || s > heute || (st && s < st)) return heute;
+  if (!gueltigesDatum(s) || s > maxEnde || (st && s < st)) return heute;
   return s;
+}
+
+// Letzter Tag der Vorschau: VORSCHAU_MAX Zeiträume nach dem aktuellen
+function vorschauEnde(d, jetzt) {
+  let z = jetzt;
+  for (let i = 0; i < VORSCHAU_MAX; i++) z = L.zeitraum(d, L.datumPlusTage(z.ende, 1));
+  return z.ende;
 }
 
 // Nur echte Kalenderdaten im Format JJJJ-MM-TT
@@ -58,21 +68,38 @@ export function zeige(container, ctx, param) {
   const d = ctx.daten;
   const heute = ctx.heute;
   const jetzt = L.zeitraum(d, heute);
-  const zr = L.zeitraum(d, stichtagVon(d, heute, param));
+  const grenze = vorschauEnde(d, jetzt);
+  const statistikAn = !!param && param.ansicht === 'statistik';
+
+  container.append(
+    el('h1', { class: 'titel', text: 'Übersicht' }),
+    reiter(ctx, statistikAn, param)
+  );
+  if (statistikAn) {
+    statistik.zeige(container, ctx);
+    return;
+  }
+
+  const zr = L.zeitraum(d, stichtagVon(d, heute, param, grenze));
   const istAktuell = zr.start === jetzt.start;
+  const zukunft = zr.start > heute;
   const vb = L.verfuegbar(d, zr);
   const ausgegeben = L.ausgabenZwischen(d, zr.start, zr.ende);
   const tagesInfo = L.heute(d, heute);
   // Wochenkarte: die Woche von heute, sonst die letzte Woche des angesehenen Zeitraums
   const anker = istAktuell ? heute : zr.ende;
 
+  container.append(zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell, grenze, zukunft));
   container.append(
-    el('h1', { class: 'titel', text: 'Übersicht' }),
-    zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell),
     el('div', { class: 'abschnitt', text: 'Kalender dieses Zeitraums' }),
-    kalenderKarte(ctx, zr, heute),
-    el('div', { class: 'abschnitt', text: istAktuell ? 'Diese Woche' : 'Letzte Woche des Zeitraums' }),
-    wochenKarte(ctx, zr, anker, istAktuell ? heute : null),
+    kalenderKarte(ctx, zr, heute)
+  );
+  if (zukunft) {
+    container.append(el('section', { class: 'karte leer klein', text: 'Für diesen Zeitraum gibt es noch keine Buchungen. Sobald er beginnt, siehst du hier Woche, Kategorien und Buchungen.' }));
+    return;
+  }
+  container.append(
+    wochenKarte(ctx, zr, anker, istAktuell ? 'Diese Woche' : 'Letzte Woche des Zeitraums'),
     el('div', { class: 'abschnitt', text: 'Ausgaben nach Kategorie' }),
     kategorieKarte(d, zr),
     el('div', { class: 'abschnitt', text: 'Vergleich mit früheren Zeiträumen' }),
@@ -82,48 +109,92 @@ export function zeige(container, ctx, param) {
   );
 }
 
+// Reiter oben: Zeitraum oder Statistik
+function reiter(ctx, statistikAn, param) {
+  const knopf = (text, aktiv, p) => el('button', {
+    type: 'button', role: 'tab', 'aria-selected': aktiv ? 'true' : 'false',
+    class: aktiv ? 'aktiv' : '', text,
+    onclick: () => ctx.navigiere('uebersicht', p)
+  });
+  return el('div', { class: 'reiter', role: 'tablist', 'aria-label': 'Ansicht der Übersicht' },
+    knopf('Zeitraum', !statistikAn, param && param.stichtag ? { stichtag: param.stichtag } : null),
+    knopf('Statistik', statistikAn, { ansicht: 'statistik' })
+  );
+}
+
 // ---------- Zeitraum ----------
 
-function zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell) {
+const HINWEIS_DAVOR = 'Davor hast du die App noch nicht benutzt';
+const HINWEIS_VORSCHAU = 'Weiter als 3 Zeiträume in die Zukunft zeigt die Vorschau nicht';
+
+// ‹ geht bis zum Zeitraum, der startDatum enthält; › bis VORSCHAU_MAX Zeiträume in die Zukunft.
+// Nicht erlaubte Pfeile bleiben sichtbar (grau) und sagen per Toast, warum nicht.
+function zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell, grenze, zukunft) {
   const d = ctx.daten;
-  const rest = vb.V - ausgegeben;
-  const tagNr = L.tageZwischen(zr.start, heute) + 1;
-
-  // Vorheriger Zeitraum = Zeitraum des Tages vor dem Start; nicht vor dem Startdatum der App.
-  // Nächster Zeitraum nur, solange der angesehene Zeitraum nicht der aktuelle ist.
-  const vorStichtag = L.datumPlusTage(zr.start, -1);
   const st = (d.einstellungen && d.einstellungen.startDatum) || '';
-  const frueherOk = !st || vorStichtag >= st;
+  const vorStichtag = L.datumPlusTage(zr.start, -1);
   const naechsterStichtag = L.datumPlusTage(zr.ende, 1);
+  const frueherOk = !st || vorStichtag >= st;
+  const weiterOk = naechsterStichtag <= grenze;
 
-  const pfeil = (zeichen, ziel, ok, beschriftung) => el('button', {
-    type: 'button', class: 'bu11-pfeil', text: zeichen, 'aria-label': beschriftung,
-    disabled: ok ? null : true,
-    onclick: () => ctx.navigiere('uebersicht', { stichtag: ziel })
+  const pfeil = (zeichen, ok, ziel, hinweis, beschriftung) => el('button', {
+    type: 'button',
+    class: 'st12-pfeil' + (ok ? '' : ' aus'),
+    text: zeichen,
+    'aria-label': beschriftung,
+    'aria-disabled': ok ? null : 'true',
+    onclick: () => (ok ? ctx.navigiere('uebersicht', { stichtag: ziel }) : ctx.toast(hinweis))
   });
+
+  const kopf = el('div', { class: 'st12-zr-kopf' },
+    pfeil('‹', frueherOk, vorStichtag, HINWEIS_DAVOR, 'Früherer Zeitraum'),
+    el('div', { class: 'st12-zr-mitte' },
+      el('div', { class: 'klein', text: zukunft ? 'Vorschau' : (istAktuell ? 'Zeitraum' : 'Vergangener Zeitraum') }),
+      el('div', { class: 'st12-zr-titel', text: `${datumLang(zr.start)} bis ${datumLang(zr.ende)}` })
+    ),
+    pfeil('›', weiterOk, naechsterStichtag, HINWEIS_VORSCHAU, 'Nächster Zeitraum')
+  );
 
   const posten = el('div', { class: 'ue-posten' }, vb.posten.map(p => el('div', { class: 'ue-posten-zeile' },
     el('span', { text: p.name }),
     el('span', { class: 'ue-zahl ' + (p.betrag < 0 ? 'negativ' : 'positiv'), text: (p.betrag > 0 ? '+' : '') + euro(p.betrag) })
   )));
+  const details = el('details', { class: 'ue-details' },
+    el('summary', { class: 'ue-summe' },
+      el('span', { text: 'Verfügbar' }),
+      el('span', { class: 'ue-zahl', text: euro(vb.V) })
+    ),
+    posten
+  );
 
+  if (zukunft) {
+    const fix = vb.posten.filter(p => p.art === 'fixkosten').reduce((s, p) => s + p.betrag, 0);
+    const tagesbudget = L.rundeCent(vb.V / zr.tage);
+    return el('section', { class: 'karte ue-zeitraum' },
+      kopf,
+      el('div', { class: 'st12-vorschau-marke', text: 'Vorschau' }),
+      el('div', { class: 'klein', text: tage(zr.tage) }),
+      details,
+      el('div', { class: 'ue-kennzahlen' },
+        el('div', {},
+          el('div', { class: 'klein', text: 'Fixkosten' }),
+          el('div', { class: 'betrag-mittel negativ', text: euro(fix) })
+        ),
+        el('div', {},
+          el('div', { class: 'klein', text: 'Erwartetes Tagesbudget' }),
+          el('div', { class: 'betrag-mittel ' + (tagesbudget < 0 ? 'negativ' : 'positiv'), text: euro(tagesbudget) })
+        )
+      ),
+      el('p', { class: 'klein ue-heute', text: 'Noch keine Ausgaben. Gezeigt wird, was die App für diesen Zeitraum plant: Gehalt, Verträge, Rücklagen und Sparziele, Stand heute.' })
+    );
+  }
+
+  const rest = vb.V - ausgegeben;
+  const tagNr = L.tageZwischen(zr.start, heute) + 1;
   return el('section', { class: 'karte ue-zeitraum' },
-    el('div', { class: 'bu11-zr-kopf' },
-      pfeil('‹', vorStichtag, frueherOk, 'Früherer Zeitraum'),
-      el('div', { class: 'bu11-zr-mitte' },
-        el('div', { class: 'klein', text: istAktuell ? 'Zeitraum' : 'Vergangener Zeitraum' }),
-        el('div', { class: 'ue-zeitraum-titel', text: `${datumLang(zr.start)} bis ${datumLang(zr.ende)}` })
-      ),
-      pfeil('›', naechsterStichtag, !istAktuell, 'Nächster Zeitraum')
-    ),
+    kopf,
     el('div', { class: 'klein', text: istAktuell ? `Tag ${tagNr} von ${zr.tage}` : tage(zr.tage) }),
-    el('details', { class: 'ue-details' },
-      el('summary', { class: 'ue-summe' },
-        el('span', { text: 'Verfügbar' }),
-        el('span', { class: 'ue-zahl', text: euro(vb.V) })
-      ),
-      posten
-    ),
+    details,
     el('div', { class: 'ue-kennzahlen' },
       el('div', {},
         el('div', { class: 'klein', text: 'Ausgegeben' }),
@@ -227,9 +298,34 @@ function tagSheet(ctx, datum) {
 
 // ---------- Woche ----------
 
-// anker: Tag, dessen Woche gezeigt wird. markHeute: Tag für die Heute-Markierung (nur im aktuellen Zeitraum)
-function wochenKarte(ctx, zr, anker, markHeute) {
+// Schönste Stufe (1, 2 oder 5 mal 10er-Potenz), die etwa dem Wert entspricht (Cent)
+function niceStufe(v) {
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const f = v / mag;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
+}
+
+// 2 bis 3 Hilfslinien unter dem Höchstwert (Cent), Vielfache einer Stufe
+function hilfslinien(hoch) {
+  const zaehle = (s) => {
+    const r = [];
+    for (let k = 1; k * s <= hoch && r.length < 3; k++) r.push(k * s);
+    return r;
+  };
+  const stufe = niceStufe(hoch / 3);
+  const werte = zaehle(stufe);
+  return werte.length >= 2 ? werte : zaehle(stufe / 2);
+}
+
+// Ganze Euro für Achse und Balkenwerte (Cent in, Text aus)
+function ganzEuro(cent) {
+  return zahl(Math.round(cent / 100));
+}
+
+// anker: Tag, dessen Woche gezeigt wird. Zeigt Balken pro Tag gegen das Tagesbudget.
+function wochenKarte(ctx, zr, anker, titel) {
   const d = ctx.daten;
+  const heute = ctx.heute;
   const montag = L.wochenbeginn(anker);
   const tageWerte = [];
   for (let i = 0; i < 7; i++) {
@@ -238,67 +334,89 @@ function wochenKarte(ctx, zr, anker, markHeute) {
     tageWerte.push({
       datum,
       im,
+      zukunft: datum > heute,
       ausgegeben: im ? L.ausgabenAm(d, datum) : 0,
       B: im ? L.tagesbudget(d, datum) : 0
     });
   }
 
-  // Skala: alles, was im Zeitraum liegt, plus Null
+  const LINKS = 46;
+  const RECHTS = 296;
+  const OBEN = 26;
+  const UNTEN = 176;
+  const HOEHE = 214;
+  const spalte = (RECHTS - LINKS) / 7;
+  const breite = Math.min(22, spalte * 0.6);
+
   const werte = tageWerte.filter(t => t.im).flatMap(t => [t.ausgegeben, t.B]).concat([0]);
-  const hoch = Math.max(...werte);
-  const tief = Math.min(...werte);
-  const spanne = hoch - tief || 1;
-
-  const BREITE = 320;
-  const HOEHE = 170;
-  const OBEN = 12;
-  const UNTEN = 130;
-  const spalte = BREITE / 7;
-  const y = (v) => OBEN + ((hoch - v) / spanne) * (UNTEN - OBEN);
+  const hoch = Math.max(1000, ...werte); // mindestens 10 € Skala
+  const tief = Math.min(0, ...werte);
+  const y = (v) => OBEN + ((hoch - v) / (hoch - tief)) * (UNTEN - OBEN);
   const y0 = y(0);
+  const mitte = (i) => LINKS + spalte * i + spalte / 2;
 
-  const tagGruppen = [];
-  const linie = [];
+  const info = el('div', { class: 'st12-info klein', 'aria-live': 'polite', text: 'Tippe auf einen Balken für Datum, Ausgaben und Budget.' });
+  const infoText = (t) => {
+    const k = langDatum(t.datum);
+    if (!t.im) return `${k}: nicht im Zeitraum`;
+    if (t.zukunft) return `${k}: noch offen, Budget ${euro(t.B)}`;
+    return `${k}: ausgegeben ${euro(t.ausgegeben)}, Budget ${euro(t.B)}`;
+  };
+
+  const kinder = [];
+  for (const v of hilfslinien(hoch)) {
+    kinder.push(svg('line', { x1: LINKS, x2: RECHTS, y1: y(v).toFixed(1), y2: y(v).toFixed(1), class: 'st12-achse' }));
+    kinder.push(svg('text', { x: LINKS - 6, y: (y(v) + 4).toFixed(1), 'text-anchor': 'end', class: 'st12-achsentext' }, ganzEuro(v) + ' €'));
+  }
+  kinder.push(svg('line', { x1: LINKS, x2: RECHTS, y1: y0.toFixed(1), y2: y0.toFixed(1), class: 'st12-nulllinie' }));
+  kinder.push(svg('text', { x: LINKS - 6, y: (y0 + 4).toFixed(1), 'text-anchor': 'end', class: 'st12-achsentext' }, '0 €'));
+
   tageWerte.forEach((t, i) => {
-    const mitte = spalte * i + spalte / 2;
-    const breite = 26;
-    const gruppe = svg('g', {});
-    gruppe.append(svg('title', {}, document.createTextNode(
-      t.im ? `${WOCHENTAGE[i]} ${kurzDatum(t.datum)}: ausgegeben ${euro(t.ausgegeben)}, Budget ${euro(t.B)}` : `${WOCHENTAGE[i]} ${kurzDatum(t.datum)}: nicht im Zeitraum`
-    )));
-    if (t.im) {
+    const m = mitte(i);
+    const x0 = m - breite / 2;
+    const gruppe = svg('g', { class: 'st12-tag' });
+    if (t.im && t.zukunft) {
+      const oben = Math.min(y(t.B), y0);
+      const h = Math.max(2, Math.abs(y(t.B) - y0));
+      gruppe.append(svg('rect', { x: x0.toFixed(1), y: oben.toFixed(1), width: breite.toFixed(1), height: h.toFixed(1), rx: 4, class: 'st12-zukunft' }));
+    } else if (t.im) {
       const ueber = t.ausgegeben > t.B;
-      if (t.ausgegeben !== 0) {
-        const oben = Math.min(y(t.ausgegeben), y0);
-        const h = Math.max(2, Math.abs(y(t.ausgegeben) - y0));
-        gruppe.append(svg('rect', {
-          x: (mitte - breite / 2).toFixed(1), y: oben.toFixed(1), width: breite, height: h.toFixed(1), rx: 6,
-          class: 'ue-saeule ' + (ueber ? 'drueber' : 'gut')
-        }));
-      }
-      linie.push(`${mitte.toFixed(1)},${y(t.B).toFixed(1)}`);
-      gruppe.append(svg('circle', { cx: mitte.toFixed(1), cy: y(t.B).toFixed(1), r: 3.5, class: 'ue-budget-punkt' }));
+      const oben = Math.min(y(t.ausgegeben), y0);
+      const h = Math.max(2, Math.abs(y(t.ausgegeben) - y0));
+      gruppe.append(svg('rect', { x: x0.toFixed(1), y: oben.toFixed(1), width: breite.toFixed(1), height: h.toFixed(1), rx: 4, class: ueber ? 'st12-drueber' : 'st12-gut' }));
+      gruppe.append(svg('text', { x: m.toFixed(1), y: (y(t.ausgegeben) - 5).toFixed(1), 'text-anchor': 'middle', class: 'st12-balkenwert' }, ganzEuro(t.ausgegeben)));
     }
-    tagGruppen.push(gruppe);
+    if (t.im) {
+      gruppe.append(svg('line', { x1: (x0 - 4).toFixed(1), x2: (x0 + breite + 4).toFixed(1), y1: y(t.B).toFixed(1), y2: y(t.B).toFixed(1), class: 'st12-budget' }));
+    }
+    const heuteTag = t.datum === heute;
+    if (heuteTag) {
+      gruppe.append(svg('rect', { x: (m - 16).toFixed(1), y: HOEHE - 30, width: 32, height: 20, rx: 10, class: 'st12-heute-hinter' }));
+    }
+    gruppe.append(svg('text', { x: m.toFixed(1), y: HOEHE - 16, 'text-anchor': 'middle', class: 'st12-tagname' + (heuteTag ? ' heute' : '') + (t.im ? '' : ' aus') }, WOCHENTAGE[i]));
+    // Trefferfläche über der ganzen Spalte, zuletzt, damit sie oben liegt
+    const treffer = svg('rect', { x: (LINKS + spalte * i).toFixed(1), y: 0, width: spalte.toFixed(1), height: HOEHE, class: 'st12-treffer', role: 'button', tabindex: 0, 'aria-label': infoText(t) });
+    const zeige = () => { info.textContent = infoText(t); };
+    treffer.addEventListener('click', zeige);
+    treffer.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); zeige(); } });
+    gruppe.append(treffer);
+    kinder.push(gruppe);
   });
 
-  const chart = svg('svg', { viewBox: `0 0 ${BREITE} ${HOEHE}`, class: 'ue-woche', role: 'img', 'aria-label': 'Ausgaben der Woche gegen das Tagesbudget' },
-    svg('line', { x1: 0, x2: BREITE, y1: y0.toFixed(1), y2: y0.toFixed(1), class: 'ue-nulllinie' }),
-    ...tagGruppen,
-    linie.length > 1 ? svg('polyline', { points: linie.join(' '), class: 'ue-budget-linie' }) : null,
-    ...tageWerte.map((t, i) => svg('text', {
-      x: (spalte * i + spalte / 2).toFixed(1), y: HOEHE - 18, 'text-anchor': 'middle',
-      class: 'ue-tag-beschriftung' + (t.datum === markHeute ? ' heute' : '') + (t.im ? '' : ' aus')
-    }, document.createTextNode(WOCHENTAGE[i]))),
-    ...tageWerte.map((t, i) => svg('text', {
-      x: (spalte * i + spalte / 2).toFixed(1), y: HOEHE - 4, 'text-anchor': 'middle',
-      class: 'ue-tag-datum' + (t.im ? '' : ' aus')
-    }, document.createTextNode(Number(t.datum.slice(8)).toString())))
-  );
+  const chart = svg('svg', { viewBox: `0 0 300 ${HOEHE}`, class: 'st12-svg', role: 'img', 'aria-label': 'Ausgaben der Woche gegen das Tagesbudget' }, ...kinder);
 
   const w = L.woche(d, anker);
   return el('section', { class: 'karte' },
+    el('h2', { class: 'st12-titel', text: titel }),
+    el('p', { class: 'klein st12-erklaer', text: 'Balken = deine Ausgaben pro Tag, gestrichelte Linie = dein Tagesbudget' }),
     chart,
+    info,
+    el('div', { class: 'st12-legende klein' },
+      el('span', {}, el('span', { class: 'st12-muster gut' }), 'im Budget'),
+      el('span', {}, el('span', { class: 'st12-muster drueber' }), 'über dem Budget'),
+      el('span', {}, el('span', { class: 'st12-muster zukunft' }), 'kommt noch'),
+      el('span', {}, el('span', { class: 'st12-muster linie' }), 'Tagesbudget')
+    ),
     el('div', { class: 'ue-woche-werte' },
       el('div', {},
         el('div', { class: 'klein', text: 'Wochenbudget' }),
@@ -312,11 +430,6 @@ function wochenKarte(ctx, zr, anker, markHeute) {
         el('div', { class: 'klein', text: 'Rest' }),
         el('div', { class: 'ue-zahl ' + (w.rest < 0 ? 'negativ' : 'positiv'), text: euro(w.rest) })
       )
-    ),
-    el('div', { class: 'ue-legende klein' },
-      el('span', { class: 'ue-punkt gut' }), ' im Budget',
-      el('span', { class: 'ue-punkt drueber' }), ' drüber',
-      el('span', { class: 'ue-linie-probe' }), ' Tagesbudget'
     )
   );
 }
