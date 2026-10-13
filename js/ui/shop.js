@@ -27,9 +27,11 @@ export function zeige(container, ctx) {
   const karten = reiterWahl === 'raritaet'
     ? raritaetenListe(d).map(r => raritaetKarte(ctx, r))
     : katalog(d).filter(a => a.kategorie === reiterWahl).map(a => (a.kategorie === 'erweiterung' ? erweiterungKarte(ctx, a) : artikelKarte(ctx, a)));
+  const gutscheine = (d.spiel.gutscheine || []).length;
   container.append(
     el('h1', { class: 'titel', text: 'Shop' }),
     samenStand(d),
+    gutscheine ? el('section', { class: 'karte sp12-gutschein-hinweis', text: `🎁 Du hast ${gutscheine} ${gutscheine === 1 ? 'Gutschein' : 'Gutscheine'}` }) : null,
     reiterLeiste(ctx),
     el('div', { class: 'raster' }, karten)
   );
@@ -106,8 +108,10 @@ function reiterLeiste(ctx) {
 // Karte für Pflanzen, Möbel und Deko. Antippen öffnet das Kauf-Blatt.
 function artikelKarte(ctx, a) {
   const samen = ctx.daten.spiel.samen;
-  const gesperrt = !a.freigeschaltet;
-  const zuWenig = samen < a.preis;
+  // Mit Gutschein (Tagesgeschenk) ist der Artikel gratis und unabhängig von Level und Samen
+  const gratis = a.gutschein;
+  const gesperrt = !a.freigeschaltet && !gratis;
+  const zuWenig = !gratis && samen < a.preis;
   const ausgegraut = !a.gezeichnet || gesperrt || zuWenig;
   return el('button', {
     type: 'button',
@@ -116,7 +120,9 @@ function artikelKarte(ctx, a) {
   },
     bildVon(a),
     el('div', { class: 'sh-name', text: a.name }),
-    el('div', { class: 'sh-preis' }, svgBox(muenzSvg(18), 'muenze-klein'), zahl(a.preis)),
+    gratis
+      ? el('div', { class: 'sh-preis sp12-gratis', text: '🎁 Gratis' })
+      : el('div', { class: 'sh-preis' }, svgBox(muenzSvg(18), 'muenze-klein'), zahl(a.preis)),
     gesperrt ? el('div', { class: 'sh-hinweis', text: `🔒 ab Level ${a.level}` }) : null,
     !gesperrt && a.gezeichnet && zuWenig ? el('div', { class: 'sh-hinweis', text: `Noch ${zahl(a.preis - samen)} Samen` }) : null
   );
@@ -200,19 +206,23 @@ function beschreibung(a) {
 // Kauf-Blatt: große Vorschau, Beschreibung, Preis. Kaufen führt zur Platzwahl im Garten.
 function kaufBlatt(ctx, a) {
   const samen = ctx.daten.spiel.samen;
-  const zuWenig = samen < a.preis;
-  const kaufbar = a.gezeichnet && a.freigeschaltet && !zuWenig;
+  const gratis = a.gutschein;
+  const zuWenig = !gratis && samen < a.preis;
+  const kaufbar = a.gezeichnet && (gratis || (a.freigeschaltet && !zuWenig));
   const grund = !a.gezeichnet ? 'Kommt bald.'
-    : !a.freigeschaltet ? `Wird ab Level ${a.level} freigeschaltet.`
-      : zuWenig ? `Dafür fehlen ${zahl(a.preis - samen)} Samen.`
-        : null;
+    : gratis ? null
+      : !a.freigeschaltet ? `Wird ab Level ${a.level} freigeschaltet.`
+        : zuWenig ? `Dafür fehlen ${zahl(a.preis - samen)} Samen.`
+          : null;
   const inhalt = grafikVon(a);
   let blatt = null;
   blatt = ctx.sheet(el('div', {},
     el('h2', { class: 'sh-titel', text: a.name }),
     inhalt ? vorschau(inhalt, 'sh-vorschau-gross') : el('div', { class: 'sh-vorschau-gross sh-bald', text: 'bald' }),
     el('p', { class: 'sh-beschreibung klein', text: beschreibung(a) }),
-    el('div', { class: 'sh-preis sh-preis-gross' }, svgBox(muenzSvg(22), 'muenze-klein'), `${zahl(a.preis)} Samen`),
+    gratis
+      ? el('div', { class: 'sh-preis sh-preis-gross sp12-gratis', text: '🎁 Gratis mit Gutschein' })
+      : el('div', { class: 'sh-preis sh-preis-gross' }, svgBox(muenzSvg(22), 'muenze-klein'), `${zahl(a.preis)} Samen`),
     el('div', { class: 'aktionen' },
       el('button', {
         type: 'button',

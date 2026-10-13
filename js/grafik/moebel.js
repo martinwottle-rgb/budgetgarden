@@ -472,29 +472,80 @@ function geflochten(cx, cy, r, z0, z1, farben) {
   return s;
 }
 
-// Rattan-Etagere: drei gebogene Beine, Mittelstab, drei runde Ebenen mit Flechtmuster
+// Catmull-Rom-Interpolation des Radius ueber der Hoehe z; keys = [[z, Radius], ...] aufsteigend nach z
+function kurveRadius(keys, z) {
+  let i = 0;
+  while (i < keys.length - 2 && z > keys[i + 1][0]) i++;
+  const [z0, y0] = keys[i], [z1, y1] = keys[i + 1];
+  const p0 = keys[Math.max(i - 1, 0)][1], p3 = keys[Math.min(i + 2, keys.length - 1)][1];
+  const t = (z - z0) / (z1 - z0);
+  return 0.5 * (2 * y0 + (y1 - p0) * t + (2 * p0 - 5 * y0 + 4 * y1 - p3) * t * t + (3 * y0 - p0 - 3 * y1 + p3) * t * t * t);
+}
+
+// Geschwungene Rattanstrebe aussen an den Koerben: Winkel a (Grad), Radius folgt der Kurve keys.
+// Doppelte Kontur, quer gesetzte Wicklungen alle paar Pixel. Endet unten in einem Fuss.
+function strebe(m, winkel, keys) {
+  const a = (winkel * Math.PI) / 180;
+  const N = 48, zUnten = keys[0][0], zOben = keys[keys.length - 1][0];
+  const pts = [];
+  for (let k = 0; k <= N; k++) {
+    const z = zUnten + ((zOben - zUnten) * k) / N;
+    const R = kurveRadius(keys, z);
+    pts.push(pkt(m, 0.5 + R * Math.cos(a), 0.5 + R * Math.sin(a), z));
+  }
+  let wick = '';
+  for (let k = 1; k < N; k += 2) {
+    const [x0, y0] = pts[k - 1], [x1, y1] = pts[k + 1], [px, py] = pts[k];
+    const l = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const tx = (x1 - x0) / l, ty = (y1 - y0) / l, nx = -ty, ny = tx;
+    const w = 2, q = 1;
+    wick += linie([px - nx * w + tx * q, py - ny * w + ty * q], [px + nx * w - tx * q, py + ny * w - ty * q],
+      `stroke="${RATTAN.rechts}" stroke-width="0.8" stroke-linecap="round"`);
+  }
+  const fuss = ellipseAuf(m, 0.5 + keys[0][1] * Math.cos(a), 0.5 + keys[0][1] * Math.sin(a), 0.5, 0.07, 0.07, `fill="${RATTAN.rechts}" ${KON12}`, 12);
+  return fuss + rohr(pts, 3, RATTAN, wick);
+}
+
+// Flacher Korb (runde Ablage): Wand mit schraeger Kreuzschraffur, oberer Rand als Band, Oeffnung mit Boden
+function korb(cx, cy, r, z0, z1) {
+  const id = 'rattan-' + (++musterZaehler);
+  const [ox, oy] = iso(cx, cy, 0);
+  const rx = 48 * Math.SQRT2 * r, ry = 24 * Math.SQRT2 * r;
+  const yT = oy - z1, yB = oy - z0;
+  const seite = `M${p2([ox - rx, yT])}A${f(rx)},${f(ry)} 0 0 0 ${p2([ox + rx, yT])}L${p2([ox + rx, yB])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox - rx, yB])}Z`;
+  const schattenseite = `M${p2([ox, yT - ry])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox, yT + ry])}L${p2([ox, yB + ry])}A${f(rx)},${f(ry)} 0 0 0 ${p2([ox, yB - ry])}Z`;
+  const rxi = rx * 0.8, ryi = ry * 0.8, tiefe = ry * 0.18;
+  let s = `<defs><pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse">` +
+    `<path d="M0,0 L5,5 M5,0 L0,5" stroke="${RATTAN.rechts}" stroke-width="0.9" fill="none" opacity="0.9"/></pattern>` +
+    `<clipPath id="${id}-oeff"><ellipse cx="${f(ox)}" cy="${f(yT)}" rx="${f(rxi)}" ry="${f(ryi)}"/></clipPath></defs>`;
+  // Wand: Licht links, Schatten rechts, darueber die Kreuzschraffur
+  s += pfad(seite, `fill="${RATTAN.links}"`) + pfad(schattenseite, `fill="${RATTAN.rechts}"`);
+  s += pfad(seite, `fill="url(#${id})"`) + pfad(seite, `fill="none" ${KON12}`);
+  // Oberseite: Rand als dunkleres Band mit Schraffur
+  s += oval(ox, yT, rx, ry, `fill="${RATTAN.rechts}" ${KON12}`);
+  s += oval(ox, yT, rx, ry, `fill="url(#${id})"`);
+  // Oeffnung: dunkles Inneres, der Boden liegt etwas tiefer und ist abgeschnitten
+  s += oval(ox, yT, rxi, ryi, 'fill="#8f5a35" stroke="#6b4a3a" stroke-width="0.8"');
+  s += `<g clip-path="url(#${id}-oeff)">` +
+    oval(ox, yT + tiefe, rxi, ryi, `fill="${RATTAN.rechts}"`) +
+    oval(ox, yT + tiefe, rxi, ryi, `fill="url(#${id})"`) + `</g>`;
+  return s;
+}
+
+// Rattan-Etagere: drei flache Koerbe, ohne Mittelsaeule verbunden durch drei geschwungene Rattanstreben
 function etagereZeichnen(gx, gy, drehung) {
   const m = { gx, gy, drehung };
   const [cx, cy] = feldPunkt(gx, gy, drehung, 0.5, 0.5);
+  // Strebenkurve: Radius (Felder) ueber der Hoehe, aussen an den Koerben vorbei, unten Fuss
+  const KEYS = [[2, 0.5], [20, 0.6], [40, 0.56], [74, 0.45], [104, 0.31]];
   let s = schatten(m, 1, 1);
-  // Beine: hinten zuerst (Winkel 165 und 285 Grad), vorne zuletzt (45 Grad)
-  for (const w of [165, 285, 45]) {
-    const a = (w * Math.PI) / 180;
-    const bein = [];
-    for (let k = 0; k <= 14; k++) {
-      const t = k / 14;
-      const R = 0.36 * (1 - t) + 0.1 * t + 0.07 * Math.sin(Math.PI * t);
-      bein.push(pkt(m, 0.5 + R * Math.cos(a), 0.5 + R * Math.sin(a), 2 + 34 * t));
-    }
-    s += rohr(bein, 3.2, RATTAN, linienzug(bein, `stroke="${RATTAN.rechts}" stroke-width="1" stroke-dasharray="1.5 1.5"`));
+  // Streben so, dass keine genau auf der Bildmitte steht (sonst wirkt sie wie eine Mittelsaeule).
+  // Hintere Strebe zuerst, dann die Koerbe von unten nach oben, zuletzt die vordere Strebe
+  s += strebe(m, 240, KEYS) + strebe(m, 120, KEYS);
+  for (const [r, z1] of [[0.46, 40], [0.36, 74], [0.27, 108]]) {
+    s += korb(cx, cy, r, z1 - 5, z1);
   }
-  // Mittelstab vom unteren bis zum oberen Boden
-  s += rohr([pkt(m, 0.5, 0.5, 36), pkt(m, 0.5, 0.5, 108)], 3.4, RATTAN);
-  // Drei Ebenen von unten nach oben
-  for (const [r, z0, z1] of [[0.46, 36, 40], [0.36, 70, 74], [0.27, 104, 108]]) {
-    s += geflochten(cx, cy, r, z0, z1, RATTAN);
-  }
-  s += ellipseAuf(m, 0.5, 0.5, 110, 0.06, 0.06, `fill="${RATTAN.oben}" ${KON12}`, 12);
+  s += strebe(m, 0, KEYS);
   return s;
 }
 

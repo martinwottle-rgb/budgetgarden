@@ -34,6 +34,8 @@ export function standardDaten(heute) {
       challenges: {},
       bewertet: { tage: [], wochen: [], zeitraeume: [] },
       offeneAbschluesse: [],
+      besuch: { letzter: null, serie: 0 },
+      gutscheine: [],
       gewaechshaus: {
         groesse: 6,
         moebel: [

@@ -356,40 +356,43 @@ function scheibeVert(x, y, z, r, attr) {
   return poly(pts, attr);
 }
 
-// Teppich: flach liegender Flickenteppich, Segmente in Rosa, Salbei und Creme in Ringen, Fransen am Rand
+// Teppich: ovaler, geflochtener Flickenteppich aus konzentrischen Ringen. Jeder Ring ist ein gedrehter
+// Stoffstrang (kurze schraege Striche entlang des Rings), Farben von aussen nach innen. Fransen nur an den Schmalseiten.
 function teppich() {
-  const a = 23, b = 16, z = 0.4;
-  const kante = (sc, t) => P(a * sc * Math.cos(t), b * sc * Math.sin(t), z);
-  let s = '';
-  // Fransen: kurze Faeden radial nach aussen
-  for (let k = 0; k < 72; k++) {
-    const t = (k / 72) * 2 * Math.PI;
-    s += linie(kante(1, t), kante(1.12, t), 'stroke="#ece0c4" stroke-width="1.2" stroke-linecap="round"');
+  const a = 25, b = 15, z = 0.4, R = 6;
+  const pt = (sc, t, dx = 0, dy = 0) => P(a * sc * Math.cos(t) + dx, b * sc * Math.sin(t) + dy, z);
+  const umriss = (sc, n = 48, dx = 0, dy = 0) => {
+    const pts = [];
+    for (let k = 0; k < n; k++) pts.push(pt(sc, (k / n) * 2 * Math.PI, dx, dy));
+    return pts;
+  };
+  // Schatten flach auf dem Boden, nach rechts unten versetzt
+  let s = poly(umriss(1.02, 48, 1.6, 1.4), 'fill="#6b4a3a" opacity="0.16"');
+  // Fransen: duenne, weiche Faeden an den beiden Schmalseiten (t = 0 und t = pi)
+  for (const mitte of [0, Math.PI]) {
+    for (let k = 0; k <= 10; k++) {
+      const t = mitte + (k - 5) * 0.1;
+      const L = 2 + (k % 2) * 0.6;
+      s += linie(pt(1, t), pt(1 + L / a, t), 'stroke="#e3d1ac" stroke-width="0.9" stroke-linecap="round" opacity="0.9"');
+    }
   }
-  const farben = ['#f2b8b5', '#b9d3a8', '#f5ecd8'];
-  const rnd = zufall(91);
-  const ringe = [[1, 0.8], [0.8, 0.6], [0.6, 0.4], [0.4, 0.2], [0.2, 0]];
-  const N = 10;
-  ringe.forEach(([sa, si], ri) => {
-    // Segmentgrenzen mit leichtem Zufallsversatz, je Ring versetzt, damit der Flicken lebendig wirkt
-    const grenzen = [];
-    for (let k = 0; k <= N; k++) {
-      grenzen.push((k / N) * 2 * Math.PI + (k === 0 || k === N ? 0 : (rnd() - 0.5) * 0.22));
+  // Ringe von aussen nach innen: Altrosa, Creme, Salbei, Creme, Altrosa, Mitte Senf
+  const farben = ['#e8a9a4', '#f3e6cf', '#b9d3a8', '#f3e6cf', '#e8a9a4', '#e9c46a'];
+  const dunkel = { '#e8a9a4': '#c77f79', '#f3e6cf': '#cdb38a', '#b9d3a8': '#86aa6e', '#e9c46a': '#b98a34' };
+  const K = 32;
+  for (let r = 0; r < R; r++) {
+    const sa = 1 - r / R, si = 1 - (r + 1) / R;
+    const f0 = farben[r], d = dunkel[f0];
+    s += poly([...umriss(sa), ...umriss(si).reverse()], `fill="${f0}" stroke="${d}" stroke-width="0.6" stroke-linejoin="round"`);
+    // Flechtstruktur: dunkler Strang und versetzter heller Strang, beide schraeg ueber den Ring
+    const m = 0.18 * (sa - si);
+    for (let k = 0; k < K; k++) {
+      const t = (k / K) * 2 * Math.PI;
+      s += linie(pt(si + m, t), pt(sa - m, t + 0.12), `stroke="${d}" stroke-width="0.9" stroke-linecap="round" opacity="0.7"`);
+      s += linie(pt(si + m, t + Math.PI / K), pt(sa - m, t + Math.PI / K + 0.12), 'stroke="#ffffff" stroke-width="0.5" stroke-linecap="round" opacity="0.45"');
     }
-    for (let k = 0; k < N; k++) {
-      const t0 = grenzen[k], t1 = grenzen[k + 1];
-      const aussen = [], innen = [];
-      for (let j = 0; j <= 3; j++) {
-        const t = t0 + ((t1 - t0) * j) / 3;
-        aussen.push(kante(sa, t));
-        innen.push(kante(si, t));
-      }
-      s += poly([...aussen, ...innen.reverse()], `fill="${farben[(ri + k) % 3]}" stroke="#e3d2b5" stroke-width="0.6" stroke-linejoin="round"`);
-    }
-  });
-  const umriss = [];
-  for (let k = 0; k < 24; k++) umriss.push(kante(1, (k / 24) * 2 * Math.PI));
-  s += pfad(glatt(umriss), 'fill="none" stroke="#c9a27a" stroke-width="0.9"');
+  }
+  s += pfad(glatt(umriss(1, 24)), 'fill="none" stroke="#c9a27a" stroke-width="0.9"');
   return s;
 }
 

@@ -1770,3 +1770,322 @@ body.vollbild header#kopf { display: none; }
 
 /* Szene: Objekte bleiben antippbar, auch wenn sie in einer Licht-Ebene ohne Klicks liegen */
 svg [data-id], svg [data-ort] { pointer-events: auto; cursor: pointer; }
+
+/* 1.2 statistik */
+
+/* Übersicht: Zeitraum blättern (‹ ›), 44 px, nicht erlaubte Pfeile grau mit Hinweis */
+.st12-zr-kopf { display: flex; align-items: center; gap: 6px; }
+.st12-zr-mitte { flex: 1; min-width: 0; text-align: center; }
+.st12-zr-titel { font-size: 17px; font-weight: 800; margin: 4px 0 2px; line-height: 1.25; overflow-wrap: anywhere; }
+.st12-pfeil {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sand);
+  color: var(--braun);
+  font: inherit;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.st12-pfeil.aus { background: #e4dbd0; color: #a8978a; }
+.st12-pfeil:active { transform: translateY(2px); }
+.st12-vorschau-marke {
+  display: inline-block;
+  margin: 6px 0 2px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--braun);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* Karten der Statistik */
+.st12-titel { font-size: 17px; font-weight: 800; margin: 0 0 2px; line-height: 1.25; }
+.st12-erklaer { margin: 0 0 10px; line-height: 1.35; }
+.st12-info { min-height: 1.4em; margin-top: 8px; color: var(--braun); font-weight: 700; }
+.st12-satz { font-weight: 800; margin: 6px 0 4px; }
+.st12-fuss { margin: 10px 0 0; line-height: 1.35; }
+.st12-unter { font-size: 14px; font-weight: 800; color: var(--braun-2); margin: 12px 0 4px; }
+.st12-leer { text-align: center; color: var(--braun-2); padding: 14px 8px; line-height: 1.4; margin: 0; }
+.st12-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.st12-svg text { font-family: var(--schrift); }
+.st12-treffer { fill: transparent; cursor: pointer; }
+.st12-tippbar { cursor: pointer; }
+
+/* Kennzahlen-Kacheln */
+.st12-kacheln { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 12px; }
+.st12-kachel { min-width: 0; padding: 12px; border-radius: 16px; background: var(--creme); box-shadow: var(--schatten); }
+.karte .st12-kachel { background: #fff8ee; box-shadow: none; }
+.st12-kachel-breit { grid-column: 1 / -1; }
+.st12-kachel-wert { font-size: 21px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.st12-kachel-text { font-size: 13px; color: var(--braun-2); margin-top: 4px; line-height: 1.3; }
+.st12-prognose-wert { font-size: 22px; font-weight: 800; line-height: 1.2; margin-bottom: 8px; }
+.st12-prognose-wert.positiv { color: var(--positiv); }
+.st12-prognose-wert.negativ { color: var(--negativ); }
+
+/* Achsen und Beschriftung */
+.st12-achse { stroke: rgba(107, 74, 58, 0.14); stroke-width: 1; }
+.st12-nulllinie { stroke: rgba(107, 74, 58, 0.35); stroke-width: 1; }
+.st12-achsentext { font-size: 12px; fill: var(--braun-2); font-variant-numeric: tabular-nums; }
+.st12-achsentext.heute { fill: var(--koralle-dunkel); font-weight: 800; }
+.st12-balkenwert { font-size: 12px; font-weight: 800; fill: var(--braun); font-variant-numeric: tabular-nums; }
+.st12-tagname { font-size: 13px; font-weight: 800; fill: var(--braun); }
+.st12-tagname.heute { fill: var(--koralle-dunkel); }
+.st12-tagname.aus { fill: #c4ab98; }
+.st12-heute-hinter { fill: rgba(242, 193, 78, 0.35); }
+.st12-heute-rahmen { fill: none; stroke: var(--braun); stroke-width: 2; }
+.st12-heute-linie { stroke: var(--koralle-dunkel); stroke-width: 1.5; stroke-dasharray: 3 3; }
+
+/* Balken, Flächen und Linien */
+.st12-gut { fill: var(--positiv); }
+.st12-drueber { fill: var(--negativ); }
+.st12-normal { fill: var(--mint); }
+.st12-teuer { fill: var(--koralle); }
+.st12-zukunft { fill: #f4ece0; stroke: #c4ab98; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.st12-budget { fill: none; stroke: var(--braun); stroke-width: 2; stroke-dasharray: 4 3; }
+.st12-budget-linie { fill: none; stroke: var(--braun); stroke-width: 2; stroke-dasharray: 5 4; stroke-linejoin: round; }
+.st12-ideal { fill: none; stroke: var(--braun-2); stroke-width: 2; stroke-dasharray: 5 4; stroke-linejoin: round; }
+.st12-linie { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.st12-flaeche { fill: rgba(169, 211, 165, 0.45); stroke: none; }
+.st12-zelle-gut { fill: #bfe0b8; }
+.st12-zelle-drueber { fill: #f2b8b2; }
+.st12-zelle-leer { fill: #e6ddd0; }
+.st12-spur { fill: rgba(107, 74, 58, 0.12); }
+.st12-fortschritt { fill: var(--mint); }
+.st12-einkommen { stroke: var(--braun); stroke-width: 2; stroke-dasharray: 4 3; }
+.st12-segment { stroke: var(--creme); stroke-width: 1; }
+.st12-donut-spur { fill: none; stroke: rgba(107, 74, 58, 0.12); }
+.st12-donut-klein { font-size: 12px; fill: var(--braun-2); }
+.st12-donut-wert { font-size: 15px; font-weight: 800; fill: var(--braun); font-variant-numeric: tabular-nums; }
+.st12-donut-huelle { display: flex; justify-content: center; margin: 4px 0 8px; }
+.st12-donut { display: block; width: 180px; height: 180px; }
+
+/* Legende mit Farbmustern */
+.st12-legende { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; color: var(--braun-2); }
+.st12-legende > span { display: inline-flex; align-items: center; }
+.st12-muster { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 4px; }
+.st12-muster.gut { background: var(--positiv); }
+.st12-muster.drueber { background: var(--negativ); }
+.st12-muster.plan { background: var(--mint); }
+.st12-muster.leer { background: #e6ddd0; }
+.st12-muster.zukunft { background: #f4ece0; border: 1.5px dashed #c4ab98; box-sizing: border-box; }
+.st12-muster.linie { width: 18px; height: 0; border-radius: 0; border-top: 2px dashed var(--braun); }
+.st12-punkt { display: inline-block; width: 12px; height: 12px; border-radius: 4px; }
+
+/* Kategorien und Listen */
+.st12-kat-liste { margin-top: 6px; }
+.st12-kat-zeile {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(107, 74, 58, 0.12);
+  font-size: 15px;
+  cursor: pointer;
+}
+.st12-kat-zeile:last-child { border-bottom: 0; }
+.st12-kat-zeile .ue-zahl { font-size: 14px; }
+.st12-kat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.st12-liste-zeile { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 0; border-bottom: 1px dashed rgba(107, 74, 58, 0.12); }
+.st12-liste-zeile:last-child { border-bottom: 0; }
+.st12-liste-emoji { flex: 0 0 32px; font-size: 20px; text-align: center; }
+.st12-liste-text { flex: 1; min-width: 0; }
+.st12-liste-name { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st12-liste-wert { font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.st12-ziel { padding: 10px 0; border-bottom: 1px dashed rgba(107, 74, 58, 0.12); }
+.st12-ziel:last-child { border-bottom: 0; }
+.st12-ziel-kopf { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.st12-ziel-kopf .st12-liste-name { min-width: 0; }
+
+
+/* 1.2 ziehen */
+.zi12-platz { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.zi12-platz svg { touch-action: pan-y; }
+.zi12-platz.zi12-bewegen svg { touch-action: none; }
+.zi12-bewegen .zi12-kippen { animation: zi12-wackeln 0.28s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center bottom; }
+.zi12-zieht { filter: drop-shadow(0 6px 5px rgba(61, 43, 32, 0.35)); }
+.zi12-zieht > .zi12-kippen { animation: none; }
+.zi12-gewaehlt { filter: drop-shadow(0 0 4px #6fae6a); }
+.zi12-leiste { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.zi12-leiste span { font-weight: 700; }
+.zi12-fertig { min-height: 44px; }
+.zi12-dreh { position: absolute; z-index: 2; width: 44px; height: 44px; margin: 0; padding: 0; border: 2px solid #c98f5a; border-radius: 50%; background: #fff8ee; color: #3d2b20; font-size: 22px; line-height: 1; transform: translate(-50%, -50%); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); cursor: pointer; }
+@keyframes zi12-wackeln {
+  from { transform: rotate(-1.2deg); }
+  to { transform: rotate(1.2deg); }
+}
+
+/* 1.2 spiel */
+
+/* Level-Kreis in der Kopfleiste ist antippbar (öffnet das Level-Blatt) */
+.sp12-level-knopf { cursor: pointer; border-radius: 50%; }
+.sp12-level-knopf:focus-visible { outline: 3px solid var(--koralle); outline-offset: 2px; }
+
+/* Level-Blatt */
+.sp12-level { display: flex; flex-direction: column; gap: 12px; }
+.sp12-level-gross {
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  color: var(--braun);
+  font-variant-numeric: tabular-nums;
+}
+.sp12-xp {
+  height: 14px;
+  border-radius: 999px;
+  background: var(--sand);
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(107, 74, 58, 0.2);
+}
+.sp12-xp span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--positiv), #9ccc7a);
+}
+.sp12-xp-text { text-align: center; color: var(--braun-2); }
+.sp12-ueberschrift { margin: 8px 0 0; font-size: 17px; font-weight: 800; color: var(--braun); }
+.sp12-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sp12-liste li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--sand);
+}
+.sp12-tabelle { width: 100%; border-collapse: collapse; font-size: 15px; }
+.sp12-tabelle td { padding: 6px 4px; border-bottom: 1px dashed rgba(107, 74, 58, 0.25); }
+.sp12-tabelle td:last-child { text-align: right; white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sp12-raritaet-hinweis { margin: 4px 0 0; color: var(--braun-2); }
+
+/* Tagesgeschenk: 7 Kästchen, Geschenkbox, Belohnung */
+.sp12-geschenk-dialog { display: flex; flex-direction: column; gap: 12px; }
+.sp12-tage { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.sp12-tag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  background: var(--sand);
+  color: var(--braun-2);
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: inset 0 -2px 0 rgba(107, 74, 58, 0.15);
+}
+.sp12-tag.erledigt { background: var(--positiv); color: #fff; }
+.sp12-tag.heute { background: var(--gold); color: var(--braun); animation: sp12-leuchten 1.6s ease-in-out infinite; }
+.sp12-geschenk-mitte { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sp12-geschenk-knopf {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  border-radius: 24px;
+  background: transparent;
+}
+.sp12-geschenk-knopf svg { display: block; width: 150px; height: 150px; overflow: visible; }
+.sp12-geschenk-knopf:not(.offen) svg { animation: sp12-wippen 1.8s ease-in-out infinite; }
+.sp12-deckel { transform-box: view-box; transform-origin: 60px 40px; }
+.sp12-geschenk-knopf.offen .sp12-deckel { animation: sp12-aufspringen 0.7s cubic-bezier(0.2, 1.3, 0.4, 1) forwards; }
+.sp12-hinweis { margin: 0; text-align: center; color: var(--braun-2); }
+.sp12-belohnung-block { display: none; flex-direction: column; align-items: center; gap: 10px; }
+.sp12-belohnung-block.sichtbar { display: flex; animation: sp12-erscheint 0.5s ease-out both; }
+.sp12-samen {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--braun);
+  font-variant-numeric: tabular-nums;
+}
+.sp12-gutschein {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--sand);
+  text-align: center;
+}
+.sp12-gutschein-bild { width: 120px; height: 120px; }
+.sp12-gutschein-vorschau,
+.sp12-gutschein-vorschau svg { display: block; width: 100%; height: 100%; }
+.sp12-danke { width: 100%; }
+.sp12-belohnung { font-size: 18px; font-weight: 800; text-align: center; color: var(--braun); }
+
+/* Shop: Gratis-Marke und Hinweis auf Gutscheine */
+.sp12-gratis {
+  align-self: flex-start;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--braun);
+  font-weight: 800;
+}
+.sp12-gutschein-hinweis {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  text-align: center;
+  font-weight: 800;
+  color: var(--braun);
+  background: #fff0c2;
+}
+
+@keyframes sp12-aufspringen {
+  from { transform: none; }
+  to { transform: translate(-8px, -24px) rotate(-14deg); }
+}
+
+@keyframes sp12-wippen {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+
+@keyframes sp12-erscheint {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes sp12-leuchten {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.7); }
+  50% { box-shadow: 0 0 0 6px rgba(242, 193, 78, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp12-geschenk-knopf svg,
+  .sp12-tag.heute,
+  .sp12-belohnung-block.sichtbar { animation: none; }
+  .sp12-geschenk-knopf.offen .sp12-deckel { animation: none; transform: translate(-8px, -24px) rotate(-14deg); }
+}
+
+/* 1.2 ziehen: Leiste schwebt über der Seite, damit die Szene beim Start des Bewegungsmodus nicht unter dem Finger wegspringt */
+.zi12-leiste {
+  position: fixed;
+  top: calc(var(--sicht-oben, env(safe-area-inset-top, 0px)) + 68px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(456px, calc(100% - 24px));
+  z-index: 30;
+  margin: 0;
+  box-shadow: 0 6px 20px rgba(107, 74, 58, 0.18);
+}

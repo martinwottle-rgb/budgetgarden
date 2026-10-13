@@ -37,6 +37,7 @@ export const PREISE_PFLANZEN = {
 };
 
 export const PREISE_MOEBEL = {
+  ziegelbrett: { name: 'Brett auf Ziegeln', preis: 60, level: 1 },
   tisch_natur: { name: 'Pflanzentisch Naturholz', preis: 150, level: 1 },
   regal_holz: { name: 'Holzregal', preis: 150, level: 1 },
   holzkiste: { name: 'Holzkiste', preis: 150, level: 1 },
@@ -55,12 +56,12 @@ export const PREISE_DEKO = {
   laterne: { name: 'Laterne', preis: 60, level: 1 },
   bank: { name: 'Bank', preis: 80, level: 1 },
   giesskanne: { name: 'Gießkanne', preis: 40, level: 1 },
-  katze: { name: 'Katze', preis: 50, level: 1 },
+  katze: { name: 'Katze', preis: 250, level: 3 },
   teppich: { name: 'Teppich', preis: 60, level: 2 },
   vogelhaus: { name: 'Vogelhaus', preis: 70, level: 2 },
   gartenzwerg: { name: 'Gartenzwerg', preis: 40, level: 3 },
   windspiel: { name: 'Windspiel', preis: 30, level: 3 },
-  lichterkette: { name: 'Lichterkette', preis: 50, level: 4 },
+  lichterkette: { name: 'Lichterglas', preis: 50, level: 4 },
   haengeampel: { name: 'Hängeampel', preis: 60, level: 4 },
   springbrunnen: { name: 'Springbrunnen', preis: 500, level: 5 }
 };
@@ -299,8 +300,52 @@ function zufallAusDatum(text) {
   };
 }
 
-// Zwei Challenges je Woche, deterministisch aus dem Wochenbeginn
-export function challengesDerWoche(wochenbeginn) {
+// Tage ab Startdatum innerhalb der Woche (Einsteiger-Challenges zählen nur ab dem Start)
+function tageAb(daten, wb) {
+  const st = daten.einstellungen.startDatum;
+  const von = st && st > wb ? st : wb;
+  return tageIn({ von, bis: L.datumPlusTage(wb, 6) });
+}
+
+// Zwei Einsteiger-Challenges für eine angefangene Woche (Start mitten in der Woche, weniger als 7 Tage übrig)
+function einsteiger(wb, daten) {
+  const m = tageAb(daten, wb).length;
+  const n = Math.max(1, Math.ceil(m * 0.6));
+  return [
+    {
+      id: 'einstieg_erste_ausgabe',
+      text: 'Trag heute deine erste Ausgabe ein',
+      samen: 20,
+      art: 'zaehl',
+      pruefe: (d, w) => tageAb(d, w).filter(t => buchungenAm(d, t) > 0).length >= 1,
+      fortschritt: (d, w, zr, heute) => ({
+        ist: bisHeute(tageAb(d, w), heute).filter(t => buchungenAm(d, t) > 0).length,
+        soll: 1,
+        einheit: 'Tage'
+      })
+    },
+    {
+      id: 'einstieg_im_budget',
+      text: m === 1 ? 'Bleib am letzten Tag im Budget' : `Bleib an ${n} der restlichen ${m} Tage im Budget`,
+      samen: Math.min(40, 15 * n),
+      art: 'zaehl',
+      pruefe: (d, w) => tageAb(d, w).filter(t => L.tagErfuellt(d, t)).length >= n,
+      fortschritt: (d, w, zr, heute) => ({
+        ist: bisHeute(tageAb(d, w), heute).filter(t => L.tagErfuellt(d, t)).length,
+        soll: n,
+        einheit: 'Tage'
+      })
+    }
+  ];
+}
+
+// Zwei Challenges je Woche, deterministisch aus dem Wochenbeginn. Mit daten: liegt der Start mitten in
+// dieser Woche (weniger als 7 Tage übrig), gibt es Einsteiger-Challenges. Ohne daten wie bisher.
+export function challengesDerWoche(wochenbeginn, daten) {
+  const st = daten && daten.einstellungen ? daten.einstellungen.startDatum : null;
+  if (st && st > wochenbeginn && st <= L.datumPlusTage(wochenbeginn, 6) && tageAb(daten, wochenbeginn).length < 7) {
+    return einsteiger(wochenbeginn, daten);
+  }
   const rnd = zufallAusDatum(wochenbeginn);
   const reihe = challengePool.map((_, i) => i);
   for (let i = reihe.length - 1; i > 0; i--) {
@@ -481,25 +526,49 @@ function abschliessen(d, zr, gut) {
   d.spiel.bewertet.zeitraeume.push({ start: zr.start, erfuellt: imBudget, samen: d.spiel.samen - samenVorher });
 }
 
+// Challenges einer Woche bewerten. komplett: die Woche ist vorbei, pruefe() entscheidet (auch Verbote).
+// Sonst (laufende Woche): nur Zähl-Challenges, die bis einschließlich heute erfüllt sind, werden sofort gutgeschrieben;
+// Verbote warten auf das Wochenende. belohnt verhindert, dass etwas doppelt gezahlt wird.
+function challengesBewerten(d, wb, zr, heute, gut, komplett) {
+  const alt = new Map((d.spiel.challenges[wb] || []).map(e => [e.id, e]));
+  const neu = [];
+  for (const c of challengesDerWoche(wb, d)) {
+    const bisher = !!(alt.get(c.id) && alt.get(c.id).belohnt);
+    let ok = false;
+    if (komplett) {
+      ok = c.pruefe(d, wb, zr);
+    } else if (c.art === 'zaehl') {
+      const f = c.fortschritt(d, wb, zr, heute);
+      ok = f.ist >= f.soll;
+    }
+    if (ok && !bisher) gut('challenge', c.text, c.samen);
+    neu.push({ id: c.id, erfuellt: c.art === 'zaehl' ? (ok || bisher) : ok, belohnt: bisher || ok });
+  }
+  d.spiel.challenges[wb] = neu;
+}
+
 // Woche bewerten. Eine Woche, die einen Zeitraumwechsel enthaelt, wird am Wochenziel des ersten Teils geprueft
 // und am Teil des folgenden Zeitraums; Challenges nur im Zeitraum des Montags.
-function wocheBewerten(d, wb, gut) {
+// startwoche: Start mitten in der Woche. Nur Challenges (Einsteiger), kein Wochenbonus.
+function wocheBewerten(d, wb, gut, startwoche = false) {
   const samenVorher = d.spiel.samen;
   const so = L.datumPlusTage(wb, 6);
   const zrA = L.zeitraum(d, wb);
-  let erfuellt = L.wocheErfuellt(d, wb, zrA);
-  if (zrA.ende < so) {
-    const folgeStart = L.datumPlusTage(zrA.ende, 1);
-    erfuellt = erfuellt && L.wocheErfuellt(d, folgeStart, L.zeitraum(d, folgeStart));
+  let erfuellt = false;
+  if (!startwoche) {
+    erfuellt = L.wocheErfuellt(d, wb, zrA);
+    if (zrA.ende < so) {
+      const folgeStart = L.datumPlusTage(zrA.ende, 1);
+      erfuellt = erfuellt && L.wocheErfuellt(d, folgeStart, L.zeitraum(d, folgeStart));
+    }
+    if (erfuellt) gut('woche', `Woche im Budget (${kurz(wb)} bis ${kurz(so)})`, 50);
   }
-  if (erfuellt) gut('woche', `Woche im Budget (${kurz(wb)} bis ${kurz(so)})`, 50);
-
-  const challenges = challengesDerWoche(wb).map(c => ({ c, ok: c.pruefe(d, wb, zrA) }));
-  d.spiel.challenges[wb] = challenges.map(({ c, ok }) => ({ id: c.id, erfuellt: ok }));
-  for (const { c, ok } of challenges) {
-    if (ok) gut('challenge', `Challenge erfüllt: ${c.text}`, c.samen);
-  }
-  d.spiel.bewertet.wochen.push({ start: wb, erfuellt, samen: d.spiel.samen - samenVorher });
+  // Zähl-Challenges dieser Woche, die schon sofort gutgeschrieben wurden, gehören zur Wochen-Summe
+  const vorab = challengesDerWoche(wb, d)
+    .filter(c => (d.spiel.challenges[wb] || []).some(e => e.id === c.id && e.belohnt))
+    .reduce((s, c) => s + c.samen, 0);
+  challengesBewerten(d, wb, zrA, so, gut, true);
+  d.spiel.bewertet.wochen.push({ start: wb, erfuellt, samen: d.spiel.samen - samenVorher + vorab });
 }
 
 // Alle abgeschlossenen, noch nicht bewerteten Zeitraeume, Tage und Wochen bewerten.
@@ -543,12 +612,22 @@ export function bewerte(daten, heute) {
     sp.bewertet.tage.push({ datum: tag, erfuellt, samen: sp.samen - samenVorher });
   }
 
-  // 3. Komplette Wochen (Montag ab Startdatum, Sonntag vor heute)
+  // 3. Komplette Wochen (Montag ab Startdatum, Sonntag vor heute). Liegt der Start mitten in einer
+  // Woche, wird diese Startwoche nur mit ihren Einsteiger-Challenges bewertet.
   const bekannteWochen = new Set(sp.bewertet.wochen.map(w => w.start));
   let wb = L.wochenbeginn(start);
-  if (wb < start) wb = L.datumPlusTage(wb, 7);
+  if (wb < start) {
+    if (L.datumPlusTage(wb, 6) < heute && !bekannteWochen.has(wb)) wocheBewerten(d, wb, gut, true);
+    wb = L.datumPlusTage(wb, 7);
+  }
   for (; L.datumPlusTage(wb, 6) < heute; wb = L.datumPlusTage(wb, 7)) {
     if (!bekannteWochen.has(wb)) wocheBewerten(d, wb, gut);
+  }
+
+  // 3b. Laufende Woche: Zähl-Challenges sofort gutschreiben (Stand bis einschließlich heute)
+  if (start <= heute) {
+    const wbHeute = L.wochenbeginn(heute);
+    challengesBewerten(d, wbHeute, L.zeitraum(d, wbHeute), heute, gut, false);
   }
 
   // 4. Abzeichen
@@ -663,7 +742,8 @@ function feldFrei(gh, x, y, ausser) {
 // Hoehe der Moebel in px (Oberkante hoechstes Brett bzw. Platte), fuer die Haengeampel. Ohne Eintrag: 100.
 const MOEBEL_HOEHE = {
   regal_holz: 130, tisch_natur: 76, tisch_weiss: 76, leiterregal: 150,
-  metallregal: 140, blumenhocker: 45, holzkiste: 30, steinsockel: 55
+  metallregal: 140, blumenhocker: 45, holzkiste: 30, steinsockel: 55,
+  ziegelbrett: 25, gaertnertisch_guss: 80, wandregal: 100, rattan_etagere: 110
 };
 const HOEHE_UNBEKANNT = 100;
 // Moebel und Pflanzen ueber dieser Hoehe passen nicht unter eine Haengeampel
@@ -792,7 +872,8 @@ export function katalog(daten) {
         preis: e.preis,
         level: e.level,
         freigeschaltet: lvl >= e.level,
-        gezeichnet
+        gezeichnet,
+        gutschein: !!gutscheinFuer(daten, kategorie, typ)
       });
     }
   };
@@ -807,7 +888,8 @@ export function katalog(daten) {
       preis: e.preis,
       level: e.level,
       freigeschaltet: lvl >= e.level,
-      gezeichnet: true
+      gezeichnet: true,
+      gutschein: false
     });
   }
   return liste;
@@ -878,10 +960,12 @@ export function kaufen(daten, kategorie, typ, ort) {
   const eintrag = katalog(daten).find(k => k.kategorie === kategorie && k.typ === typ);
   if (!eintrag) return fehler('Diesen Artikel gibt es nicht.');
   if (!eintrag.gezeichnet) return fehler(eintrag.name + ' ist noch nicht verfügbar.');
-  if (!eintrag.freigeschaltet) return fehler(eintrag.name + ' wird ab Level ' + eintrag.level + ' freigeschaltet.');
+  // Ein Gutschein (Tagesgeschenk) macht den Kauf kostenlos und hebt die Level-Sperre auf
+  if (!eintrag.gutschein && !eintrag.freigeschaltet) return fehler(eintrag.name + ' wird ab Level ' + eintrag.level + ' freigeschaltet.');
+  const preis = eintrag.gutschein ? 0 : eintrag.preis;
 
   const d = kopie(daten);
-  if (d.spiel.samen < eintrag.preis) return fehler('Dafür fehlen ' + (eintrag.preis - d.spiel.samen) + ' Samen.');
+  if (d.spiel.samen < preis) return fehler('Dafür fehlen ' + (preis - d.spiel.samen) + ' Samen.');
   const gh = d.spiel.gewaechshaus;
 
   if (kategorie === 'moebel') {
@@ -899,7 +983,11 @@ export function kaufen(daten, kategorie, typ, ort) {
   } else {
     return fehler('Unbekannte Kategorie.');
   }
-  d.spiel.samen -= eintrag.preis;
+  if (eintrag.gutschein) {
+    const i = (d.spiel.gutscheine || []).findIndex(g => g.kategorie === kategorie && g.typ === typ);
+    d.spiel.gutscheine.splice(i, 1);
+  }
+  d.spiel.samen -= preis;
   return { daten: d };
 }
 
@@ -1011,10 +1099,12 @@ export function wochenRueckblick(daten, wochenbeginn) {
   const tageImBudget = tage.filter(t => (bewertetTage.has(t) ? bewertetTage.get(t) : L.tagErfuellt(daten, t))).length;
 
   const gespeicherteTage = new Map((daten.spiel.bewertet.tage || []).map(t => [t.datum, t]));
+  const startTag = daten.einstellungen.startDatum || '';
   const samenTage = tageIn({ von: wochenbeginn, bis: L.datumPlusTage(wochenbeginn, 6) }).reduce((s, t) => {
     const g = gespeicherteTage.get(t);
     if (g && Number.isFinite(g.samen)) return s + g.samen;
-    const imBudget = g ? g.erfuellt : (t >= f.von && t <= f.bis && L.tagErfuellt(daten, t));
+    // Schätzung nur für Tage ab dem Startdatum (vor dem Start gab es keine Bewertung)
+    const imBudget = g ? g.erfuellt : (t >= f.von && t <= f.bis && t >= startTag && L.tagErfuellt(daten, t));
     return s + (imBudget ? 10 : 0);
   }, 0);
 
@@ -1022,9 +1112,10 @@ export function wochenRueckblick(daten, wochenbeginn) {
   const erfuellt = gespeicherteWoche ? gespeicherteWoche.erfuellt : ausgegeben <= W;
 
   const gespeicherte = daten.spiel.challenges[wochenbeginn];
+  const alle = challengesDerWoche(wochenbeginn, daten);
   const erfuellteChallenges = gespeicherte
-    ? gespeicherte.filter(c => c.erfuellt).map(c => challengePool.find(p => p.id === c.id)).filter(Boolean)
-    : challengesDerWoche(wochenbeginn).filter(c => c.pruefe(daten, wochenbeginn, zr));
+    ? gespeicherte.filter(c => c.erfuellt).map(c => alle.find(p => p.id === c.id)).filter(Boolean)
+    : alle.filter(c => c.pruefe(daten, wochenbeginn, zr));
   const samenChallenges = erfuellteChallenges.reduce((s, c) => s + c.samen, 0);
   const samenWoche = gespeicherteWoche && Number.isFinite(gespeicherteWoche.samen)
     ? gespeicherteWoche.samen
@@ -1052,4 +1143,56 @@ export function wochenRueckblick(daten, wochenbeginn) {
     topKategorie,
     erfuellt
   };
+}
+
+// ---------- Tagesgeschenk ----------
+
+// Samen je Tag der Serie (Tag 1 bis 7). Tag 4 und 7 bringen zusätzlich einen Gutschein.
+const GESCHENK_SAMEN = [10, 15, 20, 15, 25, 30, 60];
+
+// Gutschein-Artikel deterministisch aus dem Datum wählen. Null, wenn die Liste leer ist.
+function gutscheinAusDatum(liste, heute, salz) {
+  if (!liste.length) return null;
+  const r = zufallAusDatum(heute + '|' + salz)();
+  return liste[Math.floor(r * liste.length)];
+}
+
+// Gutschein eines Artikels (kategorie + typ) oder null
+export function gutscheinFuer(daten, kategorie, typ) {
+  return (daten.spiel.gutscheine || []).find(g => g.kategorie === kategorie && g.typ === typ) || null;
+}
+
+// Tagesgeschenk für heute. verfuegbar: noch nicht abgeholt. tag: 1 bis 7 der Serie.
+// Serie: gestern besucht → +1 (nach 7 wieder 1), sonst 1.
+export function tagesgeschenk(daten, heute) {
+  const besuch = daten.spiel.besuch || { letzter: null, serie: 0 };
+  const verfuegbar = besuch.letzter !== heute;
+  const serieNeu = besuch.letzter === L.datumPlusTage(heute, -1) ? ((besuch.serie || 0) % 7) + 1 : 1;
+  const tag = verfuegbar ? serieNeu : (besuch.serie || 1);
+  const belohnung = { samen: GESCHENK_SAMEN[tag - 1] };
+  const k = katalog(daten);
+  if (tag === 4) {
+    const liste = k.filter(a => a.kategorie === 'pflanze' && a.gezeichnet && a.freigeschaltet && groesseVon(a.typ) === 'klein');
+    const g = gutscheinAusDatum(liste, heute, 'pflanze');
+    if (g) belohnung.gutschein = { kategorie: 'pflanze', typ: g.typ };
+  }
+  if (tag === 7) {
+    const lvl = levelAus(daten.spiel.xp).level;
+    const liste = k.filter(a => a.kategorie === 'deko' && a.gezeichnet && a.level <= lvl + 1);
+    const g = gutscheinAusDatum(liste, heute, 'deko');
+    if (g) belohnung.gutschein = { kategorie: 'deko', typ: g.typ };
+  }
+  return { verfuegbar, tag, belohnung };
+}
+
+// Tagesgeschenk abholen: Samen und XP, Gutschein, Besuch. Nur einmal am Tag.
+export function geschenkAbholen(daten, heute) {
+  const g = tagesgeschenk(daten, heute);
+  if (!g.verfuegbar) return fehler('Das Tagesgeschenk hast du heute schon abgeholt.');
+  const d = kopie(daten);
+  d.spiel.samen += g.belohnung.samen;
+  d.spiel.xp += g.belohnung.samen;
+  if (g.belohnung.gutschein) d.spiel.gutscheine = [...(d.spiel.gutscheine || []), { ...g.belohnung.gutschein }];
+  d.spiel.besuch = { letzter: heute, serie: g.tag };
+  return { daten: d, belohnung: g.belohnung };
 }

@@ -3,8 +3,10 @@
 
 import * as L from './logik.js';
 import { laden, speichern as persistieren, standardDaten } from './speicher.js';
-import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze } from './spiel.js';
+import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze, katalog, tagesgeschenk, geschenkAbholen } from './spiel.js';
 import { RARITAETEN } from './grafik/raritaeten.js';
+import { PFLANZEN } from './grafik/pflanzen.js';
+import { DEKO } from './grafik/deko.js';
 import { vorschau, einpassen, tageszeitAus } from './szene.js';
 import { swRegistrieren } from './push.js';
 import { el, muenzSvg, zahl, heutigesDatum, svgBox, kurzDatum, tage, kategorieVon } from './ui/bausteine.js';
@@ -269,9 +271,12 @@ function muenzFlug(anzahl) {
 // bei Samen Münzflug und Zählen (einmal)
 function belohnen(ereignisse) {
   const samen = ereignisse.reduce((s, e) => s + (e.samen || 0), 0);
-  const anzahl = (art) => ereignisse.filter(e => e.art === art).length;
+  // Challenges bekommen ihren eigenen Glückwunsch-Dialog, deshalb nicht im Sammel-Toast
+  const ohneChallenges = ereignisse.filter(e => e.art !== 'challenge');
+  const samenToast = ohneChallenges.reduce((s, e) => s + (e.samen || 0), 0);
+  const anzahl = (art) => ohneChallenges.filter(e => e.art === art).length;
   const teile = [];
-  if (samen > 0) teile.push(`+${zahl(samen)} Samen`);
+  if (samenToast > 0) teile.push(`+${zahl(samenToast)} Samen`);
   const tage = anzahl('tag');
   if (tage) teile.push(`${tage} ${tage === 1 ? 'Tag' : 'Tage'} im Budget`);
   const wochen = anzahl('woche');
@@ -280,8 +285,6 @@ function belohnen(ereignisse) {
   if (zeitraeume) teile.push(`${zeitraeume} ${zeitraeume === 1 ? 'Zeitraum' : 'Zeiträume'} geschafft`);
   const serien = anzahl('serie');
   if (serien) teile.push(`${serien} ${serien === 1 ? 'Serie' : 'Serien'} geschafft`);
-  const challenges = anzahl('challenge');
-  if (challenges) teile.push(`${challenges} ${challenges === 1 ? 'Challenge' : 'Challenges'} erfüllt`);
   if (teile.length) toast(teile.join(' · '));
 
   ereignisse.filter(e => e.art === 'abzeichen').forEach((e, i) => {
@@ -296,6 +299,11 @@ function belohnen(ereignisse) {
   const raritaeten = ereignisse.filter(e => e.art === 'raritaet');
   for (const e of raritaeten) festWarteschlange.push(e.typ);
   if (raritaeten.length) festeZeigen();
+
+  // Challenges: Glückwunsch-Dialog, nacheinander
+  const challenges = ereignisse.filter(e => e.art === 'challenge');
+  for (const e of challenges) challengeWarteschlange.push(e);
+  if (challenges.length) challengeZeigen();
 
   if (samen > 0) {
     muenzFlug(samen >= 100 ? 8 : samen >= 30 ? 6 : 5);
@@ -440,18 +448,193 @@ async function raritaetFest(typ) {
   navigiere('garten', { platzieren: { kategorie: 'raritaet', typ } });
 }
 
+// ---------- Glückwunsch-Dialoge der Challenges ----------
+
+// Wartende Challenge-Ereignisse und die Kette, die sie nacheinander zeigt
+const challengeWarteschlange = [];
+let challengeLauf = Promise.resolve();
+
+function challengeZeigen() {
+  challengeLauf = challengeLauf.then(async () => {
+    while (challengeWarteschlange.length) {
+      const e = challengeWarteschlange.shift();
+      try {
+        await challengeFest(e);
+      } catch (fehler) {
+        console.error(fehler);
+      }
+    }
+  });
+  return challengeLauf;
+}
+
+// Glückwunsch: Challenge-Text, Belohnung, Münzflug
+async function challengeFest(e) {
+  muenzFlug(e.samen >= 30 ? 6 : 5);
+  await ctx.dialog({
+    titel: 'Challenge geschafft! 🎉',
+    text: e.text,
+    inhalt: el('div', { class: 'sp12-belohnung', text: `Deine Belohnung: +${zahl(e.samen)} Samen` }),
+    knoepfe: [{ text: 'Weiter so!', art: 'primaer' }]
+  });
+}
+
+// ---------- Level-Blatt ----------
+
+// Erklärung zum Level: Fortschritt, nächste Freischaltungen, wie man Samen und XP verdient
+function levelBlattZeigen() {
+  const d = ctx.daten;
+  const lv = levelAus(d.spiel.xp);
+  const fehlt = lv.xpNaechste - d.spiel.xp;
+  const naechste = katalog(d)
+    .filter(a => a.level > lv.level && a.level <= lv.level + 3)
+    .sort((a, b) => a.level - b.level);
+  const zeilen = [
+    ['Tag im Budget', '10'],
+    ['Eintrag an einem Tag', '2'],
+    ['7-Tage-Serie', '30'],
+    ['Woche im Budget', '50'],
+    ['Challenges', '20 bis 80'],
+    ['Zeitraum im Budget', '200'],
+    ['Tagesgeschenk', '10 bis 60']
+  ];
+  sheet(el('div', { class: 'sp12-level' },
+    el('h2', { class: 'sh-titel', text: 'Dein Level' }),
+    el('div', { class: 'sp12-level-gross', text: String(lv.level) }),
+    el('div', { class: 'sp12-xp', role: 'img', 'aria-label': `${Math.round(lv.anteil * 100)} Prozent bis Level ${lv.level + 1}` },
+      el('span', { style: `width:${(lv.anteil * 100).toFixed(1)}%` })),
+    el('div', { class: 'klein sp12-xp-text', text: `Noch ${zahl(fehlt)} XP bis Level ${lv.level + 1}` }),
+    el('h3', { class: 'sp12-ueberschrift', text: 'Als Nächstes freigeschaltet' }),
+    naechste.length
+      ? el('ul', { class: 'sp12-liste' }, naechste.map(a => el('li', {},
+        el('span', { text: a.name }),
+        el('span', { class: 'klein', text: `Level ${a.level}` }))))
+      : el('p', { class: 'klein', text: 'Im Shop ist für die nächsten Level nichts mehr offen.' }),
+    el('h3', { class: 'sp12-ueberschrift', text: 'So verdienst du Samen und XP' }),
+    el('table', { class: 'sp12-tabelle' },
+      el('tbody', {}, zeilen.map(([was, wie]) => el('tr', {},
+        el('td', { text: was }),
+        el('td', { text: wie + ' Samen' }))))),
+    el('p', { class: 'klein sp12-raritaet-hinweis', text: 'Raritäten sind seltene echte Pflanzen. Sie gibt es nicht im Shop, du schaltest sie durch besondere Leistungen frei. Der Goldene Ginkgo-Bonsai zum Beispiel ab Level 15.' })
+  ));
+}
+
+// Der Level-Kreis in der Kopfleiste öffnet das Level-Blatt (die Münze bleibt beim Shop)
+const levelKreis = document.querySelector('.kopf-level');
+levelKreis.classList.add('sp12-level-knopf');
+levelKreis.setAttribute('role', 'button');
+levelKreis.setAttribute('tabindex', '0');
+levelKreis.addEventListener('click', levelBlattZeigen);
+levelKreis.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    levelBlattZeigen();
+  }
+});
+
+// ---------- Tagesgeschenk ----------
+
+// Geschenkbox mit Schleife (fest gezeichnet, der Deckel wird per CSS angehoben)
+const GESCHENK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="150" height="150" aria-hidden="true">' +
+  '<ellipse cx="60" cy="110" rx="42" ry="6" fill="#6b4a3a" opacity="0.18"/>' +
+  '<rect x="22" y="50" width="76" height="60" rx="6" fill="#e88a7a" stroke="#6b4a3a" stroke-width="2"/>' +
+  '<rect x="54" y="50" width="12" height="60" fill="#f2c14e" stroke="#6b4a3a" stroke-width="1.5"/>' +
+  '<g class="sp12-deckel">' +
+  '<rect x="16" y="36" width="88" height="18" rx="5" fill="#f08f7e" stroke="#6b4a3a" stroke-width="2"/>' +
+  '<rect x="54" y="36" width="12" height="18" fill="#f2c14e" stroke="#6b4a3a" stroke-width="1.5"/>' +
+  '<path d="M60 36 C44 14 24 20 32 34 C38 42 54 38 60 36 Z" fill="#f2c14e" stroke="#6b4a3a" stroke-width="2" stroke-linejoin="round"/>' +
+  '<path d="M60 36 C76 14 96 20 88 34 C82 42 66 38 60 36 Z" fill="#f2c14e" stroke="#6b4a3a" stroke-width="2" stroke-linejoin="round"/>' +
+  '<circle cx="60" cy="36" r="5" fill="#e0a93a" stroke="#6b4a3a" stroke-width="1.5"/>' +
+  '</g></svg>';
+
+// Vorschau des Gutscheins: Pflanze oder Deko, gratis im Shop
+function gutscheinVorschau(daten, gutschein) {
+  const name = (katalog(daten).find(k => k.kategorie === gutschein.kategorie && k.typ === gutschein.typ) || {}).name || '';
+  const bild = gutschein.kategorie === 'pflanze' ? PFLANZEN[gutschein.typ].zeichne(4) : DEKO[gutschein.typ].zeichne();
+  return el('div', { class: 'sp12-gutschein' },
+    el('div', { class: 'sp12-gutschein-bild' }, vorschau(bild, 'sp12-gutschein-vorschau')),
+    el('div', { class: 'sh-name', text: name }),
+    el('div', { class: 'klein', text: `Gutschein: ${name} gratis im Shop` }));
+}
+
+// Erster Besuch am Tag: Geschenkbox antippen, Belohnung ansehen, „Danke!“ holt sie ab (Gutschein, Samen, XP)
+function tagesgeschenkZeigen() {
+  const heute = ctx.heute;
+  const g = tagesgeschenk(ctx.daten, heute);
+  if (!g.verfuegbar) return Promise.resolve();
+  return new Promise((resolve) => {
+    let ebene = null;
+    let offen = false;
+
+    const tage = el('div', { class: 'sp12-tage' },
+      [1, 2, 3, 4, 5, 6, 7].map(t => el('span', {
+        class: 'sp12-tag' + (t < g.tag ? ' erledigt' : '') + (t === g.tag ? ' heute' : ''),
+        text: t < g.tag ? '✓' : String(t),
+        'aria-label': `Tag ${t}`
+      })));
+    const hinweis = el('p', { class: 'klein sp12-hinweis', text: 'Tippe auf das Geschenk.' });
+    const danke = el('button', {
+      type: 'button',
+      class: 'knopf knopf-primaer knopf-voll sp12-danke',
+      text: 'Danke!',
+      onclick: () => {
+        danke.disabled = true;
+        const r = geschenkAbholen(ctx.daten, heute);
+        if (r.fehler) {
+          toast(r.fehler);
+          danke.disabled = false;
+          return;
+        }
+        muenzFlug(r.belohnung.samen >= 30 ? 6 : 5);
+        zaehleHoch(r.daten.spiel.samen);
+        ebene.schliessen();
+        speichern(r.daten);
+        resolve();
+      }
+    });
+    const belohnung = el('div', { class: 'sp12-belohnung-block' },
+      el('div', { class: 'sp12-samen', text: `+${zahl(g.belohnung.samen)} Samen` }),
+      g.belohnung.gutschein ? gutscheinVorschau(ctx.daten, g.belohnung.gutschein) : null,
+      danke);
+    const box = el('button', {
+      type: 'button',
+      class: 'sp12-geschenk-knopf',
+      'aria-label': 'Geschenk öffnen',
+      onclick: () => {
+        if (offen) return;
+        offen = true;
+        box.classList.add('offen');
+        box.disabled = true;
+        hinweis.remove();
+        belohnung.classList.add('sichtbar');
+      }
+    });
+    box.innerHTML = GESCHENK_SVG;
+
+    const panel = el('div', { class: 'dialog sp12-geschenk-dialog', role: 'alertdialog' },
+      el('h2', { class: 'dialog-titel', text: 'Dein Tagesgeschenk 🎁' }),
+      tage,
+      el('div', { class: 'sp12-geschenk-mitte' }, box, hinweis),
+      belohnung
+    );
+    ebene = oeffneEbene(panel, { mitte: true, abbruch: () => resolve() });
+  });
+}
+
 // ---------- Dialoge nach dem Start und nach dem Tageswechsel ----------
 
-// Nacheinander: Raritaeten-Feiern, offene Monatsabschlüsse, dann die Gehaltsfrage, dann der Wochenrückblick, dann die Backup-Erinnerung.
-// Nie zwei Abläufe gleichzeitig.
+// Nacheinander: Raritaeten-Feiern, Challenges, offene Monatsabschlüsse, dann die Gehaltsfrage, dann der Wochenrückblick,
+// dann das Tagesgeschenk, dann die Backup-Erinnerung. Nie zwei Abläufe gleichzeitig.
 async function dialogeNachStart() {
   if (dialogeLaufen || !ctx.daten.einstellungen.ersteinrichtungFertig) return;
   dialogeLaufen = true;
   try {
     await festeZeigen();
+    await challengeZeigen();
     await abschluesseZeigen();
     await gehaltZeigen();
     await rueckblickZeigen();
+    await tagesgeschenkZeigen();
     backupPruefen();
   } finally {
     dialogeLaufen = false;

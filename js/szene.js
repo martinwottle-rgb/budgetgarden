@@ -1,7 +1,7 @@
 // Isometrische Gewaechshaus-Szene als SVG. Der Raum (Boden, Waende, Dach, Efeu, Licht, Zaun, Blumenkasten,
 // Deckenhaken) liegt hier; Moebel, Pflanzen und Deko (inkl. Haengeampel) kommen aus js/grafik/. Reines JavaScript, keine externen Bilder.
 
-import { iso, KON, BLATT_FARBEN, f, p2, tr, poly, linie, kreis, oval, pfad, gruppe, kiste, gerundet, qb, zufall, defs, bodenschatten } from './grafik/hilfen.js';
+import { iso, KON, BLATT_FARBEN, f, p2, tr, poly, linie, kreis, oval, pfad, gruppe, kiste, gerundet, qb, zufall, defs, bodenschatten, TW, TH, OX, OY } from './grafik/hilfen.js';
 import { MOEBEL, platzFeld } from './grafik/moebel.js';
 import { PFLANZEN } from './grafik/pflanzen.js';
 import * as R from './grafik/raritaeten.js';
@@ -13,6 +13,8 @@ const RAR_SKALA = R.RAR_SKALA ?? 1.15;
 const FUGE = 'stroke="#c9a27a" stroke-width="0.8" stroke-linejoin="round"';
 // Standardgroesse des Bodens in Feldern (6, 7 oder 8). Alle Masse unten sind auf 6 gerechnet und mit faktor skaliert.
 const BASIS = 6;
+// Abstand zweier benachbarter Feldmitten im SVG (Maß für den Fangradius beim Verschieben)
+export const FELD_PX = Math.hypot(TW / 2, TH / 2);
 // Markierung (gestrichelt, koralle), antippbar
 const MARKE = 'fill="rgba(232,138,122,.18)" stroke="#e88a7a" stroke-width="2.4" stroke-dasharray="5 4" stroke-linejoin="round" style="cursor:pointer"';
 
@@ -342,6 +344,43 @@ export function einpassen(wurzel) {
   }
 }
 
+// ---------- Verschieben: Zuordnung Bildschirm zu Ort ----------
+
+// Feldkoordinaten (gx, gy) zu einem SVG-Punkt (inverse Isometrie). z: Hoehe des Punkts (Standard 0 = Boden).
+// feld: [floor(gx), floor(gy)], innen: liegt der Punkt im Gewaechshaus (groesse aus zustand)?
+export function feldAusPunkt(x, y, zustand, z = 0) {
+  const G = [6, 7, 8].includes(zustand && zustand.groesse) ? zustand.groesse : BASIS;
+  const u = (x - OX) * 2 / TW;        // gx - gy
+  const v = (y + z - OY) * 2 / TH;    // gx + gy
+  const gx = (u + v) / 2;
+  const gy = (v - u) / 2;
+  const fx = Math.floor(gx), fy = Math.floor(gy);
+  return { gx, gy, feld: [fx, fy], innen: fx >= 0 && fy >= 0 && fx < G && fy < G };
+}
+
+// SVG-Punkt eines Ortes: Feldmitte (Boden), Stellplatz auf einem Moebel (mit Hoehe z), Haken, oder Mitte einer Moebel-Position
+export function punktAusOrt(ort, zustand) {
+  if (!ort || typeof ort !== 'object') return null;
+  if (Array.isArray(ort.feld)) return iso(ort.feld[0] + 0.5, ort.feld[1] + 0.5, 0);
+  if (ort.moebel !== undefined) {
+    const m = ((zustand && zustand.moebel) || []).find(x => x.id === ort.moebel);
+    const pos = m && platzFeld(m, ort.platz);
+    return pos ? iso(pos.gx, pos.gy, pos.z) : null;
+  }
+  if (ort.haken !== undefined && Object.prototype.hasOwnProperty.call(HAKEN, ort.haken)) {
+    const h = HAKEN[ort.haken];
+    return iso(h.gx, h.gy, HAKEN_Z);
+  }
+  if (Number.isFinite(ort.gx) && Number.isFinite(ort.gy)) {
+    const def = MOEBEL[ort.typ];
+    const breite = def ? def.breite : 1;
+    const tiefe = def ? def.tiefe : 1;
+    const [w, h] = ort.drehung === 90 ? [tiefe, breite] : [breite, tiefe];
+    return iso(ort.gx + w / 2, ort.gy + h / 2, 0);
+  }
+  return null;
+}
+
 // ---------- Hauptfunktion ----------
 
 // zustand = { groesse: 6|7|8, moebel: [{id, typ, gx, gy, drehung}], pflanzen: [{id, typ, stufe, ort}], deko: [{id, typ, ort}],
@@ -400,7 +439,8 @@ export function zeichneSzene(container, zustand) {
     const inhalt = rar ? def.zeichne(o.stufe, welk, ebene, { tageszeit: zeit })
       : o.art === 'pflanze' ? def.zeichne(o.stufe, welk, ebene) : def.zeichne();
     const skala = rar ? 1.6 * RAR_SKALA : 1.6;
-    const attr = `data-art="${o.art}" data-id="${escAttr(o.id)}"`;
+    // Auf einem Moebel stehende Objekte tragen data-auf, damit der Bewegungsmodus sie mit dem Moebel verschieben kann
+    const attr = `data-art="${o.art}" data-id="${escAttr(o.id)}"` + (aufMoebel ? ` data-auf="${escAttr(o.ort.moebel)}"` : '');
     const istLicht = getoent && o.art === 'deko' && o.typ === 'laterne';
     if (def.haengend) {
       // Haengende Deko sitzt am Haken und wird nach allen Objekten mit gleicher oder kleinerer Tiefe gezeichnet
@@ -461,7 +501,7 @@ export function zeichneSzene(container, zustand) {
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${breite} ${hoehe}" width="100%">` +
     defs(uid) + `<rect x="${x0}" y="${y0}" width="${breite}" height="${hoehe}" fill="#a9d3a5"/>` +
-    hinten + inhalt + '<g pointer-events="none">' + strahl + stimmung + lichter + '</g>' + vorn + marken + '</svg>';
+    hinten + inhalt + '<g pointer-events="none">' + strahl + stimmung + lichter + '</g>' + '<g pointer-events="none">' + vorn + '</g>' + marken + '</svg>';
 
   container.innerHTML = '';
   container.insertAdjacentHTML('beforeend', svg);

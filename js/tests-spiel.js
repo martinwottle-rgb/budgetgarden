@@ -4,6 +4,7 @@ import * as L from './logik.js';
 import * as S from './spiel.js';
 import * as P from './speicher.js';
 import { PFLANZEN } from './grafik/pflanzen.js';
+import { DEKO } from './grafik/deko.js';
 
 const ergebnisse = [];
 let aktuell = '';
@@ -72,15 +73,15 @@ function mitGehalt(startDatum, betrag = EUR(3100)) {
   return d;
 }
 
-// Gestaffelte Freischaltung: je Stufe ab 2 bis zur hoechsten Stufe 1 bis 2 Artikel, keine Luecken
-function gestaffelt(kategorie) {
+// Gestaffelte Freischaltung: je Stufe ab 2 bis zur hoechsten Stufe höchstens `max` Artikel, keine Luecken
+function gestaffelt(kategorie, max = 2) {
   const zaehl = {};
   for (const k of S.katalog(P.standardDaten('2026-10-01'))) {
     if (k.kategorie === kategorie) zaehl[k.level] = (zaehl[k.level] || 0) + 1;
   }
   const hoechste = Math.max(...Object.keys(zaehl).map(Number));
   for (let l = 2; l <= hoechste; l++) {
-    if (!zaehl[l] || zaehl[l] > 2) return false;
+    if (!zaehl[l] || zaehl[l] > max) return false;
   }
   return true;
 }
@@ -98,11 +99,13 @@ test('levelAus', () => {
 test('Freischaltung Level 1 und Staffelung', () => {
   const k = S.katalog(P.standardDaten('2026-10-01'));
   gleich(k.filter(x => x.kategorie === 'pflanze' && x.level === 1).length, 6, 'Level 1: 6 Pflanzen');
-  gleich(k.filter(x => x.kategorie === 'moebel' && x.level === 1).length, 3, 'Level 1: 3 Möbel');
-  gleich(k.filter(x => x.kategorie === 'deko' && x.level === 1).length, 4, 'Level 1: 4 Deko');
+  // Auftrag 1.1: Brett auf Ziegeln (Möbel) ist Level 1, Katze wird erst ab Level 3 freigeschaltet
+  gleich(k.filter(x => x.kategorie === 'moebel' && x.level === 1).length, 4, 'Level 1: 4 Möbel (mit Brett auf Ziegeln)');
+  gleich(k.filter(x => x.kategorie === 'deko' && x.level === 1).length, 3, 'Level 1: 3 Deko (Katze ab Level 3)');
   gleich(gestaffelt('pflanze'), true, 'Pflanzen gestaffelt');
   gleich(gestaffelt('moebel'), true, 'Möbel gestaffelt');
-  gleich(gestaffelt('deko'), true, 'Deko gestaffelt');
+  // Level 3 hat durch die Katze drei Deko, deshalb höchstens 3 je Stufe
+  gleich(gestaffelt('deko', 3), true, 'Deko gestaffelt (höchstens 3 je Stufe)');
 });
 
 // Ein Pflanzentyp, der (noch) nicht gezeichnet ist. Null, wenn alle gezeichnet sind.
@@ -141,8 +144,9 @@ test('bewerte: 8 Tage mit einem überzogenen Tag', () => {
   const r1 = S.bewerte(d0, '2026-10-09');
   // Tag 1: B = 3100/31 = 100 EUR, 500 EUR ausgegeben: nicht erfüllt, +2 für den Eintrag
   // Tage 2 bis 8: sieben erfüllte Tage à 10, Serie erreicht 7 am 8. Tag: +30
-  gleich(r1.daten.spiel.samen, 50 + 70 + 30 + 2, 'Samen: Start 50, 7 Tage à 10, Serienbonus 30, Eintrag 2');
-  gleich(r1.daten.spiel.xp, 102, 'XP = verdiente Samen');
+  // Startwoche (Start Donnerstag): Einsteiger-Challenges 20 (Eintrag am Start) und 40 (3 von 4 Tagen im Budget)
+  gleich(r1.daten.spiel.samen, 50 + 70 + 30 + 2 + 60, 'Samen: Start 50, 7 Tage à 10, Serienbonus 30, Eintrag 2, Einsteiger 60');
+  gleich(r1.daten.spiel.xp, 162, 'XP = verdiente Samen');
   gleich(r1.daten.spiel.serie, 7, 'Serie 7');
   gleich(r1.daten.spiel.besteSerie, 7, 'beste Serie 7');
   gleich(r1.daten.spiel.bewertet.tage.length, 8, '8 Tage bewertet');
@@ -510,15 +514,15 @@ test('wochenRueckblick: alter Spielstand ohne samen-Felder nutzt die Schätzung'
 
 test('bewerte: Samen je Tag und Summe fest fuer ein festes Szenario', () => {
   // Tag 1 (1. Okt.): 500 EUR, nur Eintrag +2. Tage 2 bis 8: je 1 EUR, Eintrag +2 und Budget +10, Serie 7 am 8. Tag +30.
-  // Erwartung: 50 + 2 + 7 x 12 + 30 = 166 Samen, XP 116
+  // Erwartung: 50 + 2 + 7 x 12 + 30 = 166 Samen, dazu Einsteiger-Challenges der Startwoche (Start Donnerstag) 60, also 226; XP 176
   const d0 = mitGehalt('2026-10-01');
   d0.buchungen.push({ id: 'g1', art: 'ausgabe', name: 'Großeinkauf', betrag: EUR(500), datum: '2026-10-01', kategorie: 'shopping', notiz: '' });
   for (let t = 2; t <= 8; t++) {
     d0.buchungen.push({ id: 'g' + t, art: 'ausgabe', name: 'Kleinkram', betrag: EUR(1), datum: '2026-10-0' + t, kategorie: 'lebensmittel', notiz: '' });
   }
   const r = S.bewerte(d0, '2026-10-09');
-  gleich(r.daten.spiel.samen, 166, 'Samen gesamt');
-  gleich(r.daten.spiel.xp, 116, 'XP gesamt');
+  gleich(r.daten.spiel.samen, 226, 'Samen gesamt');
+  gleich(r.daten.spiel.xp, 176, 'XP gesamt');
   gleich(r.daten.spiel.bewertet.tage.map(t => t.samen), [2, 12, 12, 12, 12, 12, 12, 42], 'Samen je Tag');
 });
 
@@ -652,6 +656,190 @@ test('Raritaeten: nicht im Katalog, Liste mit Zustand und Fortschritt', () => {
   gleich(S.raritaetenListe(freigeschaltet('jadewein')).find(x => x.typ === 'jadewein').zustand, 'bereit', 'bereit nach Freischaltung');
   const gp = S.raritaetPflanzen(freigeschaltet('jadewein'), 'jadewein', { feld: [5, 5] });
   gleich(S.raritaetenListe(gp.daten).find(x => x.typ === 'jadewein').zustand, 'gepflanzt', 'gepflanzt nach Pflanzen');
+});
+
+// ---------- Auftrag 1.1: Katalog, Tagesgeschenk, Gutscheine, Einsteiger, Sofort-Belohnung ----------
+
+const HEUTE = '2026-10-13';
+const GESTERN = '2026-10-12';
+
+// Startstand mit Besuch (letzter Tag, Serie)
+function mitBesuch(letzter, serie, samen = 50, xp = 0) {
+  const d = basis(samen, xp);
+  d.spiel.besuch = { letzter, serie };
+  return d;
+}
+
+// Start am Freitag 2026-10-09 (Einsteiger-Woche 05.10. bis 11.10.)
+function startFreitag(samen = 0) {
+  const d = basis(samen);
+  d.einstellungen.startDatum = '2026-10-09';
+  return d;
+}
+
+// Ausgabe an einem Tag
+function ausgabe(datum, betrag) {
+  return { id: 'a' + datum, art: 'ausgabe', name: 'Einkauf', betrag, datum, kategorie: 'lebensmittel', notiz: '' };
+}
+
+test('Katze kostet 250 und ist ab Level 3', () => {
+  gleich(S.PREISE_DEKO.katze.preis, 250, 'Preis');
+  gleich(S.PREISE_DEKO.katze.level, 3, 'Level');
+  gleich(S.katalog(basis()).find(k => k.typ === 'katze').freigeschaltet, false, 'auf Level 1 gesperrt');
+});
+
+test('Lichterglas heißt die Lichterkette, Brett auf Ziegeln ist im Katalog', () => {
+  gleich(S.PREISE_DEKO.lichterkette.name, 'Lichterglas', 'Name Lichterglas');
+  const z = S.katalog(basis()).find(k => k.kategorie === 'moebel' && k.typ === 'ziegelbrett');
+  gleich([z.name, z.preis, z.level], ['Brett auf Ziegeln', 60, 1], 'Name, Preis 60, Level 1');
+});
+
+test('Tagesgeschenk: Serie läuft weiter bei Folgetag', () => {
+  const r = S.tagesgeschenk(mitBesuch(GESTERN, 3), HEUTE);
+  gleich([r.verfuegbar, r.tag], [true, 4], 'gestern Serie 3 → heute Tag 4');
+});
+
+test('Tagesgeschenk: Lücke setzt die Serie auf 1', () => {
+  gleich(S.tagesgeschenk(mitBesuch('2026-10-10', 5), HEUTE).tag, 1, 'Lücke → Tag 1');
+  gleich(S.tagesgeschenk(basis(), HEUTE).tag, 1, 'nie besucht → Tag 1');
+});
+
+test('Tagesgeschenk: nach Tag 7 wieder Tag 1', () => {
+  gleich(S.tagesgeschenk(mitBesuch(GESTERN, 7), HEUTE).tag, 1, 'Serie 7 gestern → Tag 1');
+});
+
+test('Tagesgeschenk: Samen Tag 1 bis 3 ohne Gutschein', () => {
+  gleich(S.tagesgeschenk(basis(), HEUTE).belohnung, { samen: 10 }, 'Tag 1: 10 Samen, kein Gutschein');
+  const t2 = S.tagesgeschenk(mitBesuch(GESTERN, 1), HEUTE).belohnung;
+  gleich([t2.samen, t2.gutschein], [15, undefined], 'Tag 2: 15 Samen, kein Gutschein');
+});
+
+test('Tagesgeschenk: Tag 4 und Tag 7 mit Gutschein', () => {
+  const t4 = S.tagesgeschenk(mitBesuch(GESTERN, 3), HEUTE).belohnung;
+  gleich([t4.samen, t4.gutschein.kategorie, PFLANZEN[t4.gutschein.typ].groesse], [15, 'pflanze', 'klein'], 'Tag 4: 15 Samen, kleine Pflanze');
+  const t7 = S.tagesgeschenk(mitBesuch(GESTERN, 6), HEUTE).belohnung;
+  gleich([t7.samen, t7.gutschein.kategorie, !!DEKO[t7.gutschein.typ]], [60, 'deko', true], 'Tag 7: 60 Samen, gezeichnete Deko');
+});
+
+test('Tagesgeschenk: Gutschein deterministisch und nur gezeichnet und freigeschaltet', () => {
+  const d = mitBesuch(GESTERN, 3);
+  const a = S.tagesgeschenk(d, HEUTE).belohnung.gutschein;
+  gleich(a, S.tagesgeschenk(d, HEUTE).belohnung.gutschein, 'gleiches Datum, gleicher Gutschein');
+  const k = S.katalog(d).find(x => x.kategorie === 'pflanze' && x.typ === a.typ);
+  gleich([k.gezeichnet, k.freigeschaltet], [true, true], 'gezeichnet und freigeschaltet');
+});
+
+test('Tagesgeschenk: am selben Tag schon abgeholt → nicht verfügbar', () => {
+  const r = S.tagesgeschenk(mitBesuch(HEUTE, 4), HEUTE);
+  gleich([r.verfuegbar, r.tag], [false, 4], 'verfügbar false, Tag der Serie bleibt');
+});
+
+test('geschenkAbholen: Samen, XP, Besuch; zweiter Abruf am Tag scheitert', () => {
+  const r = S.geschenkAbholen(basis(50), HEUTE);
+  klappt(r, 'erster Abruf');
+  gleich([r.daten.spiel.samen, r.daten.spiel.xp], [60, 10], 'Samen 50+10, XP 10');
+  gleich(r.daten.spiel.besuch, { letzter: HEUTE, serie: 1 }, 'Besuch gesetzt');
+  gleich(S.tagesgeschenk(r.daten, HEUTE).verfuegbar, false, 'heute nicht mehr verfügbar');
+  scheitert(S.geschenkAbholen(r.daten, HEUTE), 'zweimal am Tag');
+  gleich(r.daten.spiel.samen, 60, 'zweiter Abruf ändert nichts');
+});
+
+test('geschenkAbholen Tag 4: Gutschein wird gespeichert', () => {
+  const r = S.geschenkAbholen(mitBesuch(GESTERN, 3), HEUTE);
+  klappt(r, 'Tag 4');
+  gleich(r.daten.spiel.gutscheine.length, 1, 'ein Gutschein');
+  gleich(r.daten.spiel.gutscheine[0].kategorie, 'pflanze', 'Kategorie Pflanze');
+});
+
+test('Gutschein-Kauf: 0 Samen, Gutschein verbraucht, Level-Sperre gilt nicht', () => {
+  const d = basis(0);
+  d.spiel.gutscheine = [{ kategorie: 'pflanze', typ: 'aloe' }];
+  scheitert(S.kaufen(basis(500), 'pflanze', 'aloe', { feld: [2, 2] }), 'ohne Gutschein ab Level 3 gesperrt');
+  const r = S.kaufen(d, 'pflanze', 'aloe', { feld: [2, 2] });
+  klappt(r, 'Kauf mit Gutschein');
+  gleich([r.daten.spiel.samen, r.daten.spiel.gutscheine.length], [0, 0], '0 Samen, Gutschein weg');
+  gleich(r.daten.spiel.gewaechshaus.pflanzen.some(p => p.typ === 'aloe'), true, 'Pflanze steht im Garten');
+  gleich(S.katalog(d).find(k => k.typ === 'aloe').gutschein, true, 'Katalog markiert den Gutschein');
+});
+
+test('Gutschein-Kauf scheitert ohne Platz und verbraucht den Gutschein nicht', () => {
+  const d = basis(0);
+  d.spiel.gutscheine = [{ kategorie: 'deko', typ: 'bank' }];
+  const r = S.kaufen(d, 'deko', 'bank', { feld: [9, 9] });
+  scheitert(r, 'Feld außerhalb');
+  gleich(d.spiel.gutscheine.length, 1, 'Eingabe unverändert, Gutschein da');
+});
+
+test('Einsteiger-Challenges bei Start am Freitag: m = 3, n = 2, 20 und 30 Samen', () => {
+  const ch = S.challengesDerWoche('2026-10-05', startFreitag());
+  gleich(ch.map(c => c.id), ['einstieg_erste_ausgabe', 'einstieg_im_budget'], 'zwei Einsteiger-Challenges');
+  gleich(ch.map(c => c.samen), [20, 30], 'Samen 20 und 15 × 2');
+  gleich(ch[1].text, 'Bleib an 2 der restlichen 3 Tage im Budget', 'Text mit n und m');
+});
+
+test('Normale Challenges bei Start vor der Woche und am Montag', () => {
+  const normal = S.challengesDerWoche('2026-10-05').map(c => c.id);
+  const d = basis();
+  d.einstellungen.startDatum = '2026-10-01';
+  gleich(S.challengesDerWoche('2026-10-05', d).map(c => c.id), normal, 'Start vor der Woche');
+  d.einstellungen.startDatum = '2026-10-05';
+  gleich(S.challengesDerWoche('2026-10-05', d).map(c => c.id), normal, 'Start am Montag (7 Tage übrig)');
+});
+
+test('Einsteiger-Fortschritt zählt nur Tage ab dem Start', () => {
+  const d = startFreitag();
+  const b = S.challengesDerWoche('2026-10-05', d)[1];
+  const st = S.challengeStatus(d, b, '2026-10-05', '2026-10-11');
+  gleich([st.ist, st.soll], [3, 2], 'Fr, Sa, So ohne Ausgaben: 3 statt 7 Tage');
+});
+
+test('Sofort-Belohnung: Zähl-Challenge am Starttag, genau einmal', () => {
+  const d = startFreitag();
+  d.buchungen.push({ id: 'e1', art: 'ausgabe', name: 'Brot', betrag: EUR(3), datum: '2026-10-09', kategorie: 'lebensmittel', notiz: '' });
+  const r1 = S.bewerte(d, '2026-10-09');
+  const ev = r1.ereignisse.filter(e => e.art === 'challenge');
+  gleich(ev.map(e => [e.text, e.samen]), [['Trag heute deine erste Ausgabe ein', 20]], 'Ereignis mit Text und 20 Samen');
+  const eintrag = r1.daten.spiel.challenges['2026-10-05'].find(e => e.id === 'einstieg_erste_ausgabe');
+  gleich(eintrag, { id: 'einstieg_erste_ausgabe', erfuellt: true, belohnt: true }, 'Eintrag erfuellt und belohnt');
+  const r2 = S.bewerte(r1.daten, '2026-10-09');
+  gleich(r2.ereignisse.filter(e => e.art === 'challenge').length, 0, 'zweiter Aufruf zahlt nicht erneut');
+  gleich(r2.daten.spiel.samen, r1.daten.spiel.samen, 'Samen unverändert');
+});
+
+test('Sofort-Belohnung: am Wochenende nicht erneut gezahlt, Startwoche ohne Wochenbonus', () => {
+  const d = startFreitag();
+  d.buchungen.push({ id: 'e1', art: 'ausgabe', name: 'Brot', betrag: EUR(3), datum: '2026-10-09', kategorie: 'lebensmittel', notiz: '' });
+  const r1 = S.bewerte(d, '2026-10-09');
+  const r3 = S.bewerte(r1.daten, '2026-10-12');
+  const erste = r3.ereignisse.filter(e => e.art === 'challenge' && e.text === 'Trag heute deine erste Ausgabe ein');
+  gleich(erste.length, 0, 'erste Ausgabe nicht noch einmal am Wochenende');
+  gleich(r3.daten.spiel.bewertet.wochen.length, 1, 'Startwoche einmal bewertet');
+  gleich(r3.daten.spiel.bewertet.wochen[0].erfuellt, false, 'Startwoche: kein Wochenbonus');
+});
+
+test('Wochenrückblick: Samen der Startwoche enthalten die sofortige Belohnung', () => {
+  const d = startFreitag();
+  d.buchungen.push({ id: 'e1', art: 'ausgabe', name: 'Brot', betrag: EUR(3), datum: '2026-10-09', kategorie: 'lebensmittel', notiz: '' });
+  const r1 = S.bewerte(d, '2026-10-09');
+  const r3 = S.bewerte(r1.daten, '2026-10-12');
+  gleich(S.wochenRueckblick(r3.daten, '2026-10-05').samen, r3.daten.spiel.samen - d.spiel.samen, 'Rückblick = alle Gutschriften der Woche');
+});
+
+test('Sofort-Belohnung: Verbots-Challenge wird unter der Woche nicht gezahlt', () => {
+  const wb = '2026-10-05';
+  const d = basis();
+  d.einstellungen.startDatum = '2026-10-05';
+  const r = S.bewerte(d, '2026-10-07');
+  const verbote = S.challengesDerWoche(wb).filter(c => c.art === 'grenze').map(c => c.text);
+  const gezahlt = r.ereignisse.filter(e => e.art === 'challenge').map(e => e.text);
+  gleich(gezahlt.filter(t => verbote.includes(t)).length, 0, 'keine Verbots-Challenge vor dem Wochenende');
+});
+
+test('challengeStatus: Einsteiger-Zähl-Challenge ist geschafft', () => {
+  const d = startFreitag();
+  d.buchungen.push({ id: 'e1', art: 'ausgabe', name: 'Brot', betrag: EUR(3), datum: '2026-10-09', kategorie: 'lebensmittel', notiz: '' });
+  const a = S.challengesDerWoche('2026-10-05', d)[0];
+  gleich(S.challengeStatus(d, a, '2026-10-05', '2026-10-09').zustand, 'geschafft', 'Zustand geschafft');
 });
 
 // ---------- Speicher ----------
