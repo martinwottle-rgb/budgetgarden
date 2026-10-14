@@ -41,8 +41,13 @@ const RAHMEN_FARBEN = {
   senf: { grund: '#d9a441', licht: '#f0cc78', schatten: '#a87a25', maser: '#bf8e35', verbinder: '#c9a14a' },
 };
 const GLAS = '#e4f6fa';
-const BOGEN_H = 26;
+// Dach an den Rueckwaenden: Oberkante der Wandbalken, Bogenhoehe, Ausladung in den Raum (max. 1.5 Felder), Sagezahnhoehe
+const DACH_OBEN = 234;
+const BOGEN_H = 20;
+const BOGEN_D = 1.5;
 const SHED_H = 24;
+// Schnee auf den neuen Kanten (Winter)
+const SCHNEE_LINIE = 'fill="none" stroke="#fbfdfe" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
 
 let zaehler = 0;
 
@@ -281,57 +286,67 @@ function dachRahmen(G, c) {
   return stab('A', 0, G, 220, 234, c, true) + stab('B', 0, G, 220, 234, c, true);
 }
 
-// Gewoelbtes Glasdach: Sparren als Boegen in Richtung gy, Firstlinie oben, Glasflaechen zwischen den Sparren
-function bogenDach(G, c) {
+// Bogen-Punkt: s entlang der Wand, u = Abstand von der Wand (0 bis BOGEN_D). Wand A: gy = u, Wand B: gx = u.
+function bogenPunkt(w, s, u) {
+  const z = DACH_OBEN + BOGEN_H * Math.sin(Math.PI * u / BOGEN_D);
+  return w === 'A' ? iso(s, u, z) : iso(u, s, z);
+}
+
+// Schmale gebogene Glasleiste entlang einer Rueckwand (nur bis BOGEN_D in den Raum, opacity <= 0.15)
+function bogenGlas(w, G) {
   const N = 12;
-  const bogen = (gx) => {
-    const pts = [];
-    for (let k = 0; k <= N; k++) {
-      const t = k / N;
-      pts.push(iso(gx, G * t, 220 + BOGEN_H * Math.sin(Math.PI * t)));
-    }
-    return pts;
-  };
-  const b = [];
-  for (let k = 0; k <= G; k++) b.push(bogen(k));
+  const pts = [];
+  for (let k = 0; k <= G; k++) pts.push(bogenPunkt(w, k, 0));
+  for (let j = 0; j <= N; j++) pts.push(bogenPunkt(w, G, BOGEN_D * j / N));
+  for (let k = G; k >= 0; k--) pts.push(bogenPunkt(w, k, BOGEN_D));
+  for (let j = N; j >= 0; j--) pts.push(bogenPunkt(w, 0, BOGEN_D * j / N));
+  return poly(pts, `fill="${GLAS}" opacity="0.14"`);
+}
+
+// Gebogene Sparren: je Feldlinie an der Wand ein Bogen, der von der Wandoberkante in den Raum ragt und dort endet
+function bogenSparren(w, G, c, winter) {
+  const N = 12;
   let s = '';
-  for (let k = 0; k < G; k++) {
-    s += poly(b[k].concat(b[k + 1].slice().reverse()), `fill="${GLAS}" opacity="0.55" ${KON}`);
-  }
   for (let k = 0; k <= G; k++) {
-    s += linienzug(b[k], `fill="none" stroke="${c.schatten}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"`);
-    s += linienzug(b[k], `fill="none" stroke="${c.grund}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"`);
+    const pts = [];
+    for (let j = 0; j <= N; j++) pts.push(bogenPunkt(w, k, BOGEN_D * j / N));
+    s += linienzug(pts, `fill="none" stroke="${c.schatten}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"`);
+    s += linienzug(pts, `fill="none" stroke="${c.grund}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"`);
+    if (winter) s += linienzug(pts.map((p) => [p[0], p[1] - 2.5]), SCHNEE_LINIE);
   }
-  const first = [];
-  for (let k = 0; k <= G; k++) first.push(iso(k, G / 2, 220 + BOGEN_H));
-  s += linienzug(first, `fill="none" stroke="${c.grund}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"`);
   return s;
 }
 
-// Saegezahn-Sheddach: je Feld eine schraege Glasflaeche, hoch am Grat gx = k, tief bei gx = k + 1
-function shedDach(G, c) {
+// Bogendach: nur Andeutung an den zwei Rueckwaenden, nichts ueber der Raummitte
+function bogenDach(G, c, winter) {
+  return bogenGlas('A', G) + bogenGlas('B', G) + bogenSparren('A', G, c, winter) + bogenSparren('B', G, c, winter);
+}
+
+// Sheddach: Saegezahn-Silhouette in der Ebene jeder Rueckwand (3 bis 5 Zaehne je Wand). Je Zahn ein Rahmenpfosten,
+// eine schraege Rahmenleiste bis zur naechsten Zacke und ein schmales Glasdreieck direkt ueber der Wand. Nichts ueber der Raummitte.
+function shedDach(G, c, winter) {
+  const N = Math.min(5, Math.max(3, Math.round(G / 2)));
+  const breite = G / N;
   let s = '';
-  for (let k = 0; k < G; k++) {
-    s += poly([iso(k, 0, 220 + SHED_H), iso(k, G, 220 + SHED_H), iso(k + 1, G, 220), iso(k + 1, 0, 220)],
-      `fill="${GLAS}" opacity="0.6" ${KON}`);
+  for (const w of ['A', 'B']) {
+    const P = (x, z) => wp(w, x, z);
+    for (let i = 0; i < N; i++) {
+      const x0 = i * breite;
+      const spitze = P(x0, DACH_OBEN + SHED_H), fuss = P(x0 + breite, DACH_OBEN);
+      s += poly([P(x0, DACH_OBEN), spitze, fuss], `fill="${GLAS}" opacity="0.5" ${KON}`);
+      s += stab(w, x0 - 0.06, x0 + 0.06, DACH_OBEN, DACH_OBEN + SHED_H, c);
+      s += linie(spitze, fuss, `stroke="${c.schatten}" stroke-width="3.2" stroke-linecap="round"`);
+      s += linie(spitze, fuss, `stroke="${c.grund}" stroke-width="1.8" stroke-linecap="round"`);
+      if (winter) s += linie([spitze[0], spitze[1] - 2.5], [fuss[0], fuss[1] - 2.5], SCHNEE_LINIE);
+    }
   }
-  // Grate als Leisten, Sagezahnkante vorn
-  for (let k = 0; k < G; k++) {
-    s += linie(iso(k, 0, 220 + SHED_H), iso(k, G, 220 + SHED_H), `stroke="${c.schatten}" stroke-width="3" stroke-linecap="round"`);
-    s += linie(iso(k, 0, 220 + SHED_H), iso(k, G, 220 + SHED_H), `stroke="${c.grund}" stroke-width="1.6" stroke-linecap="round"`);
-  }
-  const zacke = [];
-  for (let k = 0; k < G; k++) {
-    zacke.push(iso(k, G, 220 + SHED_H), iso(k + 1, G, 220));
-  }
-  s += linienzug(zacke, `fill="none" ${KON}`);
   return s;
 }
 
 // Dachaufbau je Dachdesign (giebel hat keinen Aufbau, nur den Balken)
-function dachAufbau(art, G, c) {
-  if (art === 'bogen') return bogenDach(G, c);
-  if (art === 'shed') return shedDach(G, c);
+function dachAufbau(art, G, c, winter) {
+  if (art === 'bogen') return bogenDach(G, c, winter);
+  if (art === 'shed') return shedDach(G, c, winter);
   return '';
 }
 
@@ -641,7 +656,7 @@ export function zeichneSzene(container, zustand) {
   hinten += himmelDefs(uid, zeit);
   hinten += wand('A', uid, G, faktor, zeit, sterne, rc) + wand('B', uid, G, faktor, zeit, sterne, rc);
   hinten += dachRahmen(G, rc);
-  hinten += dachAufbau(design.dach, G, rc);
+  hinten += dachAufbau(design.dach, G, rc, winter);
   hinten += efeu(rnd, G, faktor);
   // Schnee nach dem Efeu, damit die Dachkante auch bei dichtem Bewuchs sichtbar bleibt
   if (winter) hinten += schneeDach(G);
