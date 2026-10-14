@@ -608,13 +608,15 @@ const BODEN_FARBE = {
   dielen: { a: '#c58b55', b: '#b87a48', linie: '#8a5228' },
   terrazzo: { a: '#ece4d6', b: '#e2d8c6', linie: '#b9a58c' },
   fischgraet: { a: '#b8743d', b: '#a86a36', linie: '#8a5228' },
+  marmor: { a: '#eef0ec', b: '#e1e5df', linie: '#9aa39a' },
   fliesen: { a: '#dcebea', b: '#c9e0df', linie: '#2f6f73' }
 };
 const RAHMEN_FARBE = { teak: '#b8743d', petrol: '#2f6f73', messing: '#c9a14a', senf: '#d9a441' };
 
+// Dächer entfallen (SPEC-2, Nachtrag 14.10.): nur Boden und Rahmen
 function designBereich(ctx) {
   const liste = designListe(ctx.daten);
-  const gruppen = [['boden', 'Boden'], ['rahmen', 'Rahmen'], ['dach', 'Dach']];
+  const gruppen = [['boden', 'Boden'], ['rahmen', 'Rahmen']];
   return el('div', {}, gruppen.map(([kat, titel]) => el('div', { class: 's20-gruppe' },
     el('h3', { class: 's20-ueberschrift', text: titel }),
     el('div', { class: 'raster' }, liste.filter(e => e.kategorie === kat).map(e => designKarte(ctx, e)))
@@ -649,7 +651,7 @@ function designAktion(ctx, e, art) {
 }
 
 function designSvg(kategorie, id) {
-  const inhalt = kategorie === 'boden' ? bodenSvg(id) : kategorie === 'rahmen' ? rahmenSvg(id) : dachSvg(id);
+  const inhalt = kategorie === 'boden' ? bodenSvg(id) : rahmenSvg(id);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" aria-hidden="true">${inhalt}</svg>`;
 }
 
@@ -682,15 +684,4 @@ function rahmenSvg(id) {
     `<path d="M60,12 V78 M30,45 H90" stroke="${f}" stroke-width="4"/>` +
     `<rect x="30" y="12" width="60" height="66" rx="3" fill="none" stroke="${f}" stroke-width="8"/>` +
     '<rect x="26" y="8" width="68" height="74" rx="4" fill="none" stroke="#6b4a3a" stroke-width="0.8"/>';
-}
-
-// Haus mit Dachform als Silhouette
-function dachSvg(id) {
-  const form = id === 'bogen' ? '<path d="M22,48 Q22,14 60,14 Q98,14 98,48 Z"/>'
-    : id === 'shed' ? '<polygon points="22,34 98,20 98,48 22,48"/>'
-      : '<polygon points="22,48 60,14 98,48"/>';
-  return '<rect x="0" y="84" width="120" height="6" fill="#9fb79a"/>' +
-    '<rect x="30" y="46" width="60" height="38" fill="#f3e6cf" stroke="#6b4a3a" stroke-width="1.2"/>' +
-    '<rect x="52" y="62" width="16" height="22" rx="2" fill="#2f6f73"/>' +
-    `<g fill="#8a5a36" stroke="#6b4a3a" stroke-width="1.2" stroke-linejoin="round">${form}</g>`;
 }

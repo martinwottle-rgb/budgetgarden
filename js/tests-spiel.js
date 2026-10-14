@@ -1092,6 +1092,58 @@ test('Designs: kaufen einmalig, wählen, Level-Sperre', () => {
   gleich(S.designListe(basis()).find(x => x.id === 'dielen').gekauft, true, 'Start-Design gekauft');
 });
 
+test('Dächer entfallen: nicht in designListe, nicht kaufbar, nicht wählbar', () => {
+  const liste = S.designListe(basis(5000, 100000));
+  gleich(liste.some(x => x.kategorie === 'dach'), false, 'keine Dach-Kategorie');
+  gleich(liste.some(x => x.id === 'bogen' || x.id === 'shed' || x.id === 'giebel'), false, 'bogen, shed und giebel fehlen');
+  scheitert(S.designKaufen(basis(5000, 100000), 'dach', 'bogen'), 'Bogendach nicht kaufbar');
+  scheitert(S.designWaehlen(basis(), 'dach', 'giebel'), 'Dach nicht wählbar');
+  const marmor = liste.find(x => x.id === 'marmor');
+  gleich([marmor.kategorie, marmor.level, marmor.preis], ['boden', 19, 800], 'Marmor: Boden ab Level 19 für 800');
+  const k = S.designKaufen(basis(900, 100000), 'boden', 'marmor');
+  klappt(k, 'Marmor kaufbar');
+  gleich(k.daten.spiel.samen, 100, 'Marmor kostet 800');
+});
+
+test('Dach-Erstattung: einmalig, ohne XP, Dach aus der Besitzliste', () => {
+  const d = basis(100, 0);
+  d.spiel.designs = ['dielen', 'teak', 'giebel', 'bogen', 'shed'];
+  d.spiel.design.dach = 'bogen';
+  const r = S.bewerte(d, '2026-10-01');
+  gleich(r.daten.spiel.samen, 100 + 700 + 900, 'Bogen 700 und Shed 900 erstattet, Giebel 0');
+  gleich(r.daten.spiel.xp, 0, 'Erstattung ohne XP');
+  gleich(r.daten.spiel.designs, ['dielen', 'teak'], 'Dächer aus spiel.designs entfernt');
+  gleich(r.daten.spiel.design.dach, 'bogen', 'spiel.design.dach bleibt, wird ignoriert');
+  gleich(r.ereignisse.filter(e => e.art === 'erstattung').map(e => e.text),
+    ['Dachdesign erstattet: +700 Samen', 'Dachdesign erstattet: +900 Samen'], 'Ereignistexte');
+  const zweimal = S.bewerte(r.daten, '2026-10-01');
+  gleich([zweimal.daten.spiel.samen, zweimal.ereignisse.some(e => e.art === 'erstattung')], [1700, false], 'zweites bewerte erstattet nichts');
+});
+
+test('Level 1 bis 25: Topfpflanzen für Sparziele, nur kaufbar und ohne Saatgut', () => {
+  const alle = new Set();
+  for (let l = 1; l <= 25; l++) {
+    const xp = 100 * l * (l - 1) / 2;
+    for (const p of S.sparzielPflanzen(basis(0, xp)).pflanzen) alle.add(p.typ);
+  }
+  gleich([...alle].sort(), Object.keys(S.PREISE_PFLANZEN).sort(), 'genau die Topfpflanzen, bis Level 25 alle erreichbar');
+  gleich(['erdbeere', 'basilikum', 'tomate'].some(t => alle.has(t)), false, 'keine Saatgut-Sorten');
+});
+
+test('Sparziel-Pflanzen: Level 1 und 3, sortiert, mit Hinweis auf höhere Level', () => {
+  const l1 = S.sparzielPflanzen(basis());
+  gleich(l1.pflanzen.map(p => p.typ).sort(), ['efeutute', 'kaktus', 'monstera', 'sonnenblume'], 'Level 1: Auswahl');
+  gleich(l1.weitere, true, 'Hinweis: weitere ab höherem Level');
+  const l3 = S.sparzielPflanzen(basis(0, 300));
+  const typen = l3.pflanzen.map(p => p.typ);
+  gleich(typen.includes('aloe') && typen.includes('gluecksfeder'), true, 'Level 3: Level-3-Pflanzen dabei');
+  gleich(typen.includes('erdbeere'), false, 'Level 3: keine Erdbeere');
+  gleich(l3.pflanzen.every(p => p.level <= 3), true, 'Level 3: nur freigeschaltete');
+  const lvl = l3.pflanzen.map(p => p.level);
+  gleich(lvl.every((v, i) => i === 0 || lvl[i - 1] <= v), true, 'nach Level sortiert');
+  gleich(S.sparzielPflanzen(basis(0, 30000)).weitere, false, 'Level 25: keine gesperrten mehr');
+});
+
 test('Herbarium: Sets, Bonus einmalig und Abzeichen', () => {
   const h = S.herbarium(basis());
   gleich(h.sets.length, 7, 'sieben Sets');
@@ -1156,7 +1208,7 @@ test('Migration: alte Spielstände bekommen die neuen Felder', () => {
   gleich(r.daten.spiel.saatgut, {}, 'saatgut leer');
   gleich(r.daten.spiel.tuete, { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 }, 'tuete');
   gleich(r.daten.spiel.design, { boden: 'dielen', rahmen: 'teak', dach: 'giebel' }, 'design');
-  gleich(r.daten.spiel.designs, ['dielen', 'teak', 'giebel'], 'designs');
+  gleich(r.daten.spiel.designs, ['dielen', 'teak'], 'designs (ohne Dach)');
   gleich(r.daten.spiel.gratisTueten, 0, 'gratisTueten');
   gleich(r.daten.spiel.entdeckt, ['efeutute'], 'entdeckt: Garten-Pflanzen');
   klappt(S.samentuete(alt, HEUTE), 'Tüte mit altem Spielstand');
@@ -1166,7 +1218,7 @@ test('Migration: alte Spielstände bekommen die neuen Felder', () => {
 test('standardDaten: SPEC-2-Startwerte', () => {
   const s = P.standardDaten('2026-10-01').spiel;
   gleich([s.saatgut, s.tuete, s.gratisTueten, s.design, s.designs, s.entdeckt],
-    [{}, { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 }, 0, { boden: 'dielen', rahmen: 'teak', dach: 'giebel' }, ['dielen', 'teak', 'giebel'], []], 'Startwerte');
+    [{}, { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 }, 0, { boden: 'dielen', rahmen: 'teak', dach: 'giebel' }, ['dielen', 'teak'], []], 'Startwerte');
 });
 
 // ---------- Speicher ----------

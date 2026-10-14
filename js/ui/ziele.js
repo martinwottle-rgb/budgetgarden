@@ -3,8 +3,9 @@
 
 import * as L from '../logik.js';
 import { neueId } from '../speicher.js';
-import { ABZEICHEN } from '../spiel.js';
+import { ABZEICHEN, sparzielPflanzen } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
+import * as G_PFLANZEN2 from '../grafik/pflanzen2.js';
 import { vorschau, einpassen } from '../szene.js';
 import { el, euro, parseBetrag, betragText } from './bausteine.js';
 
@@ -13,11 +14,11 @@ const INTERVALLE = [[1, 'monatlich'], [3, 'vierteljährlich'], [6, 'halbjährlic
 const INTERVALL_TEXT = Object.fromEntries(INTERVALLE);
 const DATUM_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Pflanzen für Sparziele (Schlüssel aus PFLANZEN) mit kurzem Namen für die Auswahl
-const SPAR_PFLANZEN = [
-  ['zitrone', 'Zitrone'], ['monstera', 'Monstera'], ['sonnenblume', 'Sonnenblume'], ['kletterrose', 'Kletterrose'],
-  ['geigenfeige', 'Geigenfeige'], ['bonsai', 'Bonsai'], ['orchidee', 'Orchidee'], ['erdbeere', 'Erdbeere']
-];
+// Alle gezeichneten Topfpflanzen (SPEC-2: pflanzen2.js dazu)
+const PFLANZEN_ALLE = { ...PFLANZEN, ...(G_PFLANZEN2.PFLANZEN2 || {}) };
+
+// Feste Auswahl nur für ältere Sparziele ohne gespeicherte Pflanze (stabil nach id, nicht nach Level)
+const ALTE_SPAR_PFLANZEN = ['zitrone', 'monstera', 'sonnenblume', 'kletterrose', 'geigenfeige', 'bonsai', 'orchidee', 'erdbeere'];
 
 export function zeige(container, ctx) {
   container.append(
@@ -111,12 +112,18 @@ function sparzieleBereich(ctx) {
   );
 }
 
-// Pflanze eines Sparziels. Ohne Feld pflanze (ältere Ziele): deterministisch nach id aus der Auswahl.
-function pflanzeVon(s) {
-  if (s.pflanze && PFLANZEN[s.pflanze]) return s.pflanze;
+// Deterministische Zahl aus einer id
+function hashVon(text) {
   let summe = 0;
-  for (const zeichen of String(s.id || '')) summe = (summe * 31 + zeichen.charCodeAt(0)) >>> 0;
-  return SPAR_PFLANZEN[summe % SPAR_PFLANZEN.length][0];
+  for (const zeichen of String(text || '')) summe = (summe * 31 + zeichen.charCodeAt(0)) >>> 0;
+  return summe;
+}
+
+// Pflanze eines Sparziels. Ohne Feld pflanze (ältere Ziele): deterministisch nach id aus ALTE_SPAR_PFLANZEN.
+// Die Karte zeigt eine gespeicherte Pflanze auch dann, wenn sie nicht mehr kaufbar ist (Sheet ersetzt sie).
+function pflanzeVon(s) {
+  if (s.pflanze && PFLANZEN_ALLE[s.pflanze]) return s.pflanze;
+  return ALTE_SPAR_PFLANZEN[hashVon(s.id) % ALTE_SPAR_PFLANZEN.length];
 }
 
 // Stufe 1 bis 4: mit Zielsumme nach Anteil, ohne nach Anzahl angesparter Monatsraten
@@ -154,7 +161,7 @@ function wachstumsHinweis(s) {
 function pflanzenBlock(s, stufe) {
   return el('div', { class: 'zi11-links' },
     el('div', { class: 'zi11-pflanze' },
-      vorschau(PFLANZEN[pflanzeVon(s)].zeichne(stufe, false, 'boden'), 'zi11-pflanze-bild'),
+      vorschau(PFLANZEN_ALLE[pflanzeVon(s)].zeichne(stufe, false, 'boden'), 'zi11-pflanze-bild'),
       stufe === 4 ? [
         el('span', { class: 'zi11-funke f1' }),
         el('span', { class: 'zi11-funke f2' }),
@@ -191,24 +198,25 @@ function sparzielKarte(ctx, s) {
   );
 }
 
-// Auswahl von 8 Pflanzen als horizontale Kachelreihe (Stufe 4). aendern(schluessel) wird bei Tippen gerufen.
-function pflanzenWahl(gewaehlt, aendern) {
-  const kacheln = SPAR_PFLANZEN.map(([schluessel, kurz]) => el('button', {
+// Auswahl als horizontale Kachelreihe (Stufe 4). liste: [{typ, name}] aus sparzielPflanzen (nur kaufbare Topfpflanzen).
+// aendern(typ) wird bei Tippen gerufen.
+function pflanzenWahl(liste, gewaehlt, aendern) {
+  const kacheln = liste.map(({ typ, name }) => el('button', {
     type: 'button',
-    class: 'zi11-kachel' + (schluessel === gewaehlt ? ' aktiv' : ''),
-    'aria-pressed': schluessel === gewaehlt ? 'true' : 'false',
-    'aria-label': kurz,
+    class: 'zi11-kachel' + (typ === gewaehlt ? ' aktiv' : ''),
+    'aria-pressed': typ === gewaehlt ? 'true' : 'false',
+    'aria-label': name,
     onclick: () => {
-      aendern(schluessel);
+      aendern(typ);
       kacheln.forEach((k, i) => {
-        const an = SPAR_PFLANZEN[i][0] === schluessel;
+        const an = liste[i].typ === typ;
         k.classList.toggle('aktiv', an);
         k.setAttribute('aria-pressed', String(an));
       });
     }
   },
-  vorschau(PFLANZEN[schluessel].zeichne(4, false, 'boden'), 'zi11-kachel-bild'),
-  el('span', { class: 'zi11-kachel-name', text: kurz })
+  vorschau(PFLANZEN_ALLE[typ].zeichne(4, false, 'boden'), 'zi11-kachel-bild'),
+  el('span', { class: 'zi11-kachel-name', text: name })
   ));
   return el('div', { class: 'zi11-kachelreihe', role: 'group', 'aria-label': 'Pflanze wählen' }, kacheln);
 }
@@ -253,7 +261,12 @@ async function extraEinzahlen(ctx, id, sheetSchliessen) {
 function sparzielSheet(ctx, original) {
   // Neue Ziele bekommen ihre id schon hier, damit die Vorauswahl der Pflanze daraus folgt
   const neueSparId = original ? null : neueId('s');
-  let pflanze = original ? pflanzeVon(original) : pflanzeVon({ id: neueSparId });
+  // Nur kaufbare Topfpflanzen. Ein Ziel mit ungültiger Pflanze bekommt beim Öffnen die erste gültige.
+  const { pflanzen: auswahl, weitere } = sparzielPflanzen(ctx.daten);
+  const gueltig = (typ) => auswahl.some(p => p.typ === typ);
+  let pflanze;
+  if (original) pflanze = gueltig(pflanzeVon(original)) ? pflanzeVon(original) : (auswahl[0] ? auswahl[0].typ : null);
+  else pflanze = auswahl.length ? auswahl[hashVon(neueSparId) % auswahl.length].typ : null;
   const nameFeld = el('input', {
     class: 'feld', type: 'text', placeholder: 'z. B. Urlaub', maxlength: 40, autocomplete: 'off',
     value: original ? original.name : ''
@@ -307,7 +320,8 @@ function sparzielSheet(ctx, original) {
     beschriftung('Name'), nameFeld,
     beschriftung('Rate pro Monat'), rateFeld,
     beschriftung('Zielsumme (optional)'), zielFeld,
-    beschriftung('Pflanze'), pflanzenWahl(pflanze, (k) => { pflanze = k; }),
+    beschriftung('Pflanze'), pflanzenWahl(auswahl, pflanze, (k) => { pflanze = k; }),
+    weitere ? el('div', { class: 'klein zi11-hinweis', text: 'Weitere Pflanzen ab höherem Level' }) : null,
     fehlerZeile,
     el('div', { class: 'aktionen' },
       aktionKnopf('Speichern', 'knopf-primaer', speichernen),

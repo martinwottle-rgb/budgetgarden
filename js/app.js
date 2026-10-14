@@ -306,6 +306,9 @@ function belohnen(ereignisse) {
   for (const e of challenges) challengeWarteschlange.push(e);
   if (challenges.length) challengeZeigen();
 
+  // Erstattete Dachdesigns: eigener Hinweis mit Text
+  ereignisse.filter(e => e.art === 'erstattung').forEach(e => toast(e.text));
+
   // Herbarium-Sets vollständig: eigener Glückwunsch-Dialog, nacheinander
   const sets = ereignisse.filter(e => e.art === 'set');
   for (const e of sets) setWarteschlange.push(e);

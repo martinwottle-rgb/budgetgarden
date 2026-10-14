@@ -40,7 +40,7 @@ export function standardDaten(heute) {
       tuete: { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 },
       gratisTueten: 0,
       design: { boden: 'dielen', rahmen: 'teak', dach: 'giebel' },
-      designs: ['dielen', 'teak', 'giebel'],
+      designs: ['dielen', 'teak'],
       entdeckt: [],
       gewaechshaus: {
         groesse: 6,

@@ -92,10 +92,10 @@ Erweiterungen: 9×9 Level 15 (3500), 10×10 Level 20 (6000). Szene muss groesse 
 ## 4. Gewächshaus-Designs
 
 `spiel.design = {boden, rahmen, dach}`; Kauf einmalig, dann frei wechselbar.
-- boden: dielen (Start), terrazzo (L7, 400), fischgraet (L11, 600), fliesen (L16, 700)
-- rahmen: teak (Start), petrol (L9, 300), messing (L14, 600), senf (L18, 500)
-- dach: giebel (Start), bogen (L13, 700), shed (L19, 900)
-`spiel.designs = [gekaufte ids]`. Szene zeichnet nach `zustand.design`.
+- boden: dielen (Start), terrazzo (L7, 400), fischgraet (L11, 600), marmor (L19, 800), fliesen (L24, 700)
+- rahmen: teak (Start), petrol (L9, 300), senf (L21, 500), messing (L22, 600)
+- dach: entfällt (Nachtrag 14.10.). Gekaufte Dächer werden erstattet, `spiel.design.dach` wird ignoriert.
+`spiel.designs = [gekaufte ids]`, Start: dielen, teak. Szene zeichnet nach `zustand.design`.
 
 ## 5. Herbarium
 
@@ -123,3 +123,9 @@ Grafik `js/grafik/saison.js`, Export `SAISON = { typ: {name, art: 'pflanze'|'dek
 - Durch die Garantie (jede 40. Tüte legendär) liegt die tatsächliche Legendär-Quote bei etwa 3,6 %. Im Shop anzeigen: „2 % · garantiert spätestens jede 40. Tüte“.
 - Seltenheits-Schlüssel ohne Umlaut: gewoehnlich, selten, episch, legendaer (Anzeige mit Umlaut).
 - Saatpflanzen nutzen dieselben Typ-Namen wie Topfpflanzen (z. B. tomate) und tragen saat: true; die Szene zeichnet sie mit SAAT[typ].
+
+## Nachträge (14.10., Dächer und Sparziele)
+- Dächer entfallen (offene Ansicht). Die Kategorie dach ist aus den Designs entfernt: bogen und shed sind nicht mehr kaufbar und nicht mehr im Shop, giebel ist nicht mehr in der Liste. `spiel.design.dach` bleibt in den Daten, wird aber ignoriert; die Szene zeichnet kein Dach mehr.
+- Erstattung einmalig in `bewerte()`: jedes gekaufte Dach-Design (bogen 700, shed 900) bringt seinen Kaufpreis in Samen zurück (ohne XP) und wird aus `spiel.designs` entfernt. Das Ereignis hat die Art `erstattung` und den Text „Dachdesign erstattet: +x Samen“. Giebel (0 Samen) wird ohne Ereignis entfernt. Beim nächsten `bewerte()` gibt es nichts mehr zu erstatten.
+- Neuer Boden marmor (L19, 800) füllt die Lücke bei Level 19. Der Rahmen salbei (L13, 450) entfällt: Level 13 ist schon durch die Kannenpflanze belegt. Bis die Szene Marmor zeichnet, zeigt sie dielen.
+- Sparziel-Pflanzen (Ziele, Sheet): nur Topfpflanzen, die der Spieler mit seinem Level kaufen kann (freigeschaltet, gezeichnet, keine Saatgut-Sorten, keine Raritäten). Sortiert nach Level, darunter der Hinweis „Weitere Pflanzen ab höherem Level“. Die Auswahl kommt aus `sparzielPflanzen(daten)` in `js/spiel.js`. Ein bestehendes Ziel mit ungültiger Pflanze behält sie auf der Karte. Beim Öffnen des Sheets wird die erste gültige Pflanze vorgewählt.

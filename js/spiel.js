@@ -161,19 +161,21 @@ const SAISON_NAME = { herbst: 'Herbst', winter: 'Winter', fruehling: 'Frühling'
 // Designs (SPEC-2, Abschnitt 4). Start-Designs sind kostenlos und ab Level 1 gekauft.
 // Abweichung von der Tabelle, damit jede Stufe 1 bis 25 einen Artikel hat: teewagen 16 auf 17, senf 18 auf 21,
 // messing 14 auf 22, aquarium 14 auf 23, fliesen 16 auf 24, plattenspieler 11 auf 25.
+// Nachtrag 14.10.: Dächer entfallen (offene Ansicht). Marmor (Boden, L19) füllt die Lücke bei Level 19.
 const DESIGNS = [
   { id: 'dielen', kategorie: 'boden', name: 'Holzdielen', preis: 0, level: 1 },
   { id: 'terrazzo', kategorie: 'boden', name: 'Terrazzo', preis: 400, level: 7 },
   { id: 'fischgraet', kategorie: 'boden', name: 'Fischgrät', preis: 600, level: 11 },
+  { id: 'marmor', kategorie: 'boden', name: 'Marmor', preis: 800, level: 19 },
   { id: 'fliesen', kategorie: 'boden', name: 'Fliesen', preis: 700, level: 24 },
   { id: 'teak', kategorie: 'rahmen', name: 'Teak', preis: 0, level: 1 },
   { id: 'petrol', kategorie: 'rahmen', name: 'Petrol', preis: 300, level: 9 },
   { id: 'messing', kategorie: 'rahmen', name: 'Messing', preis: 600, level: 22 },
-  { id: 'senf', kategorie: 'rahmen', name: 'Senf', preis: 500, level: 21 },
-  { id: 'giebel', kategorie: 'dach', name: 'Giebeldach', preis: 0, level: 1 },
-  { id: 'bogen', kategorie: 'dach', name: 'Bogendach', preis: 700, level: 13 },
-  { id: 'shed', kategorie: 'dach', name: 'Shed-Dach', preis: 900, level: 19 }
+  { id: 'senf', kategorie: 'rahmen', name: 'Senf', preis: 500, level: 21 }
 ];
+
+// Ausgelaufene Dach-Designs mit ihrem Kaufpreis (Samen). Gekaufte werden in bewerte() einmalig erstattet.
+const DACH_ALT = { giebel: 0, bogen: 700, shed: 900 };
 
 // Herbarium-Sets (SPEC-2, Abschnitt 5). Mitglieder sind Typ-Namen. Bonus einmalig, dazu ein Abzeichen.
 const SETS = [
@@ -792,6 +794,18 @@ export function bewerte(daten, heute) {
     ereignisse.push({ art, text, samen });
   };
 
+  // 0. Dächer entfallen: gekaufte Dach-Designs werden einmalig mit Samen erstattet (ohne XP) und aus der Besitzliste genommen.
+  // Danach stehen sie nicht mehr in spiel.designs, deshalb gibt es beim nächsten Mal nichts mehr zu erstatten.
+  sp.designs = sp.designs.filter(id => {
+    if (!Object.prototype.hasOwnProperty.call(DACH_ALT, id)) return true;
+    const preis = DACH_ALT[id];
+    if (preis > 0) {
+      sp.samen += preis;
+      ereignisse.push({ art: 'erstattung', text: `Dachdesign erstattet: +${preis} Samen`, samen: preis });
+    }
+    return false;
+  });
+
   // 1. Zeitraeume
   const bekannteZeitraeume = new Set(sp.bewertet.zeitraeume.map(z => z.start));
   let zr = L.zeitraum(d, start);
@@ -1122,6 +1136,18 @@ export function katalog(daten) {
   return liste;
 }
 
+// Pflanzen für die Auswahl eines Sparziels: nur Topfpflanzen, die der Spieler mit seinem Level kaufen kann
+// (freigeschaltet, gezeichnet). Saatgut und Raritäten gehören nicht dazu. Sortiert nach Level, dann Name.
+// weitere: es gibt noch gezeichnete Topfpflanzen ab einem höheren Level.
+export function sparzielPflanzen(daten) {
+  const alle = katalog(daten).filter(k => k.kategorie === 'pflanze' && k.gezeichnet);
+  const pflanzen = alle
+    .filter(k => k.freigeschaltet && !saatSeltenheit(k.typ))
+    .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, 'de'))
+    .map(k => ({ typ: k.typ, name: k.name, level: k.level }));
+  return { pflanzen, weitere: alle.some(k => !k.freigeschaltet) };
+}
+
 // Freie Orte fuer die UI. Pflanze: Stellplaetze und Felder. Deko: Felder, haengende Deko: freie Haken.
 // Moebel: Positionen mit Drehung.
 export function freiePlaetze(daten, kategorie, typ) {
@@ -1445,7 +1471,7 @@ function migriere(daten) {
   if (!Number.isFinite(sp.gratisTueten)) sp.gratisTueten = 0;
   const de = sp.design && typeof sp.design === 'object' ? sp.design : {};
   sp.design = { boden: de.boden || 'dielen', rahmen: de.rahmen || 'teak', dach: de.dach || 'giebel' };
-  if (!Array.isArray(sp.designs)) sp.designs = ['dielen', 'teak', 'giebel'];
+  if (!Array.isArray(sp.designs)) sp.designs = ['dielen', 'teak'];
   if (!Array.isArray(sp.entdeckt)) sp.entdeckt = [];
   for (const p of sp.gewaechshaus.pflanzen) entdecke(daten, p.typ);
   return daten;
