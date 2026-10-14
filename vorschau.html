@@ -61,12 +61,8 @@
     <div><h2>senf</h2><div id="szene-rahmen-senf" class="szene"></div></div>
   </div>
 
-  <h2>Dach: giebel, bogen, shed</h2>
-  <div class="zeiten">
-    <div><h2>giebel</h2><div id="szene-dach-giebel" class="szene"></div></div>
-    <div><h2>bogen</h2><div id="szene-dach-bogen" class="szene"></div></div>
-    <div><h2>shed</h2><div id="szene-dach-shed" class="szene"></div></div>
-  </div>
+  <h2>Platz-Markierungen: freie Plätze, Haken, Feld, Grundfläche</h2>
+  <div id="szene-markierungen" class="szene"></div>
 
   <h2>Größe 10 und Winter</h2>
   <div class="zeiten">
@@ -125,7 +121,7 @@
       });
     }
 
-    // Designs: je Variante eine Szene, die uebrigen Teile im Standard (dielen, teak, giebel)
+    // Designs: je Variante eine Szene, die uebrigen Teile im Standard (dielen, teak)
     const basis = { moebel, pflanzen, deko, welk: false, tageszeit: 'tag' };
     const designs = [
       ['szene-boden-dielen', { boden: 'dielen' }],
@@ -135,14 +131,23 @@
       ['szene-rahmen-teak', { rahmen: 'teak' }],
       ['szene-rahmen-petrol', { rahmen: 'petrol' }],
       ['szene-rahmen-messing', { rahmen: 'messing' }],
-      ['szene-rahmen-senf', { rahmen: 'senf' }],
-      ['szene-dach-giebel', { dach: 'giebel' }],
-      ['szene-dach-bogen', { dach: 'bogen' }],
-      ['szene-dach-shed', { dach: 'shed' }]
+      ['szene-rahmen-senf', { rahmen: 'senf' }]
     ];
     for (const [id, design] of designs) {
-      zeichneSzene(document.getElementById(id), { ...basis, design: { boden: 'dielen', rahmen: 'teak', dach: 'giebel', ...design } });
+      zeichneSzene(document.getElementById(id), { ...basis, design: { boden: 'dielen', rahmen: 'teak', ...design } });
     }
+
+    // Platz-Markierungen: freie Plaetze auf Moebel 1 und 2, freier Haken, freies Feld, Moebel-Grundflaeche
+    zeichneSzene(document.getElementById('szene-markierungen'), {
+      ...basis,
+      markierungen: [
+        { ok: true, ort: { moebel: 'm2', platz: 1 } },
+        { ok: true, ort: { moebel: 'm2', platz: 2 } },
+        { ok: true, ort: { haken: 'h2' } },
+        { ok: true, ort: { feld: [3, 3] } },
+        { ok: true, typ: 'tisch_natur', ort: { gx: 3, gy: 3, drehung: 0 } }
+      ]
+    });
 
     // Groesse 10: Feld am hinteren Ende und Haengeampel an der relativen Position
     zeichneSzene(document.getElementById('szene-groesse10'), {
@@ -152,7 +157,7 @@
       deko: [...deko, { id: 'd6', typ: 'bank', ort: { feld: [7, 8] } }]
     });
 
-    // Winter: Schnee auf Dachkanten und Zaunkoepfen, fallende Flocken vor dem Glas
+    // Winter: Schnee auf Wandoberkanten und Zaunkoepfen, fallende Flocken vor dem Glas
     zeichneSzene(document.getElementById('szene-winter'), { ...basis, saison: 'winter' });
   </script>
 </body>

@@ -1,4 +1,4 @@
-// Isometrische Gewaechshaus-Szene als SVG. Der Raum (Boden, Waende, Dach, Efeu, Licht, Zaun, Blumenkasten,
+// Isometrische Gewaechshaus-Szene als SVG. Der Raum (Boden, Waende, Efeu, Licht, Zaun, Blumenkasten,
 // Deckenhaken) liegt hier; Moebel, Pflanzen und Deko (inkl. Haengeampel) kommen aus js/grafik/. Reines JavaScript, keine externen Bilder.
 
 import { iso, KON, BLATT_FARBEN, f, p2, tr, poly, linie, kreis, oval, pfad, gruppe, kiste, gerundet, qb, zufall, defs, bodenschatten, TW, TH, OX, OY } from './grafik/hilfen.js';
@@ -39,7 +39,16 @@ function platzVon(m, n) {
   const p = def && def.plaetze[n];
   if (!p) return null;
   const [gx, gy] = feldPunkt(m.gx, m.gy, m.drehung, p.dx, p.dy);
-  return { gx, gy, z: p.z, beet: !!p.beet };
+  return { gx, gy, z: p.z, beet: !!p.beet, hoehe: p.hoehe > 0 ? p.hoehe : 0 };
+}
+// Grobe Hoehen einer Pflanze (Einheiten vor Skalierung) je Groessenklasse und Stufe 1..4, fuer Plaetze mit hoehe
+const PFLANZEN_HOEHE = { klein: [18, 26, 34, 42], gross: [30, 44, 58, 72] };
+// Geschaetzte Hoehe: Feld hoehe der Grafik (Hoehe bei Stufe 4, Zwischenstufen anteilig), sonst die Tabelle
+function geschaetzteHoehe(o, def) {
+  const stufe = Math.min(4, Math.max(1, Math.round(o.stufe) || 1));
+  const tab = PFLANZEN_HOEHE[def.groesse || (o.saat ? 'klein' : 'gross')] || PFLANZEN_HOEHE.gross;
+  if (Number.isFinite(def.hoehe)) return def.hoehe * tab[stufe - 1] / tab[3];
+  return tab[stufe - 1];
 }
 // Wartezeit einer Saatpflanze bis zur Ernte in Budget-Tagen (wie in spiel.js)
 export const ERNTE_WARTE_TAGE = 3;
@@ -65,19 +74,21 @@ const GROESSEN = [6, 7, 8, 9, 10];
 const groesseAus = (g) => (GROESSEN.includes(g) ? g : BASIS);
 // Abstand zweier benachbarter Feldmitten im SVG (Maß für den Fangradius beim Verschieben)
 export const FELD_PX = Math.hypot(TW / 2, TH / 2);
-// Markierung (gestrichelt, koralle), antippbar
-const MARKE = 'fill="rgba(232,138,122,.18)" stroke="#e88a7a" stroke-width="2.4" stroke-dasharray="5 4" stroke-linejoin="round" style="cursor:pointer"';
+// Markierungen (freie Plaetze, Haken, Felder, Moebel-Grundflaechen): kraeftige Koralle, weisse Aussenkontur, pulsierend
+const MARKE_FARBE = '#e88a7a';
+const MARKE_R = 14;
+const MARKE_PULS = 1.4;
+// Versatz des Pulses je Markierung (s), damit nicht alle gleichzeitig schlagen
+const markeVersatz = (k) => `${((-k * 0.37) % MARKE_PULS).toFixed(2)}s`;
 
-// Gewaechshaus-Designs (zustand.design). Fehlend oder unbekannt: dielen, teak, giebel.
-const BODEN_DESIGNS = ['dielen', 'terrazzo', 'fischgraet', 'fliesen'];
+// Gewaechshaus-Designs (zustand.design). Fehlend oder unbekannt: dielen, teak. design.dach wird nicht gezeichnet.
+const BODEN_DESIGNS = ['dielen', 'terrazzo', 'fischgraet', 'fliesen', 'marmor'];
 const RAHMEN_DESIGNS = ['teak', 'petrol', 'messing', 'senf'];
-const DACH_DESIGNS = ['giebel', 'bogen', 'shed'];
 function designAus(z) {
   const d = (z && z.design) || {};
   return {
     boden: BODEN_DESIGNS.includes(d.boden) ? d.boden : 'dielen',
     rahmen: RAHMEN_DESIGNS.includes(d.rahmen) ? d.rahmen : 'teak',
-    dach: DACH_DESIGNS.includes(d.dach) ? d.dach : 'giebel',
   };
 }
 // Farben der Rahmenteile: grund, licht (Lichtkante), schatten (Schattenkante), maser (feine Linie), verbinder (Messing-Verbinder)
@@ -87,20 +98,11 @@ const RAHMEN_FARBEN = {
   messing: { grund: '#c9a14a', licht: '#e6c978', schatten: '#9a7530', maser: '#b38f3c', verbinder: '#a88436', glanz: '#fff6d0' },
   senf: { grund: '#d9a441', licht: '#f0cc78', schatten: '#a87a25', maser: '#bf8e35', verbinder: '#c9a14a' },
 };
-const GLAS = '#e4f6fa';
-// Dach an den Rueckwaenden: Oberkante der Wandbalken, Bogenhoehe, Ausladung in den Raum (max. 1.5 Felder), Sagezahnhoehe
-const DACH_OBEN = 234;
-const BOGEN_H = 20;
-const BOGEN_D = 1.5;
-const SHED_H = 24;
-// Schnee auf den neuen Kanten (Winter)
-const SCHNEE_LINIE = 'fill="none" stroke="#fbfdfe" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
 
 let zaehler = 0;
 
 // Attributwert sicher machen (fuer data-id und data-ort)
 const escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-const linienzug = (pts, attr) => `<polyline points="${pts.map(p2).join(' ')}" ${attr}/>`;
 
 // ---------- Tageszeit ----------
 
@@ -156,7 +158,7 @@ const WM = { A: 'matrix(48,24,0,-1,400,315)', B: 'matrix(-48,24,0,-1,400,315)' }
 const wp = (w, s, t) => (w === 'A' ? iso(s, 0, t) : iso(0, s, t));
 
 // Rahmenstab in Wand w (s entlang der Wand, t = Hoehe). Grundton, Lichtkante oben (quer) oder links (senkrecht),
-// Schattenkante unten oder rechts. quer: laengs waagerecht (Riegel, Sockel, Dachbalken).
+// Schattenkante unten oder rechts. quer: laengs waagerecht (Riegel, Sockel).
 function stab(w, s0, s1, t0, t1, c, quer = false) {
   const P = (s, t) => wp(w, s, t);
   const ecken = [P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1)];
@@ -314,6 +316,29 @@ function fliesen(G) {
   return s;
 }
 
+// Marmor: helle Creme-Platten mit feinen grauen Adern, deterministisch (eigener Zufallsgenerator), leichte Fugen, dezenter Glanz
+function marmor(G) {
+  const r = zufall(6107);
+  let s = '';
+  for (let i = 0; i < G; i++) {
+    for (let j = 0; j < G; j++) {
+      s += poly([iso(i, j), iso(i + 1, j), iso(i + 1, j + 1), iso(i, j + 1)],
+        'fill="#f1ede6" stroke="#d8d2c8" stroke-width="0.7" stroke-linejoin="round"');
+      for (let k = 0; k < 2; k++) {
+        let x = i + 0.1 + r() * 0.8, y = j + 0.1 + r() * 0.8;
+        let d = `M${p2(iso(x, y))}`;
+        for (let n = 0; n < 4; n++) {
+          x = Math.min(i + 0.95, Math.max(i + 0.05, x + (r() - 0.4) * 0.35));
+          y = Math.min(j + 0.95, Math.max(j + 0.05, y + (r() - 0.3) * 0.35));
+          d += `L${p2(iso(x, y))}`;
+        }
+        s += pfad(d, 'fill="none" stroke="#9a9590" stroke-width="0.6" stroke-linecap="round" opacity="0.55"');
+      }
+      s += poly([iso(i + 0.1, j + 0.1), iso(i + 0.45, j + 0.1), iso(i + 0.1, j + 0.45)], 'fill="#ffffff" opacity="0.25"');
+    }
+  }
+  return s;
+}
 function bodenplatte(uid, G, boden) {
   const P0 = iso(0, 0), P1 = iso(G, 0), P2 = iso(G, G), P3 = iso(0, G);
   // Silhouette mit 14 px dicker Kante nach unten
@@ -323,85 +348,17 @@ function bodenplatte(uid, G, boden) {
   if (boden === 'terrazzo') s += terrazzo(G);
   else if (boden === 'fischgraet') s += fischgraet(G);
   else if (boden === 'fliesen') s += fliesen(G);
+  else if (boden === 'marmor') s += marmor(G);
   else s += dielen(G);
   s += poly([P0, P1, P2, P3], `fill="none" ${KON}`);
   return s;
 }
 
-// Dachbalken entlang der oberen Wandkanten (Rahmen), mit Ueberstand am Giebel
-function dachRahmen(G, c) {
-  return stab('A', 0, G, 220, 234, c, true) + stab('B', 0, G, 220, 234, c, true);
-}
-
-// Bogen-Punkt: s entlang der Wand, u = Abstand von der Wand (0 bis BOGEN_D). Wand A: gy = u, Wand B: gx = u.
-function bogenPunkt(w, s, u) {
-  const z = DACH_OBEN + BOGEN_H * Math.sin(Math.PI * u / BOGEN_D);
-  return w === 'A' ? iso(s, u, z) : iso(u, s, z);
-}
-
-// Schmale gebogene Glasleiste entlang einer Rueckwand (nur bis BOGEN_D in den Raum, opacity <= 0.15)
-function bogenGlas(w, G) {
-  const N = 12;
-  const pts = [];
-  for (let k = 0; k <= G; k++) pts.push(bogenPunkt(w, k, 0));
-  for (let j = 0; j <= N; j++) pts.push(bogenPunkt(w, G, BOGEN_D * j / N));
-  for (let k = G; k >= 0; k--) pts.push(bogenPunkt(w, k, BOGEN_D));
-  for (let j = N; j >= 0; j--) pts.push(bogenPunkt(w, 0, BOGEN_D * j / N));
-  return poly(pts, `fill="${GLAS}" opacity="0.14"`);
-}
-
-// Gebogene Sparren: je Feldlinie an der Wand ein Bogen, der von der Wandoberkante in den Raum ragt und dort endet
-function bogenSparren(w, G, c, winter) {
-  const N = 12;
-  let s = '';
-  for (let k = 0; k <= G; k++) {
-    const pts = [];
-    for (let j = 0; j <= N; j++) pts.push(bogenPunkt(w, k, BOGEN_D * j / N));
-    s += linienzug(pts, `fill="none" stroke="${c.schatten}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"`);
-    s += linienzug(pts, `fill="none" stroke="${c.grund}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"`);
-    if (winter) s += linienzug(pts.map((p) => [p[0], p[1] - 2.5]), SCHNEE_LINIE);
-  }
-  return s;
-}
-
-// Bogendach: nur Andeutung an den zwei Rueckwaenden, nichts ueber der Raummitte
-function bogenDach(G, c, winter) {
-  return bogenGlas('A', G) + bogenGlas('B', G) + bogenSparren('A', G, c, winter) + bogenSparren('B', G, c, winter);
-}
-
-// Sheddach: Saegezahn-Silhouette in der Ebene jeder Rueckwand (3 bis 5 Zaehne je Wand). Je Zahn ein Rahmenpfosten,
-// eine schraege Rahmenleiste bis zur naechsten Zacke und ein schmales Glasdreieck direkt ueber der Wand. Nichts ueber der Raummitte.
-function shedDach(G, c, winter) {
-  const N = Math.min(5, Math.max(3, Math.round(G / 2)));
-  const breite = G / N;
-  let s = '';
-  for (const w of ['A', 'B']) {
-    const P = (x, z) => wp(w, x, z);
-    for (let i = 0; i < N; i++) {
-      const x0 = i * breite;
-      const spitze = P(x0, DACH_OBEN + SHED_H), fuss = P(x0 + breite, DACH_OBEN);
-      s += poly([P(x0, DACH_OBEN), spitze, fuss], `fill="${GLAS}" opacity="0.5" ${KON}`);
-      s += stab(w, x0 - 0.06, x0 + 0.06, DACH_OBEN, DACH_OBEN + SHED_H, c);
-      s += linie(spitze, fuss, `stroke="${c.schatten}" stroke-width="3.2" stroke-linecap="round"`);
-      s += linie(spitze, fuss, `stroke="${c.grund}" stroke-width="1.8" stroke-linecap="round"`);
-      if (winter) s += linie([spitze[0], spitze[1] - 2.5], [fuss[0], fuss[1] - 2.5], SCHNEE_LINIE);
-    }
-  }
-  return s;
-}
-
-// Dachaufbau je Dachdesign (giebel hat keinen Aufbau, nur den Balken)
-function dachAufbau(art, G, c, winter) {
-  if (art === 'bogen') return bogenDach(G, c, winter);
-  if (art === 'shed') return shedDach(G, c, winter);
-  return '';
-}
-
-// Winter: Schnee auf den oberen Kanten der Dachbalken (Deckflaeche je Wand)
-function schneeDach(G) {
+// Winter: Schnee auf den Oberkanten der Waende (z 220: Glas- und Pfostenkante), je Wand eine Deckflaeche
+function schneeKante(G) {
   const farbe = 'fill="#fbfdfe" stroke="#c7d3dc" stroke-width="0.6" stroke-linejoin="round"';
-  return poly([iso(0, 0, 234), iso(G, 0, 234), iso(G, 0.3, 234), iso(0, 0.3, 234)], farbe) +
-    poly([iso(0, 0, 234), iso(0, G, 234), iso(0.3, G, 234), iso(0.3, 0, 234)], farbe);
+  return poly([iso(0, 0, 220), iso(G, 0, 220), iso(G, 0.3, 220), iso(0, 0.3, 220)], farbe) +
+    poly([iso(0, 0, 220), iso(0, G, 220), iso(0.3, G, 220), iso(0.3, 0, 220)], farbe);
 }
 
 // Haengende Ranke von a nach b (Bildschirmkoordinaten), Blaetter wechselseitig am Stiel
@@ -571,18 +528,42 @@ function platziert(fuss, inhalt, attr = '', skala = 1.6) {
   return gruppe(`${attr} ${tr(fuss, skala)}`.trim(), inhalt);
 }
 
+// Plus in der Mitte eines Platz-Kreises: dunkel unterlegt, weiss darueber
+function plus(x, y) {
+  const d = `M${f(x - 4.5)},${f(y)}H${f(x + 4.5)}M${f(x)},${f(y - 4.5)}V${f(y + 4.5)}`;
+  return `<path d="${d}" fill="none" stroke="#6b4a3a" stroke-width="4" stroke-linecap="round" pointer-events="none"/>` +
+    `<path d="${d}" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" pointer-events="none"/>`;
+}
+// Platz-Kreis (freier Platz auf einem Moebel oder Haken): weisse Aussenkontur, dunkle Innenkontur, pulsiert, Plus in der Mitte
+function platzMarke(x, y, attr, k) {
+  const r = MARKE_R, v = markeVersatz(k), dauer = `${MARKE_PULS}s`;
+  return `<circle cx="${f(x)}" cy="${f(y)}" r="${r}" fill="${MARKE_FARBE}" fill-opacity="0.45" stroke="#fff" stroke-width="3" ${attr}>` +
+    `<animate attributeName="r" values="${r};${r + 2};${r}" dur="${dauer}" begin="${v}" repeatCount="indefinite"/></circle>` +
+    `<circle cx="${f(x)}" cy="${f(y)}" r="${r - 2.5}" fill="none" stroke="#6b4a3a" stroke-width="1.2" pointer-events="none">` +
+    `<animate attributeName="r" values="${r - 2.5};${r - 0.5};${r - 2.5}" dur="${dauer}" begin="${v}" repeatCount="indefinite"/></circle>` +
+    plus(x, y);
+}
+// Raute (Bodenfeld oder Moebel-Grundflaeche): kraeftige Fuellung, weisse Kontur, gestrichelte Innenkontur mit wanderndem Strich
+function feldMarke(pts, attr, k) {
+  const liste = pts.map(p2).join(' ');
+  return `<polygon points="${liste}" fill="${MARKE_FARBE}" fill-opacity="0.45" stroke="#fff" stroke-width="3" stroke-linejoin="round" ${attr}/>` +
+    `<polygon points="${liste}" fill="none" stroke="#6b4a3a" stroke-width="1.6" stroke-dasharray="6 4" stroke-linejoin="round" pointer-events="none">` +
+    `<animate attributeName="stroke-dashoffset" from="0" to="-10" dur="0.8s" begin="${markeVersatz(k)}" repeatCount="indefinite"/></polygon>`;
+}
+
 // Markierungen: Rauten fuer Bodenfelder und Moebel-Grundflaechen, Kreise fuer Stellplaetze und Haken.
-// Jede Markierung traegt ihren Ort als data-ort (JSON), damit ein Klick zugeordnet werden kann.
+// Jede antippbare Form traegt ihren Ort als data-ort (JSON), damit ein Klick zugeordnet werden kann.
 function markierungenSvg(liste, moebel, hk) {
   if (!Array.isArray(liste)) return '';
   let s = '';
+  let k = 0;
   for (const mk of liste) {
     if (!mk || mk.ok === false || !mk.ort || typeof mk.ort !== 'object') continue;
     const ort = mk.ort;
-    const attr = `data-ort="${escAttr(JSON.stringify(ort))}" ${MARKE}`;
+    const attr = `data-ort="${escAttr(JSON.stringify(ort))}" style="cursor:pointer"`;
     if (Array.isArray(ort.feld)) {
       const [gx, gy] = ort.feld;
-      s += poly([iso(gx, gy), iso(gx + 1, gy), iso(gx + 1, gy + 1), iso(gx, gy + 1)], attr);
+      s += feldMarke([iso(gx, gy), iso(gx + 1, gy), iso(gx + 1, gy + 1), iso(gx, gy + 1)], attr, k++);
     } else if (Number.isFinite(ort.gx) && Number.isFinite(ort.gy)) {
       // Moebel-Position: Grundflaeche des Moebels in der Drehung des Ortes
       const def = hat(MOEBEL_ALLE, mk.typ);
@@ -590,18 +571,18 @@ function markierungenSvg(liste, moebel, hk) {
       const tiefe = def ? def.tiefe : 1;
       const [w, h] = ort.drehung === 90 ? [tiefe, breite] : [breite, tiefe];
       const { gx, gy } = ort;
-      s += poly([iso(gx, gy), iso(gx + w, gy), iso(gx + w, gy + h), iso(gx, gy + h)], attr);
+      s += feldMarke([iso(gx, gy), iso(gx + w, gy), iso(gx + w, gy + h), iso(gx, gy + h)], attr, k++);
     } else if (ort.moebel !== undefined) {
       const m = (moebel || []).find(x => x.id === ort.moebel);
       const pos = m && platzVon(m, ort.platz);
       if (pos) {
         const p = iso(pos.gx, pos.gy, pos.z);
-        s += kreis(p[0], p[1], 12, attr);
+        s += platzMarke(p[0], p[1], attr, k++);
       }
     } else if (ort.haken !== undefined && Object.prototype.hasOwnProperty.call(hk, ort.haken)) {
       const h = hk[ort.haken];
       const p = iso(h.gx, h.gy, HAKEN_Z);
-      s += kreis(p[0], p[1], 12, attr);
+      s += platzMarke(p[0], p[1], attr, k++);
     }
   }
   return s;
@@ -674,10 +655,25 @@ export function punktAusOrt(ort, zustand) {
   return null;
 }
 
+// Inhalt eines Moebels. Mit schichten(gx, gy, drehung): je Schicht deren svg, danach die Objekte, deren Platz-z in
+// [schicht.z, naechste schicht.z) liegt (tiefer liegende Plaetze zur untersten Schicht). Ohne schichten: zeichne() und alle Aufsaetze.
+function moebelInhalt(e) {
+  const { m, def, aufsatz } = e;
+  const sch = typeof def.schichten === 'function' ? [...(def.schichten(m.gx, m.gy, m.drehung) || [])].sort((a, b) => a.z - b.z) : [];
+  if (!sch.length) return def.zeichne(m.gx, m.gy, m.drehung) + aufsatz.map((a) => a.svg).join('');
+  const lagen = sch.map(() => '');
+  for (const a of aufsatz) {
+    let k = 0;
+    for (let i = 1; i < sch.length; i++) if (a.z >= sch[i].z) k = i;
+    lagen[k] += a.svg;
+  }
+  return sch.map((s, i) => s.svg + lagen[i]).join('');
+}
+
 // ---------- Hauptfunktion ----------
 
 // zustand = { groesse: 6|7|8|9|10, moebel: [{id, typ, gx, gy, drehung}], pflanzen: [{id, typ, stufe, ort}], deko: [{id, typ, ort}],
-//   welk, markierungen: [{ort, ok: true, typ?}], ausschnitt: true, design: {boden, rahmen, dach}, saison: 'winter'? }
+//   welk, markierungen: [{ort, ok: true, typ?}], ausschnitt: true, design: {boden, rahmen} (dach wird ignoriert), saison: 'winter'? }
 // ort = {feld: [gx, gy]} (Feld-Mitte gx+0.5, gy+0.5) oder {moebel: id, platz: n}; haengende Deko: {haken: 'h1'}
 // Markierung: ort wie oben, bei Moebel-Positionen {gx, gy, drehung} plus typ des Moebels.
 export function zeichneSzene(container, zustand) {
@@ -697,16 +693,14 @@ export function zeichneSzene(container, zustand) {
   const getoent = zeit === 'abend' || zeit === 'nacht';
   const sterne = zeit === 'nacht' ? sternPunkte(G) : [];
 
-  // Hintere Teile: Bodenplatte, Boden-Design, Waende, Dachbalken, Dachaufbau, Efeu, Lichter (tag und morgen; sonst siehe unten)
+  // Hintere Teile: Bodenplatte, Boden-Design, Waende, Efeu, Lichter (tag und morgen; sonst siehe unten)
   let hinten = bodenplatte(uid, G, design.boden);
   if (zeit === 'tag' || zeit === 'morgen') hinten += sonnenlicht(uid);
   hinten += himmelDefs(uid, zeit);
   hinten += wand('A', uid, G, faktor, zeit, sterne, rc) + wand('B', uid, G, faktor, zeit, sterne, rc);
-  hinten += dachRahmen(G, rc);
-  hinten += dachAufbau(design.dach, G, rc, winter);
   hinten += efeu(rnd, G, faktor);
-  // Schnee nach dem Efeu, damit die Dachkante auch bei dichtem Bewuchs sichtbar bleibt
-  if (winter) hinten += schneeDach(G);
+  // Schnee nach dem Efeu, damit die Wandoberkante auch bei dichtem Bewuchs sichtbar bleibt
+  if (winter) hinten += schneeKante(G);
   hinten += haken(hk);
   if (!getoent) hinten += lichterkette(uid, G, faktor, zeit);
 
@@ -757,9 +751,11 @@ export function zeichneSzene(container, zustand) {
       const e = moebelById.get(o.ort.moebel);
       const pos = e && platzVon(e.m, o.ort.platz);
       if (pos) {
-        const svg = platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr, skala);
+        // Platz mit hoehe: Pflanze wird so weit verkleinert, dass sie bis zum naechsten Brett passt
+        const sk = o.art === 'pflanze' && pos.hoehe ? Math.min(skala, pos.hoehe / geschaetzteHoehe(o, def)) : skala;
+        const svg = platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr, sk);
         if (istLicht) lichtEintraege.push({ key: e.key + 0.5, svg });
-        else e.aufsatz.push(svg);
+        else e.aufsatz.push({ z: pos.z, svg });
       }
     } else if (o.ort.feld) {
       const [gx, gy] = o.ort.feld;
@@ -773,13 +769,13 @@ export function zeichneSzene(container, zustand) {
   const alle = moebelEintraege
     .map((e) => ({
       key: e.key,
-      svg: `<g data-art="moebel" data-id="${escAttr(e.m.id)}">` + e.def.zeichne(e.m.gx, e.m.gy, e.m.drehung) + e.aufsatz.join('') + '</g>'
+      svg: `<g data-art="moebel" data-id="${escAttr(e.m.id)}">` + moebelInhalt(e) + '</g>'
     }))
     .concat(bodenEintraege);
   alle.sort((a, b) => a.key - b.key);
   const inhalt = alle.map((o) => o.svg).join('');
 
-  // Markierungen liegen ueber dem Boden, aber unter Zaun und Blumenkasten
+  // Markierungen liegen ganz oben (ueber Pflanzen, Moebeln, Zaun), antippbar
   const marken = markierungenSvg(z.markierungen, z.moebel, hk);
 
   // Lichtstrahl; Raum-Stimmung (abend, nacht); Lichter danach; vorn: Zaun, Blumenkasten, Schnee vor dem Glas
