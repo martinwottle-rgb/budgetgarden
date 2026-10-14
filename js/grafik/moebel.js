@@ -323,6 +323,12 @@ function korb(cx, cy, r, z0, z1) {
 
 // ---------- Moebel ----------
 
+// Ebenen: Die Teile-Funktionen liefern { teile, zs }. teile = [[ebene, svg], ...] in Zeichenreihenfolge,
+// ebene = Index in zs (0 = unterste Schicht). zs = Oberkante des Bretts je Schicht (Stellhoehe der Pflanzen).
+// zeichne() setzt alle Teile in Originalreihenfolge zusammen, schichten() sammelt je Ebene.
+const gesamtSvg = (r) => r.teile.map((t) => t[1]).join('');
+const schichtenSvg = (r) => r.zs.map((z, k) => ({ z, svg: r.teile.filter((t) => t[0] === k).map((t) => t[1]).join('') }));
+
 // Pflanzentisch Teak: Platte mit abgerundeten Ecken, vier schraeg ausgestellte Beine mit Messingkappen
 function tischZeichnen(gx, gy, drehung) {
   const m = { gx, gy, drehung };
@@ -336,47 +342,47 @@ function tischZeichnen(gx, gy, drehung) {
 }
 
 // Teakregal: offenes Regal, Seitenwangen schraeg nach unten breiter mit runden Ecken oben, Boeden in Teak, Rueckseite offen
-function regalZeichnen(gx, gy, drehung) {
+function regalTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
   const wange = [[0.02, 0], [0.62, 0], ...bogen(0.48, 116, 0.08, 14, 0, 90), ...bogen(0.18, 116, 0.08, 14, 90, 180)];
-  let s = schatten(m, 3, 0.6);
-  s += prisma(m, 0, 0.1, wange, TEAK);
-  for (const z of [0, 61, 126]) {
-    s += koerper(platte(m, 0.1, 2.9, 0.1, 0.55, 0.04), z, z + 4, TEAK) + maser(m, 0.1, 2.9, 0.1, 0.55, z, z + 4, 2);
-  }
-  s += prisma(m, 2.9, 3, wange, TEAK);
-  return s;
+  const T = [[0, schatten(m, 3, 0.6)], [0, prisma(m, 0, 0.1, wange, TEAK)]];
+  [0, 61, 126].forEach((z, k) => {
+    T.push([k, koerper(platte(m, 0.1, 2.9, 0.1, 0.55, 0.04), z, z + 4, TEAK) + maser(m, 0.1, 2.9, 0.1, 0.55, z, z + 4, 2)]);
+  });
+  T.push([2, prisma(m, 2.9, 3, wange, TEAK)]);
+  return { teile: T, zs: [4, 65, 130] };
 }
 
 // Pflanzentisch Creme: cremefarben lackierte Platte auf Teak-Beinen, untere schmale Teak-Ablage
-function tischWeissZeichnen(gx, gy, drehung) {
+function tischWeissTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 3, 1);
-  s += standBein(m, 0.15, 0.15, -0.1, -0.08, 70) + standBein(m, 2.85, 0.15, 0.1, -0.08, 70);
-  s += koerper(platte(m, 0.15, 2.85, 0.15, 0.85, 0.06), 14, 17, TEAK);
-  s += standBein(m, 0.15, 0.85, -0.1, 0.08, 70) + standBein(m, 2.85, 0.85, 0.1, 0.08, 70);
-  s += koerper(platte(m, 0, 3, 0, 1, 0.1), 70, 76, CREME);
+  const T = [[0, schatten(m, 3, 1)]];
+  // Hintere Beine und untere Ablage gehoeren zur unteren Ebene, vordere Beine unter die Platte (obere Ebene)
+  T.push([0, standBein(m, 0.15, 0.15, -0.1, -0.08, 70) + standBein(m, 2.85, 0.15, 0.1, -0.08, 70)]);
+  T.push([0, koerper(platte(m, 0.15, 2.85, 0.15, 0.85, 0.06), 14, 17, TEAK)]);
+  T.push([1, standBein(m, 0.15, 0.85, -0.1, 0.08, 70) + standBein(m, 2.85, 0.85, 0.1, 0.08, 70)]);
+  T.push([1, koerper(platte(m, 0, 3, 0, 1, 0.1), 70, 76, CREME)]);
   // Glanzlicht entlang der vorderen Plattenkante
   const [x0, x1, , y1] = grenzen(m, 0, 3, 0, 1);
-  s += linie(iso(x0 + 0.1, y1, 74.5), iso(x1 - 0.1, y1, 74.5), 'stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.8"');
-  return s;
+  T.push([1, linie(iso(x0 + 0.1, y1, 74.5), iso(x1 - 0.1, y1, 74.5), 'stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.8"')]);
+  return { teile: T, zs: [17, 76] };
 }
 
 // Leiterregal: zwei schraege Teak-Holme (hinten hoeher), drei Stufenbretter mit Messingbeschlaegen
-function leiterZeichnen(gx, gy, drehung) {
+function leiterTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
   const vf = (z) => 0.95 - 0.55 * z / 150; // Vorderkante der Holme je Hoehe: lehnt nach hinten
   const holm = [[vf(0), 0], [vf(150), 150], [vf(150) - 0.1, 150], [vf(0) - 0.1, 0]];
-  let s = schatten(m, 1, 1);
-  s += prisma(m, 0, 0.1, holm, TEAK);
+  const T = [[0, schatten(m, 1, 1)], [0, prisma(m, 0, 0.1, holm, TEAK)]];
   // Stufen von hinten (oben) nach vorn (unten): Vorderkante buendig an den Holmen, Tiefe nimmt nach oben ab
-  for (const [zk, D] of [[130, 0.46], [85, 0.52], [40, 0.62]]) {
+  for (const [zk, D, k] of [[130, 0.46, 2], [85, 0.52, 1], [40, 0.62, 0]]) {
     const vn = vf(zk), vm = vn - D / 2;
-    s += koerper(platte(m, 0.1, 0.9, vn - D, vn, 0.03), zk, zk + 4, TEAK) + maser(m, 0.1, 0.9, vn - D, vn, zk, zk + 4, 2);
-    for (const u of [0.22, 0.78]) s += beschlag(m, u, vm, 0.03, zk + 4, zk + 5.5);
+    let b = koerper(platte(m, 0.1, 0.9, vn - D, vn, 0.03), zk, zk + 4, TEAK) + maser(m, 0.1, 0.9, vn - D, vn, zk, zk + 4, 2);
+    for (const u of [0.22, 0.78]) b += beschlag(m, u, vm, 0.03, zk + 4, zk + 5.5);
+    T.push([k, b]);
   }
-  s += prisma(m, 0.9, 1, holm, TEAK);
-  return s;
+  T.push([2, prisma(m, 0.9, 1, holm, TEAK)]);
+  return { teile: T, zs: [44, 89, 134] };
 }
 
 // Blumenhocker: runder Teakhocker mit drei schraegen Beinen und Messingkappen
@@ -420,16 +426,15 @@ function steinZeichnen(gx, gy, drehung) {
 }
 
 // Haarnadel-Regal: Teakbretter auf schwarzen Haarnadel-Stuetzen an beiden Enden
-function metallZeichnen(gx, gy, drehung) {
+function metallTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
   const zb = [18, 76, 134]; // Unterkanten der Bretter
-  let s = schatten(m, 2, 1);
-  s += haarnadel(m, 0.1, 141);
-  for (const z of zb) {
-    s += koerper(platte(m, 0.02, 1.98, 0.08, 0.92, 0.04), z, z + 4, TEAK) + maser(m, 0.02, 1.98, 0.08, 0.92, z, z + 4, 2);
-  }
-  s += haarnadel(m, 1.9, 141);
-  return s;
+  const T = [[0, schatten(m, 2, 1)], [0, haarnadel(m, 0.1, 141)]];
+  zb.forEach((z, k) => {
+    T.push([k, koerper(platte(m, 0.02, 1.98, 0.08, 0.92, 0.04), z, z + 4, TEAK) + maser(m, 0.02, 1.98, 0.08, 0.92, z, z + 4, 2)]);
+  });
+  T.push([2, haarnadel(m, 1.9, 141)]);
+  return { teile: T, zs: [22, 80, 138] };
 }
 
 // Brett auf Betonsteinen: Teakbrett auf zwei grauen Betonsteinen mit Poren, leicht schief
@@ -456,48 +461,45 @@ function ziegelbrettZeichnen(gx, gy, drehung) {
 }
 
 // Gaertnertisch Haarnadel: Teakplatte auf zwei Haarnadel-Gestellen, untere Ablage aus drei Teaklatten
-function gaertnertischZeichnen(gx, gy, drehung) {
+function gaertnertischTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 2, 1);
-  s += haarnadel(m, 0.12, 70);
+  const T = [[0, schatten(m, 2, 1)], [0, haarnadel(m, 0.12, 70)]];
   for (const [v0, v1] of [[0.1, 0.32], [0.36, 0.58], [0.62, 0.84]]) {
-    s += koerper(platte(m, 0.12, 1.88, v0, v1, 0.02), 18, 21, TEAK);
+    T.push([0, koerper(platte(m, 0.12, 1.88, v0, v1, 0.02), 18, 21, TEAK)]);
   }
-  s += haarnadel(m, 1.88, 70);
-  s += koerper(platte(m, 0, 2, 0, 1, 0.08), 74, 80, TEAK) + maser(m, 0, 2, 0, 1, 74, 80, 3);
-  return s;
+  T.push([1, haarnadel(m, 1.88, 70)]);
+  T.push([1, koerper(platte(m, 0, 2, 0, 1, 0.08), 74, 80, TEAK) + maser(m, 0, 2, 0, 1, 74, 80, 3)]);
+  return { teile: T, zs: [21, 80] };
 }
 
 // Wandboard: schmaler Teak-Sockel, Wandplatte, zwei Teakbretter auf petrolfarbenen Metallwinkeln
-function wandregalZeichnen(gx, gy, drehung) {
+function wandregalTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 2, 0.6);
-  s += quader(m, 0, 2, 0, 0.03, 4, 100, TEAK_DUNKEL);
-  s += quader(m, 0.04, 1.96, 0.1, 0.5, 0, 4, TEAK);
-  for (const zb of [42, 96]) {
+  // Wand und Sockel sowie die Winkel liegen hinten bzw. am Boden: unterste Ebene, auch der Winkel unter dem oberen Brett
+  const T = [[0, schatten(m, 2, 0.6)], [0, quader(m, 0, 2, 0, 0.03, 4, 100, TEAK_DUNKEL)], [0, quader(m, 0.04, 1.96, 0.1, 0.5, 0, 4, TEAK)]];
+  [42, 96].forEach((zb, k) => {
     for (const uc of [0.3, 1.7]) {
-      s += prisma(m, uc - 0.04, uc + 0.04, [[0.03, zb], [0.5, zb], [0.5, zb - 4], [0.1, zb - 20], [0.03, zb - 20]], PETROL);
+      T.push([0, prisma(m, uc - 0.04, uc + 0.04, [[0.03, zb], [0.5, zb], [0.5, zb - 4], [0.1, zb - 20], [0.03, zb - 20]], PETROL)]);
     }
-    s += koerper(platte(m, 0, 2, 0.03, 0.55, 0.04), zb, zb + 4, TEAK) + maser(m, 0, 2, 0.03, 0.55, zb, zb + 4, 2);
-  }
-  return s;
+    T.push([k, koerper(platte(m, 0, 2, 0.03, 0.55, 0.04), zb, zb + 4, TEAK) + maser(m, 0, 2, 0.03, 0.55, zb, zb + 4, 2)]);
+  });
+  return { teile: T, zs: [46, 100] };
 }
 
 // Rattan-Etagere: drei flache Koerbe, verbunden durch drei geschwungene Teakstreben mit Messingfuessen
-function etagereZeichnen(gx, gy, drehung) {
+function etagereTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
   const [cx, cy] = feldPunkt(gx, gy, drehung, 0.5, 0.5);
   // Strebenkurve: Radius (Felder) ueber der Hoehe, aussen an den Koerben vorbei, unten Fuss
   const KEYS = [[2, 0.5], [20, 0.6], [40, 0.56], [74, 0.45], [104, 0.31]];
-  let s = schatten(m, 1, 1);
   // Streben so, dass keine genau auf der Bildmitte steht (sonst wirkt sie wie eine Mittelsaeule).
   // Hintere Strebe zuerst, dann die Koerbe von unten nach oben, zuletzt die vordere Strebe
-  s += strebe(m, 240, KEYS) + strebe(m, 120, KEYS);
-  for (const [r, z1] of [[0.46, 40], [0.36, 74], [0.27, 108]]) {
-    s += korb(cx, cy, r, z1 - 5, z1);
-  }
-  s += strebe(m, 0, KEYS);
-  return s;
+  const T = [[0, schatten(m, 1, 1)], [0, strebe(m, 240, KEYS) + strebe(m, 120, KEYS)]];
+  [[0.46, 40], [0.36, 74], [0.27, 108]].forEach(([r, z1], k) => {
+    T.push([k, korb(cx, cy, r, z1 - 5, z1)]);
+  });
+  T.push([2, strebe(m, 0, KEYS)]);
+  return { teile: T, zs: [40, 74, 108] };
 }
 
 export const MOEBEL = {
@@ -512,22 +514,34 @@ export const MOEBEL = {
     name: 'Teakregal',
     breite: 3,
     tiefe: 1,
-    plaetze: [{ dx: 0.4, dy: 0.5, z: 130 }, { dx: 1.6, dy: 0.5, z: 130 }, { dx: 2.7, dy: 0.5, z: 130 }],
-    zeichne: (gx, gy, drehung = 0) => regalZeichnen(gx, gy, drehung),
+    plaetze: [
+      { dx: 0.4, dy: 0.5, z: 130 }, { dx: 1.6, dy: 0.5, z: 130 }, { dx: 2.7, dy: 0.5, z: 130 },
+      { dx: 0.4, dy: 0.5, z: 4, hoehe: 57 }, { dx: 1.6, dy: 0.5, z: 4, hoehe: 57 }, { dx: 2.7, dy: 0.5, z: 4, hoehe: 57 },
+      { dx: 0.4, dy: 0.5, z: 65, hoehe: 61 }, { dx: 1.6, dy: 0.5, z: 65, hoehe: 61 }, { dx: 2.7, dy: 0.5, z: 65, hoehe: 61 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(regalTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(regalTeile(gx, gy, drehung)),
   },
   tisch_weiss: {
     name: 'Pflanzentisch Creme',
     breite: 3,
     tiefe: 1,
-    plaetze: [{ dx: 0.5, dy: 0.5, z: 76 }, { dx: 1.5, dy: 0.5, z: 76 }, { dx: 2.5, dy: 0.5, z: 76 }],
-    zeichne: (gx, gy, drehung = 0) => tischWeissZeichnen(gx, gy, drehung),
+    plaetze: [
+      { dx: 0.5, dy: 0.5, z: 76 }, { dx: 1.5, dy: 0.5, z: 76 }, { dx: 2.5, dy: 0.5, z: 76 },
+      { dx: 0.5, dy: 0.5, z: 17, hoehe: 53 }, { dx: 1.5, dy: 0.5, z: 17, hoehe: 53 }, { dx: 2.5, dy: 0.5, z: 17, hoehe: 53 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(tischWeissTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(tischWeissTeile(gx, gy, drehung)),
   },
   leiterregal: {
     name: 'Leiterregal',
     breite: 1,
     tiefe: 1,
-    plaetze: [{ dx: 0.5, dy: 0.493, z: 44 }, { dx: 0.5, dy: 0.378, z: 89 }, { dx: 0.5, dy: 0.243, z: 134 }],
-    zeichne: (gx, gy, drehung = 0) => leiterZeichnen(gx, gy, drehung),
+    plaetze: [
+      { dx: 0.5, dy: 0.493, z: 44, hoehe: 41 }, { dx: 0.5, dy: 0.378, z: 89, hoehe: 41 }, { dx: 0.5, dy: 0.243, z: 134 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(leiterTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(leiterTeile(gx, gy, drehung)),
   },
   blumenhocker: {
     name: 'Blumenhocker',
@@ -554,8 +568,13 @@ export const MOEBEL = {
     name: 'Haarnadel-Regal',
     breite: 2,
     tiefe: 1,
-    plaetze: [{ dx: 0.5, dy: 0.5, z: 138 }, { dx: 1.5, dy: 0.5, z: 138 }, { dx: 0.5, dy: 0.5, z: 80 }, { dx: 1.5, dy: 0.5, z: 80 }],
-    zeichne: (gx, gy, drehung = 0) => metallZeichnen(gx, gy, drehung),
+    plaetze: [
+      { dx: 0.5, dy: 0.5, z: 138 }, { dx: 1.5, dy: 0.5, z: 138 },
+      { dx: 0.5, dy: 0.5, z: 80, hoehe: 54 }, { dx: 1.5, dy: 0.5, z: 80, hoehe: 54 },
+      { dx: 0.5, dy: 0.5, z: 22, hoehe: 54 }, { dx: 1.5, dy: 0.5, z: 22, hoehe: 54 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(metallTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(metallTeile(gx, gy, drehung)),
   },
   ziegelbrett: {
     name: 'Brett auf Betonsteinen',
@@ -568,24 +587,32 @@ export const MOEBEL = {
     name: 'Gärtnertisch Haarnadel',
     breite: 2,
     tiefe: 1,
-    plaetze: [{ dx: 0.5, dy: 0.5, z: 80 }, { dx: 1.5, dy: 0.5, z: 80 }],
-    zeichne: (gx, gy, drehung = 0) => gaertnertischZeichnen(gx, gy, drehung),
+    plaetze: [
+      { dx: 0.5, dy: 0.5, z: 80 }, { dx: 1.5, dy: 0.5, z: 80 },
+      { dx: 0.5, dy: 0.5, z: 21, hoehe: 53 }, { dx: 1.5, dy: 0.5, z: 21, hoehe: 53 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(gaertnertischTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(gaertnertischTeile(gx, gy, drehung)),
   },
   wandregal: {
     name: 'Wandboard',
     breite: 2,
     tiefe: 1,
     plaetze: [
-      { dx: 0.5, dy: 0.3, z: 46 }, { dx: 1.5, dy: 0.3, z: 46 },
+      { dx: 0.5, dy: 0.3, z: 46, hoehe: 50 }, { dx: 1.5, dy: 0.3, z: 46, hoehe: 50 },
       { dx: 0.5, dy: 0.3, z: 100 }, { dx: 1.5, dy: 0.3, z: 100 },
     ],
-    zeichne: (gx, gy, drehung = 0) => wandregalZeichnen(gx, gy, drehung),
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(wandregalTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(wandregalTeile(gx, gy, drehung)),
   },
   rattan_etagere: {
     name: 'Rattan-Etagere',
     breite: 1,
     tiefe: 1,
-    plaetze: [{ dx: 0.44, dy: 0.46, z: 40 }, { dx: 0.56, dy: 0.52, z: 74 }, { dx: 0.48, dy: 0.56, z: 108 }],
-    zeichne: (gx, gy, drehung = 0) => etagereZeichnen(gx, gy, drehung),
+    plaetze: [
+      { dx: 0.44, dy: 0.46, z: 40, hoehe: 29 }, { dx: 0.56, dy: 0.52, z: 74, hoehe: 29 }, { dx: 0.48, dy: 0.56, z: 108 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(etagereTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(etagereTeile(gx, gy, drehung)),
   },
 };
