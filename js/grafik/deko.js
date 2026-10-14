@@ -129,29 +129,42 @@ function kissen() {
   return kissenKlein(-6.6, 14.8, 10, '#f2b8b5', '#d99a97') + kissenKlein(5.8, 14.8, -12, '#b9d3a8', '#98b889');
 }
 
+// Mid-Century-Bank: Teak (Grund #b8743d, Licht #d99a5b, Schatten #8a5228) und Messingkappen #c9a14a
+const TEAK = { links: '#b8743d', rechts: '#8a5228', oben: '#d99a5b' };
+const MESSING = { links: '#c9a14a', rechts: '#9c7a33', oben: '#e6c674' };
+
+// Schraegstehendes Bein: oben auf Sitzhoehe (z 9) bei (x, y), unten um (dx, dy) ausgestellt, nach unten spitz zulaufend.
+// Sichtbar sind die Flaechen links (+y) und rechts (+x); unten eine Messingkappe.
+function schraegesBein(x, y, dx, dy) {
+  const o = 0.9, u = 0.35; // halbe Breite oben und unten
+  const fx = x + dx, fy = y + dy, fz = 0.6;
+  const seite = (pa, pb, pc, pd, farbe) =>
+    flaeche([[pa[0], pa[1], 9], [pb[0], pb[1], 9], [pc[0], pc[1], fz], [pd[0], pd[1], fz]], `fill="${farbe}" ${KB}`);
+  return seite([x - o, y + o], [x + o, y + o], [fx + u, fy + u], [fx - u, fy + u], TEAK.links) +
+    seite([x + o, y - o], [x + o, y + o], [fx + u, fy + u], [fx + u, fy - u], TEAK.rechts) +
+    quader(fx - u - 0.15, fx + u + 0.15, fy - u - 0.15, fy + u + 0.15, 0, 1.4, MESSING, KB);
+}
+
 function bank() {
-  // Maserung auf der Oberseite: feine Linie in dunklerem Holzton
-  const maser = (y, z) => linie(P(-15, y, z), P(15, y, z), 'stroke="#c98f5a" stroke-width="0.6" stroke-linecap="round"');
-  // Beine in Holz-Schattenton
-  const BEIN = { links: '#a86b43', rechts: '#a86b43', oben: '#a86b43' };
-  const beine = [[-14.2, -4], [-14.2, 4], [14.2, -4], [14.2, 4]]
-    .map(([x, y]) => quader(x - 0.9, x + 0.9, y - 0.9, y + 0.9, 0, 9, BEIN, KB)).join('');
+  // Maserung auf der Oberflaeche: feine Linie in dunklerem Teakton
+  const maser = (y, z) => linie(P(-15, y, z), P(15, y, z), 'stroke="#d99a5b" stroke-width="0.6" stroke-linecap="round" opacity="0.7"');
+  // Schraege Beine: hinten (y -4) zuerst, vorne (y 4) danach; jeweils nach aussen ausgestellt
+  const beineHinten = [[-13, -4], [13, -4]].map(([x, y]) => schraegesBein(x, y, Math.sign(x) * 2.2, -1)).join('');
+  const beineVorne = [[-13, 4], [13, 4]].map(([x, y]) => schraegesBein(x, y, Math.sign(x) * 2.2, 1)).join('');
+  // Niedrige Rueckenlehne: zwei Latten, getragen von zwei Pfosten an den Enden (Oberkante z 17)
+  const lehne = quader(-16, 16, -5, -3.6, 13.2, 14.5, TEAK, KB) + quader(-16, 16, -5, -3.6, 15.7, 17, TEAK, KB) +
+    maser(-4.3, 13.9) + maser(-4.3, 16.4) +
+    quader(-16, -14.4, -5, -3.6, 11, 17, TEAK, KB) + quader(14.4, 16, -5, -3.6, 11, 17, TEAK, KB);
   // Sitz: drei Latten mit Fugen, vorne (+y) sichtbar
   let sitz = '';
   for (const y0 of [-5, -1.6, 1.8]) {
-    sitz += quader(-16, 16, y0, y0 + 3.2, 9, 11, HOLZ, KB) + maser(y0 + 0.9, 11) + maser(y0 + 2.4, 11);
+    sitz += quader(-16, 16, y0, y0 + 3.2, 9, 11, TEAK, KB) + maser(y0 + 0.9, 11) + maser(y0 + 2.4, 11);
   }
-  const armFern = quader(-16.6, -14.6, -5, 5, 14.5, 16, HOLZ, KB) +
-    quader(-15.8, -14.2, 3.2, 4.8, 11, 14.5, HOLZ, KB) + quader(-15.8, -14.2, -4.8, -3.2, 11, 14.5, HOLZ, KB);
-  const armNah = quader(14.6, 16.6, -5, 5, 14.5, 16, HOLZ, KB) +
-    quader(14.2, 15.8, 3.2, 4.8, 11, 14.5, HOLZ, KB) + quader(14.2, 15.8, -4.8, -3.2, 11, 14.5, HOLZ, KB);
-  // Rueckenlehne hinten (y = -5): zwei Latten, getragen von zwei Pfosten an den Enden
-  const lehne = quader(-16, 16, -5, -3.6, 13, 14.6, HOLZ, KB) + quader(-16, 16, -5, -3.6, 16.4, 18, HOLZ, KB) +
-    maser(-4.3, 13.8) + maser(-4.3, 17.2) +
-    quader(-16, -14.4, -5, -3.6, 11, 19.4, HOLZ, KB) + quader(14.4, 16, -5, -3.6, 11, 19.4, HOLZ, KB);
+  // Zwei Kissen an der Lehne: senf links, petrol rechts
+  const kissenPaar = kissenKlein(-7, 14, 6, '#e8b754', '#c0892c') + kissenKlein(6.2, 14, -8, '#3d8c90', '#25575a');
 
   return oval(0, 0, 21, 10.5, 'fill="#6b4a3a" opacity="0.18"') +
-    beine + sitz + armFern + lehne + kissen() + armNah;
+    beineHinten + lehne + beineVorne + sitz + kissenPaar;
 }
 
 function giesskanne() {
