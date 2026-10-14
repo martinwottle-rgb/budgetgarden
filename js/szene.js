@@ -11,17 +11,44 @@ import { DEKO } from './grafik/deko.js';
 const RAR_SKALA = R.RAR_SKALA ?? 1.15;
 
 const FUGE = 'stroke="#c9a27a" stroke-width="0.8" stroke-linejoin="round"';
-// Standardgroesse des Bodens in Feldern (6, 7 oder 8). Alle Masse unten sind auf 6 gerechnet und mit faktor skaliert.
+// Standardgroesse des Bodens in Feldern. Alle Masse unten sind auf 6 gerechnet und mit faktor skaliert.
 const BASIS = 6;
+// Erlaubte Groessen des Gewaechshauses in Feldern
+const GROESSEN = [6, 7, 8, 9, 10];
+const groesseAus = (g) => (GROESSEN.includes(g) ? g : BASIS);
 // Abstand zweier benachbarter Feldmitten im SVG (Maß für den Fangradius beim Verschieben)
 export const FELD_PX = Math.hypot(TW / 2, TH / 2);
 // Markierung (gestrichelt, koralle), antippbar
 const MARKE = 'fill="rgba(232,138,122,.18)" stroke="#e88a7a" stroke-width="2.4" stroke-dasharray="5 4" stroke-linejoin="round" style="cursor:pointer"';
 
+// Gewaechshaus-Designs (zustand.design). Fehlend oder unbekannt: dielen, teak, giebel.
+const BODEN_DESIGNS = ['dielen', 'terrazzo', 'fischgraet', 'fliesen'];
+const RAHMEN_DESIGNS = ['teak', 'petrol', 'messing', 'senf'];
+const DACH_DESIGNS = ['giebel', 'bogen', 'shed'];
+function designAus(z) {
+  const d = (z && z.design) || {};
+  return {
+    boden: BODEN_DESIGNS.includes(d.boden) ? d.boden : 'dielen',
+    rahmen: RAHMEN_DESIGNS.includes(d.rahmen) ? d.rahmen : 'teak',
+    dach: DACH_DESIGNS.includes(d.dach) ? d.dach : 'giebel',
+  };
+}
+// Farben der Rahmenteile: grund, licht (Lichtkante), schatten (Schattenkante), maser (feine Linie), verbinder (Messing-Verbinder)
+const RAHMEN_FARBEN = {
+  teak: { grund: '#b8743d', licht: '#d99a5b', schatten: '#8a5228', maser: '#9c5f2e', verbinder: '#c9a14a' },
+  petrol: { grund: '#2f6f73', licht: '#5f9ca0', schatten: '#1f4f52', maser: '#285d61', verbinder: '#c9a14a' },
+  messing: { grund: '#c9a14a', licht: '#e6c978', schatten: '#9a7530', maser: '#b38f3c', verbinder: '#a88436', glanz: '#fff6d0' },
+  senf: { grund: '#d9a441', licht: '#f0cc78', schatten: '#a87a25', maser: '#bf8e35', verbinder: '#c9a14a' },
+};
+const GLAS = '#e4f6fa';
+const BOGEN_H = 26;
+const SHED_H = 24;
+
 let zaehler = 0;
 
 // Attributwert sicher machen (fuer data-id und data-ort)
 const escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const linienzug = (pts, attr) => `<polyline points="${pts.map(p2).join(' ')}" ${attr}/>`;
 
 // ---------- Tageszeit ----------
 
@@ -76,7 +103,41 @@ const WM = { A: 'matrix(48,24,0,-1,400,315)', B: 'matrix(-48,24,0,-1,400,315)' }
 // Punkt auf Wand A (entlang gy=0, Parameter s = gx) oder B (entlang gx=0, s = gy); t = Hoehe z
 const wp = (w, s, t) => (w === 'A' ? iso(s, 0, t) : iso(0, s, t));
 
-function wand(w, uid, G, faktor, zeit, sterne) {
+// Rahmenstab in Wand w (s entlang der Wand, t = Hoehe). Grundton, Lichtkante oben (quer) oder links (senkrecht),
+// Schattenkante unten oder rechts. quer: laengs waagerecht (Riegel, Sockel, Dachbalken).
+function stab(w, s0, s1, t0, t1, c, quer = false) {
+  const P = (s, t) => wp(w, s, t);
+  const ecken = [P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1)];
+  let s = poly(ecken, `fill="${c.grund}"`);
+  if (quer) {
+    const h = t1 - t0, d = s1 - s0;
+    s += poly([P(s0, t1 - 0.3 * h), P(s1, t1 - 0.3 * h), P(s1, t1 - 0.05 * h), P(s0, t1 - 0.05 * h)], `fill="${c.licht}" opacity="0.8"`);
+    s += poly([P(s0, t0), P(s1, t0), P(s1, t0 + 0.2 * h), P(s0, t0 + 0.2 * h)], `fill="${c.schatten}" opacity="0.8"`);
+    if (d > 1) {
+      s += linie(P(s0 + 0.1 * d, (t0 + t1) / 2), P(s1 - 0.1 * d, (t0 + t1) / 2), `stroke="${c.maser}" stroke-width="0.6" opacity="0.7"`);
+    }
+    if (c.glanz) {
+      s += linie(P(s0 + 0.1 * d, t1 - 0.15 * h), P(s1 - 0.1 * d, t1 - 0.15 * h), `stroke="${c.glanz}" stroke-width="0.7" opacity="0.8"`);
+    }
+  } else {
+    const d = s1 - s0, hh = t1 - t0;
+    s += poly([P(s0 + 0.15 * d, t0), P(s0 + 0.4 * d, t0), P(s0 + 0.4 * d, t1), P(s0 + 0.15 * d, t1)], `fill="${c.licht}" opacity="0.8"`);
+    s += poly([P(s1 - 0.2 * d, t0), P(s1, t0), P(s1, t1), P(s1 - 0.2 * d, t1)], `fill="${c.schatten}" opacity="0.8"`);
+    if (c.glanz) {
+      s += linie(P(s0 + 0.25 * d, t0 + 0.1 * hh), P(s0 + 0.25 * d, t1 - 0.1 * hh), `stroke="${c.glanz}" stroke-width="0.7" opacity="0.8"`);
+    }
+  }
+  s += poly(ecken, `fill="none" ${KON}`);
+  return s;
+}
+
+// Messing-Verbinder an einer Kreuzung (kleiner Knopf mit Glanzpunkt)
+function verbinder(p, c) {
+  return kreis(p[0], p[1], 1.9, `fill="${c.verbinder}" stroke="#6b4a3a" stroke-width="0.8"`) +
+    kreis(p[0] - 0.5, p[1] - 0.5, 0.6, 'fill="#fff6d0" opacity="0.8"');
+}
+
+function wand(w, uid, G, faktor, zeit, sterne, c) {
   let s = '';
   // Clip-Pfad = Glasflaeche der Wand: Wolken werden nur innerhalb des Glases gezeichnet
   const clipId = `${uid}-glas${w}`;
@@ -110,42 +171,175 @@ function wand(w, uid, G, faktor, zeit, sterne) {
     `<ellipse cx="${cx + 0.12 * sc}" cy="${cy + 4 * sc}" rx="${0.22 * sc}" ry="${11 * sc}"/>` +
     `<ellipse cx="${cx + 0.4 * sc}" cy="${cy - 1}" rx="${0.18 * sc}" ry="${8 * sc}"/>`;
   }).join('') + '</g></g>';
-  // Sprossen: 3 senkrechte, 2 waagerechte
-  for (const sv0 of [1.5, 3, 4.5]) {
-    const sv = sv0 * faktor;
-    s += poly([wp(w, sv - 0.05, 30), wp(w, sv + 0.05, 30), wp(w, sv + 0.05, 220), wp(w, sv - 0.05, 220)], `fill="#c98f5a" ${KON}`);
+  // Rahmen: Sprossen (senkrecht), Querriegel, Eckpfosten, Sockel; Messing-Verbinder an allen Kreuzungen
+  const sprossen = [1.5, 3, 4.5].map((sv0) => sv0 * faktor);
+  for (const sv of sprossen) {
+    s += stab(w, sv - 0.05, sv + 0.05, 30, 220, c);
   }
   for (const th of [95, 160]) {
-    s += poly([wp(w, 0, th - 2), wp(w, G, th - 2), wp(w, G, th + 2), wp(w, 0, th + 2)], `fill="#c98f5a" ${KON}`);
+    s += stab(w, 0, G, th - 2, th + 2, c, true);
   }
   // Eckpfosten
-  s += poly([wp(w, 0, 30), wp(w, 0.15, 30), wp(w, 0.15, 220), wp(w, 0, 220)], `fill="#c98f5a" ${KON}`);
-  s += poly([wp(w, G - 0.15, 30), wp(w, G, 30), wp(w, G, 220), wp(w, G - 0.15, 220)], `fill="#c98f5a" ${KON}`);
+  s += stab(w, 0, 0.15, 30, 220, c) + stab(w, G - 0.15, G, 30, 220, c);
   // Holzsockel
-  s += poly([wp(w, 0, 0), wp(w, G, 0), wp(w, G, 30), wp(w, 0, 30)], `fill="#c98f5a" ${KON}`);
+  s += stab(w, 0, G, 0, 30, c, true);
+  for (const th of [95, 160]) {
+    for (const sv of [0.075, ...sprossen, G - 0.075]) {
+      s += verbinder(wp(w, sv, th), c);
+    }
+  }
   return s;
 }
 
-function bodenplatte(uid, G) {
-  const P0 = iso(0, 0), P1 = iso(G, 0), P2 = iso(G, G), P3 = iso(0, G);
-  // Silhouette mit 14 px dicker Kante nach unten
-  const kontur = [P0, P1, [P1[0], P1[1] + 14], [P2[0], P2[1] + 14], [P3[0], P3[1] + 14], P3];
-  let s = pfad(gerundet(kontur.map((p) => [p[0], p[1] + 10]), 12), 'fill="#7fb87a" opacity="0.55"');
-  s += pfad(gerundet(kontur, 12), `fill="#e8e4df" ${KON}`);
+// Boden (Dielen): Schachbrett aus zwei Holztoenen mit Fugen
+function dielen(G) {
+  let s = '';
   for (let i = 0; i < G; i++) {
     for (let j = 0; j < G; j++) {
       s += poly([iso(i, j), iso(i + 1, j), iso(i + 1, j + 1), iso(i, j + 1)],
         `fill="${(i + j) % 2 ? '#e2bd94' : '#e9c9a3'}" ${FUGE}`);
     }
   }
+  return s;
+}
+
+// Terrazzo: Creme mit bunten Splittern, deterministisch (eigener Zufallsgenerator)
+function terrazzo(G) {
+  const r = zufall(8803);
+  const farben = ['#d9693b', '#2f6f73', '#d9a441', '#9fb79a', '#8a5228', '#b8743d'];
+  let s = '';
+  for (let i = 0; i < G; i++) {
+    for (let j = 0; j < G; j++) {
+      s += poly([iso(i, j), iso(i + 1, j), iso(i + 1, j + 1), iso(i, j + 1)],
+        'fill="#f3e6cf" stroke="#d9c7a8" stroke-width="0.6" stroke-linejoin="round"');
+      for (let k = 0; k < 7; k++) {
+        const x = i + 0.12 + r() * 0.7, y = j + 0.12 + r() * 0.7, g = 0.05 + r() * 0.07;
+        const farbe = farben[Math.floor(r() * farben.length)];
+        const ecken = [[x, y], [x + g * (1 + r()), y + g * 0.3 * r()], [x + g * r(), y + g * (0.8 + r())]];
+        s += poly(ecken.map((p) => iso(p[0], p[1])), `fill="${farbe}" opacity="0.9"`);
+      }
+    }
+  }
+  return s;
+}
+
+// Fischgraet: Teakdielen in Viertelfeld-Streifen, je Feld die Laufrichtung gewechselt (isometrische Andeutung)
+function fischgraet(G) {
+  const farben = ['#b8743d', '#c98f5a', '#a86b43', '#d99a5b'];
+  let s = '';
+  for (let i = 0; i < G; i++) {
+    for (let j = 0; j < G; j++) {
+      const laengs = (i + j) % 2 === 0;
+      for (let k = 0; k < 4; k++) {
+        const a = k * 0.25, b = a + 0.25;
+        const c = farben[(i * 3 + j * 5 + k) % 4];
+        const ecken = laengs
+          ? [[i, j + a], [i + 1, j + a], [i + 1, j + b], [i, j + b]]
+          : [[i + a, j], [i + b, j], [i + b, j + 1], [i + a, j + 1]];
+        s += poly(ecken.map((p) => iso(p[0], p[1])), `fill="${c}" stroke="#8a5228" stroke-width="0.6" stroke-linejoin="round"`);
+      }
+    }
+  }
+  return s;
+}
+
+// Zementfliesen: Schachbrett Creme und Petrol, in jeder Fliese eine Raute in der Gegenfarbe
+function fliesen(G) {
+  let s = '';
+  for (let i = 0; i < G; i++) {
+    for (let j = 0; j < G; j++) {
+      const hell = (i + j) % 2 === 0;
+      const grund = hell ? '#f3e6cf' : '#2f6f73';
+      const ziel = hell ? '#2f6f73' : '#f3e6cf';
+      s += poly([iso(i, j), iso(i + 1, j), iso(i + 1, j + 1), iso(i, j + 1)],
+        `fill="${grund}" stroke="#b7aa98" stroke-width="0.7" stroke-linejoin="round"`);
+      const raute = [[i + 0.5, j + 0.18], [i + 0.82, j + 0.5], [i + 0.5, j + 0.82], [i + 0.18, j + 0.5]];
+      s += poly(raute.map((p) => iso(p[0], p[1])), `fill="${ziel}" opacity="0.85" stroke="${grund}" stroke-width="0.6" stroke-linejoin="round"`);
+      const m = iso(i + 0.5, j + 0.5);
+      s += kreis(m[0], m[1], 1.6, `fill="${grund}"`);
+    }
+  }
+  return s;
+}
+
+function bodenplatte(uid, G, boden) {
+  const P0 = iso(0, 0), P1 = iso(G, 0), P2 = iso(G, G), P3 = iso(0, G);
+  // Silhouette mit 14 px dicker Kante nach unten
+  const kontur = [P0, P1, [P1[0], P1[1] + 14], [P2[0], P2[1] + 14], [P3[0], P3[1] + 14], P3];
+  let s = pfad(gerundet(kontur.map((p) => [p[0], p[1] + 10]), 12), 'fill="#7fb87a" opacity="0.55"');
+  s += pfad(gerundet(kontur, 12), `fill="#e8e4df" ${KON}`);
+  if (boden === 'terrazzo') s += terrazzo(G);
+  else if (boden === 'fischgraet') s += fischgraet(G);
+  else if (boden === 'fliesen') s += fliesen(G);
+  else s += dielen(G);
   s += poly([P0, P1, P2, P3], `fill="none" ${KON}`);
   return s;
 }
 
-function dach(G) {
-  // Holzbalken entlang der oberen Wandkanten, mit Ueberstand am Giebel
-  return poly([iso(0, G, 220), iso(0, 0, 220), iso(G, 0, 220), iso(G, 0, 234), iso(0, 0, 234), iso(0, G, 234)],
-    `fill="#a86b43" ${KON}`);
+// Dachbalken entlang der oberen Wandkanten (Rahmen), mit Ueberstand am Giebel
+function dachRahmen(G, c) {
+  return stab('A', 0, G, 220, 234, c, true) + stab('B', 0, G, 220, 234, c, true);
+}
+
+// Gewoelbtes Glasdach: Sparren als Boegen in Richtung gy, Firstlinie oben, Glasflaechen zwischen den Sparren
+function bogenDach(G, c) {
+  const N = 12;
+  const bogen = (gx) => {
+    const pts = [];
+    for (let k = 0; k <= N; k++) {
+      const t = k / N;
+      pts.push(iso(gx, G * t, 220 + BOGEN_H * Math.sin(Math.PI * t)));
+    }
+    return pts;
+  };
+  const b = [];
+  for (let k = 0; k <= G; k++) b.push(bogen(k));
+  let s = '';
+  for (let k = 0; k < G; k++) {
+    s += poly(b[k].concat(b[k + 1].slice().reverse()), `fill="${GLAS}" opacity="0.55" ${KON}`);
+  }
+  for (let k = 0; k <= G; k++) {
+    s += linienzug(b[k], `fill="none" stroke="${c.schatten}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"`);
+    s += linienzug(b[k], `fill="none" stroke="${c.grund}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"`);
+  }
+  const first = [];
+  for (let k = 0; k <= G; k++) first.push(iso(k, G / 2, 220 + BOGEN_H));
+  s += linienzug(first, `fill="none" stroke="${c.grund}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"`);
+  return s;
+}
+
+// Saegezahn-Sheddach: je Feld eine schraege Glasflaeche, hoch am Grat gx = k, tief bei gx = k + 1
+function shedDach(G, c) {
+  let s = '';
+  for (let k = 0; k < G; k++) {
+    s += poly([iso(k, 0, 220 + SHED_H), iso(k, G, 220 + SHED_H), iso(k + 1, G, 220), iso(k + 1, 0, 220)],
+      `fill="${GLAS}" opacity="0.6" ${KON}`);
+  }
+  // Grate als Leisten, Sagezahnkante vorn
+  for (let k = 0; k < G; k++) {
+    s += linie(iso(k, 0, 220 + SHED_H), iso(k, G, 220 + SHED_H), `stroke="${c.schatten}" stroke-width="3" stroke-linecap="round"`);
+    s += linie(iso(k, 0, 220 + SHED_H), iso(k, G, 220 + SHED_H), `stroke="${c.grund}" stroke-width="1.6" stroke-linecap="round"`);
+  }
+  const zacke = [];
+  for (let k = 0; k < G; k++) {
+    zacke.push(iso(k, G, 220 + SHED_H), iso(k + 1, G, 220));
+  }
+  s += linienzug(zacke, `fill="none" ${KON}`);
+  return s;
+}
+
+// Dachaufbau je Dachdesign (giebel hat keinen Aufbau, nur den Balken)
+function dachAufbau(art, G, c) {
+  if (art === 'bogen') return bogenDach(G, c);
+  if (art === 'shed') return shedDach(G, c);
+  return '';
+}
+
+// Winter: Schnee auf den oberen Kanten der Dachbalken (Deckflaeche je Wand)
+function schneeDach(G) {
+  const farbe = 'fill="#fbfdfe" stroke="#c7d3dc" stroke-width="0.6" stroke-linejoin="round"';
+  return poly([iso(0, 0, 234), iso(G, 0, 234), iso(G, 0.3, 234), iso(0, 0.3, 234)], farbe) +
+    poly([iso(0, 0, 234), iso(0, G, 234), iso(0.3, G, 234), iso(0.3, 0, 234)], farbe);
 }
 
 // Haengende Ranke von a nach b (Bildschirmkoordinaten), Blaetter wechselseitig am Stiel
@@ -209,22 +403,31 @@ function lichterkette(uid, G, faktor, zeit) {
   return s;
 }
 
-function zaun(G) {
+// Zaun vorn: Teak-Riegel und schlichte senkrechte Latten mit abgerundeten Koepfen (winter: Schnee auf den Koepfen)
+function zaun(G, c, winter) {
   // w = 0: Kante gy=G, w = 1: Kante gx=G; beide mit Luecke an der vorderen Ecke iso(G,G)
   const E = (w, u, z) => (w === 0 ? iso(u, G, z) : iso(G, u, z));
   let s = '';
   for (let w = 0; w < 2; w++) {
-    const segmente = [[0, G - 1.1]];
     for (const z of [9, 20]) {
-      for (const [u0, u1] of segmente) {
-        s += poly([E(w, u0, z - 3), E(w, u1, z - 3), E(w, u1, z + 3), E(w, u0, z + 3)], `fill="#c98f5a" ${KON}`);
-      }
+      s += poly([E(w, 0, z - 3), E(w, G - 1.1, z - 3), E(w, G - 1.1, z + 3), E(w, 0, z + 3)], `fill="${c.grund}" ${KON}`);
     }
     for (let k = 0; ; k++) {
       const u = 0.25 + k * 0.5;
       if (u > G - 1.1) break;
-      s += poly([E(w, u - 0.06, 0), E(w, u + 0.06, 0), E(w, u + 0.06, 24), E(w, u, 30), E(w, u - 0.06, 24)],
-        `fill="#d9a574" ${KON}`);
+      // Kopf als Halbkreis: von rechts oben ueber die Mitte nach links oben
+      const kopf = [];
+      for (let a = 0; a <= 8; a++) {
+        const th = Math.PI * a / 8;
+        kopf.push(E(w, u + 0.06 * Math.cos(th), 24 + 3 * Math.sin(th)));
+      }
+      s += poly([E(w, u - 0.06, 0), E(w, u + 0.06, 0), ...kopf], `fill="${c.grund}" ${KON}`);
+      s += poly([E(w, u - 0.06, 0), E(w, u - 0.03, 0), E(w, u - 0.03, 24), E(w, u - 0.06, 24)], `fill="${c.licht}" opacity="0.7"`);
+      s += poly([E(w, u + 0.03, 0), E(w, u + 0.06, 0), E(w, u + 0.06, 24), E(w, u + 0.03, 24)], `fill="${c.schatten}" opacity="0.6"`);
+      if (winter) {
+        const p = E(w, u, 27);
+        s += oval(p[0], p[1], 3.2, 1.5, 'fill="#fbfdfe" stroke="#c7d3dc" stroke-width="0.6"');
+      }
     }
   }
   return s;
@@ -251,6 +454,24 @@ function blumenkasten(G) {
   return s;
 }
 
+// Winter: ein paar Schneeflocken vor dem Glas, fallen langsam (SMIL-Animation, deterministisch verteilt)
+function schneeflocken(G) {
+  const r = zufall(7331);
+  let s = '';
+  for (let k = 0; k < 9; k++) {
+    const w = k % 2 ? 'A' : 'B';
+    const p = wp(w, 0.4 + r() * (G - 0.8), 60 + r() * 150);
+    const dauer = 7 + Math.floor(r() * 4);
+    const beginn = -(r() * dauer).toFixed(1);
+    const radius = 1.4 + r() * 1.0;
+    s += `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${f(radius)}" fill="#ffffff" opacity="0.7">` +
+      `<animate attributeName="cy" from="${f(p[1])}" to="${f(p[1] + 70)}" dur="${dauer}s" begin="${beginn}s" repeatCount="indefinite"/>` +
+      `<animate attributeName="opacity" values="0.7;0.7;0" keyTimes="0;0.8;1" dur="${dauer}s" begin="${beginn}s" repeatCount="indefinite"/>` +
+      '</circle>';
+  }
+  return s;
+}
+
 // Sonnenlicht durch die linke Glaswand (Wand B, gx = 0): weiche Flaeche auf dem Boden
 function sonnenlicht(uid) {
   return poly([iso(0.05, 1.2), iso(2.9, 1.2), iso(2.9, 3.4), iso(0.05, 3.4)],
@@ -263,12 +484,19 @@ function sonnenstrahl() {
 }
 
 // Deckenhaken an der Dachkante (z 226). Eine Haengeampel (Deko mit ort {haken: 'h1'}) haengt an einem freien Haken.
+// HAKEN gilt fuer groesse 6 (wird von spiel.js fuer die Spiellogik genutzt). Groessere Gewaechshaeuser: hakenFuer(G).
 export const HAKEN = { h1: { gx: 4.6, gy: 0.6 }, h2: { gx: 0.6, gy: 4.4 } };
 const HAKEN_Z = 226;
 
+// Haken je Groesse: gleiche Lage relativ zur Rueckwand (h1 an Wand A, h2 an Wand B), bei 6 genau HAKEN
+export function hakenFuer(G) {
+  const k = groesseAus(G) - BASIS;
+  return { h1: { gx: HAKEN.h1.gx + k, gy: HAKEN.h1.gy }, h2: { gx: HAKEN.h2.gx, gy: HAKEN.h2.gy + k } };
+}
+
 // Metallring an jedem Haken. Ohne Ampel ist nur dieser kleine Haken sichtbar.
-function haken() {
-  return Object.values(HAKEN).map((h) => {
+function haken(hk) {
+  return Object.values(hk).map((h) => {
     const p = iso(h.gx, h.gy, HAKEN_Z);
     return kreis(p[0], p[1], 2.4, 'fill="none" stroke="#6b4a3a" stroke-width="1.1"') +
       kreis(p[0], p[1], 2.4, 'fill="none" stroke="#cfd8dc" stroke-width="0.6"');
@@ -283,7 +511,7 @@ function platziert(fuss, inhalt, attr = '', skala = 1.6) {
 
 // Markierungen: Rauten fuer Bodenfelder und Moebel-Grundflaechen, Kreise fuer Stellplaetze und Haken.
 // Jede Markierung traegt ihren Ort als data-ort (JSON), damit ein Klick zugeordnet werden kann.
-function markierungenSvg(liste, moebel) {
+function markierungenSvg(liste, moebel, hk) {
   if (!Array.isArray(liste)) return '';
   let s = '';
   for (const mk of liste) {
@@ -308,8 +536,8 @@ function markierungenSvg(liste, moebel) {
         const p = iso(pos.gx, pos.gy, pos.z);
         s += kreis(p[0], p[1], 12, attr);
       }
-    } else if (ort.haken !== undefined && Object.prototype.hasOwnProperty.call(HAKEN, ort.haken)) {
-      const h = HAKEN[ort.haken];
+    } else if (ort.haken !== undefined && Object.prototype.hasOwnProperty.call(hk, ort.haken)) {
+      const h = hk[ort.haken];
       const p = iso(h.gx, h.gy, HAKEN_Z);
       s += kreis(p[0], p[1], 12, attr);
     }
@@ -349,7 +577,7 @@ export function einpassen(wurzel) {
 // Feldkoordinaten (gx, gy) zu einem SVG-Punkt (inverse Isometrie). z: Hoehe des Punkts (Standard 0 = Boden).
 // feld: [floor(gx), floor(gy)], innen: liegt der Punkt im Gewaechshaus (groesse aus zustand)?
 export function feldAusPunkt(x, y, zustand, z = 0) {
-  const G = [6, 7, 8].includes(zustand && zustand.groesse) ? zustand.groesse : BASIS;
+  const G = groesseAus(zustand && zustand.groesse);
   const u = (x - OX) * 2 / TW;        // gx - gy
   const v = (y + z - OY) * 2 / TH;    // gx + gy
   const gx = (u + v) / 2;
@@ -367,9 +595,12 @@ export function punktAusOrt(ort, zustand) {
     const pos = m && platzFeld(m, ort.platz);
     return pos ? iso(pos.gx, pos.gy, pos.z) : null;
   }
-  if (ort.haken !== undefined && Object.prototype.hasOwnProperty.call(HAKEN, ort.haken)) {
-    const h = HAKEN[ort.haken];
-    return iso(h.gx, h.gy, HAKEN_Z);
+  if (ort.haken !== undefined) {
+    const hk = hakenFuer(zustand && zustand.groesse);
+    if (Object.prototype.hasOwnProperty.call(hk, ort.haken)) {
+      const h = hk[ort.haken];
+      return iso(h.gx, h.gy, HAKEN_Z);
+    }
   }
   if (Number.isFinite(ort.gx) && Number.isFinite(ort.gy)) {
     const def = MOEBEL[ort.typ];
@@ -383,8 +614,8 @@ export function punktAusOrt(ort, zustand) {
 
 // ---------- Hauptfunktion ----------
 
-// zustand = { groesse: 6|7|8, moebel: [{id, typ, gx, gy, drehung}], pflanzen: [{id, typ, stufe, ort}], deko: [{id, typ, ort}],
-//   welk, markierungen: [{ort, ok: true, typ?}], ausschnitt: true }
+// zustand = { groesse: 6|7|8|9|10, moebel: [{id, typ, gx, gy, drehung}], pflanzen: [{id, typ, stufe, ort}], deko: [{id, typ, ort}],
+//   welk, markierungen: [{ort, ok: true, typ?}], ausschnitt: true, design: {boden, rahmen, dach}, saison: 'winter'? }
 // ort = {feld: [gx, gy]} (Feld-Mitte gx+0.5, gy+0.5) oder {moebel: id, platz: n}; haengende Deko: {haken: 'h1'}
 // Markierung: ort wie oben, bei Moebel-Positionen {gx, gy, drehung} plus typ des Moebels.
 export function zeichneSzene(container, zustand) {
@@ -392,22 +623,29 @@ export function zeichneSzene(container, zustand) {
   const welk = !!z.welk;
   const uid = 'szene' + (++zaehler);
   const rnd = zufall(4217);
-  const G = [6, 7, 8].includes(z.groesse) ? z.groesse : BASIS;
+  const G = groesseAus(z.groesse);
   const faktor = G / BASIS;
+  const hk = hakenFuer(G);
+  const design = designAus(z);
+  const rc = RAHMEN_FARBEN[design.rahmen];
+  const winter = z.saison === 'winter';
   // Tageszeit: ohne Angabe aus der lokalen Uhrzeit
   const zeit = ZEITEN.includes(z.tageszeit) ? z.tageszeit : tageszeitAus(new Date());
   // abend und nacht: Raum-Stimmung ueber Boden und Inhalt, Laternen und Lichterkette bleiben hell darueber
   const getoent = zeit === 'abend' || zeit === 'nacht';
   const sterne = zeit === 'nacht' ? sternPunkte(G) : [];
 
-  // Hintere Teile: Bodenplatte, Dielen, Wande, Dach, Efeu, Lichter (tag und morgen; sonst siehe unten)
-  let hinten = bodenplatte(uid, G);
+  // Hintere Teile: Bodenplatte, Boden-Design, Waende, Dachbalken, Dachaufbau, Efeu, Lichter (tag und morgen; sonst siehe unten)
+  let hinten = bodenplatte(uid, G, design.boden);
   if (zeit === 'tag' || zeit === 'morgen') hinten += sonnenlicht(uid);
   hinten += himmelDefs(uid, zeit);
-  hinten += wand('A', uid, G, faktor, zeit, sterne) + wand('B', uid, G, faktor, zeit, sterne);
-  hinten += dach(G);
+  hinten += wand('A', uid, G, faktor, zeit, sterne, rc) + wand('B', uid, G, faktor, zeit, sterne, rc);
+  hinten += dachRahmen(G, rc);
+  hinten += dachAufbau(design.dach, G, rc);
   hinten += efeu(rnd, G, faktor);
-  hinten += haken();
+  // Schnee nach dem Efeu, damit die Dachkante auch bei dichtem Bewuchs sichtbar bleibt
+  if (winter) hinten += schneeDach(G);
+  hinten += haken(hk);
   if (!getoent) hinten += lichterkette(uid, G, faktor, zeit);
 
   // Moebel: Sortierschluessel gx+gy des Ursprungs. Darauf stehende Objekte folgen direkt danach.
@@ -444,7 +682,7 @@ export function zeichneSzene(container, zustand) {
     const istLicht = getoent && o.art === 'deko' && o.typ === 'laterne';
     if (def.haengend) {
       // Haengende Deko sitzt am Haken und wird nach allen Objekten mit gleicher oder kleinerer Tiefe gezeichnet
-      const h = Object.prototype.hasOwnProperty.call(HAKEN, o.ort.haken) ? HAKEN[o.ort.haken] : null;
+      const h = Object.prototype.hasOwnProperty.call(hk, o.ort.haken) ? hk[o.ort.haken] : null;
       if (h) bodenEintraege.push({ key: h.gx + h.gy + 1e-6, svg: platziert(iso(h.gx, h.gy, HAKEN_Z), inhalt, attr) });
       continue;
     }
@@ -475,15 +713,15 @@ export function zeichneSzene(container, zustand) {
   const inhalt = alle.map((o) => o.svg).join('');
 
   // Markierungen liegen ueber dem Boden, aber unter Zaun und Blumenkasten
-  const marken = markierungenSvg(z.markierungen, z.moebel);
+  const marken = markierungenSvg(z.markierungen, z.moebel, hk);
 
-  // Lichtstrahl; Raum-Stimmung (abend, nacht); Lichter danach; vorn: Zaun und Blumenkasten
+  // Lichtstrahl; Raum-Stimmung (abend, nacht); Lichter danach; vorn: Zaun, Blumenkasten, Schnee vor dem Glas
   const strahl = zeit === 'tag' || zeit === 'morgen' ? sonnenstrahl() : '';
   const stimmung = getoent ? raumtoenung(G, zeit) : '';
   const lichter = getoent
     ? lichterkette(uid, G, faktor, zeit) + lichtEintraege.sort((a, b) => a.key - b.key).map((o) => o.svg).join('')
     : '';
-  const vorn = zaun(G) + blumenkasten(G);
+  const vorn = zaun(G, rc, winter) + blumenkasten(G) + (winter ? schneeflocken(G) : '');
 
   // Ausschnitt: eng um das Gewaechshaus. Sonst: wie bisher, bei 6 x 6 unveraendert 0 0 800 644, groesser wachsend.
   let x0, y0, breite, hoehe;

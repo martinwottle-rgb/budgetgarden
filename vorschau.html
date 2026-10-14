@@ -45,6 +45,35 @@
     <div><h2>nacht</h2><div id="szene-nacht" class="szene"></div></div>
   </div>
 
+  <h2>Boden: dielen, terrazzo, fischgrät, fliesen</h2>
+  <div class="zeiten">
+    <div><h2>dielen</h2><div id="szene-boden-dielen" class="szene"></div></div>
+    <div><h2>terrazzo</h2><div id="szene-boden-terrazzo" class="szene"></div></div>
+    <div><h2>fischgrät</h2><div id="szene-boden-fischgraet" class="szene"></div></div>
+    <div><h2>fliesen</h2><div id="szene-boden-fliesen" class="szene"></div></div>
+  </div>
+
+  <h2>Rahmen: teak, petrol, messing, senf</h2>
+  <div class="zeiten">
+    <div><h2>teak</h2><div id="szene-rahmen-teak" class="szene"></div></div>
+    <div><h2>petrol</h2><div id="szene-rahmen-petrol" class="szene"></div></div>
+    <div><h2>messing</h2><div id="szene-rahmen-messing" class="szene"></div></div>
+    <div><h2>senf</h2><div id="szene-rahmen-senf" class="szene"></div></div>
+  </div>
+
+  <h2>Dach: giebel, bogen, shed</h2>
+  <div class="zeiten">
+    <div><h2>giebel</h2><div id="szene-dach-giebel" class="szene"></div></div>
+    <div><h2>bogen</h2><div id="szene-dach-bogen" class="szene"></div></div>
+    <div><h2>shed</h2><div id="szene-dach-shed" class="szene"></div></div>
+  </div>
+
+  <h2>Größe 10 und Winter</h2>
+  <div class="zeiten">
+    <div><h2>Größe 10</h2><div id="szene-groesse10" class="szene"></div></div>
+    <div><h2>Winter</h2><div id="szene-winter" class="szene"></div></div>
+  </div>
+
   <script type="module">
     import { zeichneSzene } from './js/szene.js';
 
@@ -95,6 +124,36 @@
         tageszeit: zeit
       });
     }
+
+    // Designs: je Variante eine Szene, die uebrigen Teile im Standard (dielen, teak, giebel)
+    const basis = { moebel, pflanzen, deko, welk: false, tageszeit: 'tag' };
+    const designs = [
+      ['szene-boden-dielen', { boden: 'dielen' }],
+      ['szene-boden-terrazzo', { boden: 'terrazzo' }],
+      ['szene-boden-fischgraet', { boden: 'fischgraet' }],
+      ['szene-boden-fliesen', { boden: 'fliesen' }],
+      ['szene-rahmen-teak', { rahmen: 'teak' }],
+      ['szene-rahmen-petrol', { rahmen: 'petrol' }],
+      ['szene-rahmen-messing', { rahmen: 'messing' }],
+      ['szene-rahmen-senf', { rahmen: 'senf' }],
+      ['szene-dach-giebel', { dach: 'giebel' }],
+      ['szene-dach-bogen', { dach: 'bogen' }],
+      ['szene-dach-shed', { dach: 'shed' }]
+    ];
+    for (const [id, design] of designs) {
+      zeichneSzene(document.getElementById(id), { ...basis, design: { boden: 'dielen', rahmen: 'teak', dach: 'giebel', ...design } });
+    }
+
+    // Groesse 10: Feld am hinteren Ende und Haengeampel an der relativen Position
+    zeichneSzene(document.getElementById('szene-groesse10'), {
+      ...basis,
+      groesse: 10,
+      pflanzen: [...pflanzen, { id: 'p7', typ: 'monstera', stufe: 3, ort: { feld: [8, 7] } }],
+      deko: [...deko, { id: 'd6', typ: 'bank', ort: { feld: [7, 8] } }]
+    });
+
+    // Winter: Schnee auf Dachkanten und Zaunkoepfen, fallende Flocken vor dem Glas
+    zeichneSzene(document.getElementById('szene-winter'), { ...basis, saison: 'winter' });
   </script>
 </body>
 </html>
