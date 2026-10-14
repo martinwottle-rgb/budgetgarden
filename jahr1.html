@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="de-DE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dein Gewächshaus nach einem Jahr</title>
+  <style>
+    :root {
+      --mint: #a9d3a5;
+      --schrift: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      background: var(--mint);
+      color: #6b4a3a;
+      font-family: var(--schrift);
+      text-align: center;
+    }
+    h1 {
+      font-size: 28px;
+      margin: 0 0 6px;
+      font-weight: 700;
+    }
+    .zeile {
+      font-size: 15px;
+      margin: 0 0 14px;
+      opacity: 0.9;
+    }
+    #szene {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dein Gewächshaus nach einem Jahr 🌿</h1>
+  <p class="zeile">Level 23 · 412 Tage dabei · 6 von 6 Raritäten · 1.840 € gespart</p>
+  <div id="szene"></div>
+
+  <script type="module">
+    import { zeichneSzene, punktAusOrt, HAKEN } from './js/szene.js';
+    import { EXTRAS } from './js/grafik/extras.js';
+
+    // Aufstellung: Rueckwaende (Zeile gy 0 und Spalte gx 0) mit Regalen, vorn der Sitzbereich, Mitte der Brunnen
+    const moebel = [
+      { id: 'm_leiter', typ: 'leiterregal', gx: 0, gy: 0, drehung: 0 },
+      { id: 'm_regal', typ: 'regal_holz', gx: 1, gy: 0, drehung: 0 },
+      { id: 'm_hocker', typ: 'blumenhocker', gx: 4, gy: 0, drehung: 0 },
+      { id: 'm_metall', typ: 'metallregal', gx: 6, gy: 0, drehung: 0 },
+      { id: 'm_etagere', typ: 'rattan_etagere', gx: 0, gy: 2, drehung: 0 },
+      { id: 'm_wand', typ: 'wandregal', gx: 0, gy: 5, drehung: 90 },
+      { id: 'm_stein', typ: 'steinsockel', gx: 0, gy: 7, drehung: 0 },
+      { id: 'm_tisch_nat', typ: 'tisch_natur', gx: 7, gy: 2, drehung: 90 },
+      { id: 'm_tisch_weiss', typ: 'tisch_weiss', gx: 5, gy: 7, drehung: 0 },
+      { id: 'm_gaertner', typ: 'gaertnertisch_guss', gx: 1, gy: 6, drehung: 0 }
+    ];
+
+    // Auf allen Moebelplaetzen kleine Pflanzen Stufe 4, dazu zwei Raritaeten (klein)
+    const pflanzen = [
+      { id: 'p01', typ: 'efeutute', stufe: 4, ort: { moebel: 'm_leiter', platz: 0 } },
+      { id: 'p02', typ: 'kaktus', stufe: 4, ort: { moebel: 'm_leiter', platz: 1 } },
+      { id: 'p03', typ: 'aloe', stufe: 4, ort: { moebel: 'm_leiter', platz: 2 } },
+      { id: 'p04', typ: 'echeverie', stufe: 4, ort: { moebel: 'm_regal', platz: 0 } },
+      { id: 'p05', typ: 'orchidee', stufe: 4, ort: { moebel: 'm_regal', platz: 1 } },
+      { id: 'p06', typ: 'calathea', stufe: 4, ort: { moebel: 'm_regal', platz: 2 } },
+      { id: 'p07', typ: 'bostonfarn', stufe: 4, ort: { moebel: 'm_hocker', platz: 0 } },
+      { id: 'p08', typ: 'lavendel', stufe: 4, ort: { moebel: 'm_metall', platz: 3 } },
+      { id: 'p09', typ: 'basilikum', stufe: 4, ort: { moebel: 'm_metall', platz: 1 } },
+      { id: 'p10', typ: 'erdbeere', stufe: 4, ort: { moebel: 'm_metall', platz: 2 } },
+      { id: 'p11', typ: 'pink_princess', stufe: 4, rar: true, ort: { moebel: 'm_metall', platz: 0 } },
+      { id: 'p12', typ: 'gruenlilie', stufe: 4, ort: { moebel: 'm_etagere', platz: 0 } },
+      { id: 'p13', typ: 'bogenhanf', stufe: 4, ort: { moebel: 'm_etagere', platz: 1 } },
+      { id: 'p14', typ: 'bonsai', stufe: 4, ort: { moebel: 'm_etagere', platz: 2 } },
+      { id: 'p15', typ: 'efeutute', stufe: 4, ort: { moebel: 'm_wand', platz: 0 } },
+      { id: 'p16', typ: 'kaktus', stufe: 4, ort: { moebel: 'm_wand', platz: 1 } },
+      { id: 'p17', typ: 'aloe', stufe: 4, ort: { moebel: 'm_wand', platz: 2 } },
+      { id: 'p18', typ: 'echeverie', stufe: 4, ort: { moebel: 'm_wand', platz: 3 } },
+      { id: 'p19', typ: 'orchidee', stufe: 4, ort: { moebel: 'm_stein', platz: 0 } },
+      { id: 'p20', typ: 'lavendel', stufe: 4, ort: { moebel: 'm_tisch_nat', platz: 0 } },
+      { id: 'p21', typ: 'basilikum', stufe: 4, ort: { moebel: 'm_tisch_nat', platz: 1 } },
+      { id: 'p22', typ: 'gold_ginkgo', stufe: 4, rar: true, ort: { moebel: 'm_tisch_nat', platz: 2 } },
+      { id: 'p23', typ: 'erdbeere', stufe: 4, ort: { moebel: 'm_tisch_weiss', platz: 0 } },
+      { id: 'p24', typ: 'echeverie', stufe: 4, ort: { moebel: 'm_tisch_weiss', platz: 1 } },
+      { id: 'p25', typ: 'basilikum', stufe: 4, ort: { moebel: 'm_tisch_weiss', platz: 2 } },
+      { id: 'p26', typ: 'bonsai', stufe: 4, ort: { moebel: 'm_gaertner', platz: 0 } },
+      { id: 'p27', typ: 'efeutute', stufe: 4, ort: { moebel: 'm_gaertner', platz: 1 } },
+      // Grosse Pflanzen Stufe 4 am Boden (Raritaeten gross, rar: true)
+      { id: 'g01', typ: 'kletterrose', stufe: 4, ort: { feld: [0, 1] } },
+      { id: 'g02', typ: 'monstera', stufe: 4, ort: { feld: [1, 1] } },
+      { id: 'g03', typ: 'geigenfeige', stufe: 4, ort: { feld: [2, 1] } },
+      { id: 'g04', typ: 'zitrone', stufe: 4, ort: { feld: [3, 1] } },
+      { id: 'g05', typ: 'gluecksfeder', stufe: 4, ort: { feld: [6, 1] } },
+      { id: 'g06', typ: 'sonnenblume', stufe: 4, ort: { feld: [7, 1] } },
+      { id: 'g07', typ: 'tomate', stufe: 4, ort: { feld: [2, 2] } },
+      { id: 'g08', typ: 'thai_constellation', stufe: 4, rar: true, ort: { feld: [1, 2] } },
+      { id: 'g09', typ: 'drachenbaum', stufe: 4, rar: true, ort: { feld: [6, 3] } },
+      { id: 'g10', typ: 'koenigin_der_nacht', stufe: 4, rar: true, ort: { feld: [2, 4] } },
+      { id: 'g11', typ: 'jadewein', stufe: 4, rar: true, ort: { feld: [3, 2] } }
+    ];
+
+    const deko = [
+      { id: 'd01', typ: 'springbrunnen', ort: { feld: [3, 3] } },
+      { id: 'd02', typ: 'teppich', ort: { feld: [4, 4] } },
+      { id: 'd03', typ: 'bank', ort: { feld: [4, 3] } },
+      { id: 'd04', typ: 'laterne', ort: { feld: [2, 3] } },
+      { id: 'd05', typ: 'laterne', ort: { feld: [6, 5] } },
+      { id: 'd06', typ: 'giesskanne', ort: { feld: [1, 5] } },
+      { id: 'd07', typ: 'katze', ort: { feld: [2, 7] } },
+      { id: 'd08', typ: 'vogelhaus', ort: { feld: [0, 3] } },
+      { id: 'd09', typ: 'gartenzwerg', ort: { feld: [1, 7] } },
+      { id: 'd10', typ: 'windspiel', ort: { feld: [1, 4] } },
+      { id: 'd11', typ: 'lichterkette', ort: { feld: [5, 4] } },
+      { id: 'd12', typ: 'haengeampel', ort: { haken: 'h1' } },
+      { id: 'd13', typ: 'haengeampel', ort: { haken: 'h2' } }
+    ];
+
+    // Zusatz-Deko aus extras.js, Ort als Feld (Fusspunkt = Feldmitte)
+    const extras = [
+      { typ: 'kraeuterbeet', feld: [7, 6] },
+      { typ: 'lichterlaube', feld: [2, 5] },
+      { typ: 'haengesessel', feld: [4, 5] },
+      { typ: 'leseecke', feld: [5, 5] },
+      { typ: 'schaukelstuhl', feld: [6, 4] },
+      { typ: 'katzenkorb', feld: [3, 6] }
+    ];
+
+    const zustand = { groesse: 8, moebel, pflanzen, deko, welk: false, tageszeit: 'abend', ausschnitt: true };
+    const ziel = document.getElementById('szene');
+    zeichneSzene(ziel, zustand);
+
+    // Extras einsortieren: Tiefe wie bei den Objekten (gx + gy), spaetere Gruppen liegen weiter vorn
+    const svg = ziel.querySelector('svg');
+    const schluessel = new Map();
+    for (const m of moebel) schluessel.set(m.id, m.gx + m.gy);
+    for (const o of [...pflanzen, ...deko]) {
+      if (o.ort.feld) schluessel.set(o.id, o.ort.feld[0] + o.ort.feld[1] + 1);
+      else if (o.ort.haken !== undefined) schluessel.set(o.id, HAKEN[o.ort.haken].gx + HAKEN[o.ort.haken].gy + 1e-6);
+    }
+    for (const e of extras) {
+      const [gx, gy] = e.feld;
+      const fuss = punktAusOrt({ feld: [gx, gy] }, zustand);
+      const key = gx + gy + 1;
+      const gruppe = `<g data-art="extra" data-typ="${e.typ}" transform="translate(${fuss[0]},${fuss[1]}) scale(1.6)">${EXTRAS[e.typ].zeichne()}</g>`;
+      // Vor dem ersten Objekt mit groesserer Tiefe einfuegen, sonst vor der Licht-/Vordergrundgruppe
+      let ziehe = null;
+      for (const kind of svg.children) {
+        const id = kind.getAttribute('data-id');
+        if (id && schluessel.has(id) && schluessel.get(id) > key) { ziehe = kind; break; }
+      }
+      if (!ziehe) ziehe = svg.querySelector(':scope > g[pointer-events]');
+      ziehe.insertAdjacentHTML('beforebegin', gruppe);
+    }
+  </script>
+</body>
+</html>
