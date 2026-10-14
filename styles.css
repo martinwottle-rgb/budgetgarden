@@ -2224,3 +2224,189 @@ button.h20-kachel { cursor: pointer; }
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
 }
 .h20-steck-set { font-style: italic; margin-top: 4px; }
+
+/* 2.0 shop */
+.s20-banner { text-align: center; }
+.s20-banner-titel { font-size: 20px; font-weight: 800; }
+
+.s20-tuete-karte { padding: 16px; }
+.s20-tuete-kopf { display: flex; align-items: center; gap: 14px; }
+.s20-tuete-bild { display: block; flex: 0 0 104px; }
+.s20-tuete-bild svg { display: block; width: 100%; height: auto; }
+.s20-tuete-text { flex: 1; min-width: 0; }
+.s20-tuete-text .sh-titel { margin-top: 0; }
+.s20-tuete-text .klein { margin: 0; }
+.s20-tuete-karte .sh-preis-gross { margin: 12px 0 4px; }
+.s20-gratis { margin: 4px 0 0; text-align: center; font-weight: 800; color: var(--positiv); }
+
+.s20-ueberschrift { margin: 6px 2px 8px; font-size: 17px; font-weight: 800; line-height: 1.2; }
+.s20-liste { list-style: none; margin: 0 0 8px; padding: 0; }
+.s20-zeile { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px dashed rgba(107, 74, 58, 0.2); font-size: 15px; }
+.s20-zeile:last-child { border-bottom: 0; }
+.s20-punkt { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--braun); }
+.s20-zeile-name { flex: 1; font-weight: 800; }
+.s20-zeile-wert { text-align: right; font-weight: 700; font-size: 13px; color: var(--braun-2); font-variant-numeric: tabular-nums; }
+.s20-fortschritt { margin: 8px 0 0; font-weight: 800; }
+
+.s20-marke {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.s20-saatgut { margin-top: 4px; }
+.s20-saatkarte { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 0; padding: 12px; text-align: center; }
+.s20-saatkarte .sh-bild { width: 100%; }
+.s20-saatkarte .sh-hinweis { margin-bottom: 2px; }
+.s20-saatkarte .knopf { min-height: 44px; margin-top: 4px; }
+.s20-leer .sh-bild { opacity: 0.5; }
+.s20-frage {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 3px solid var(--braun);
+  color: #ffffff;
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.s20-gruppe { margin-bottom: 8px; }
+.s20-design { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 0; padding: 12px; text-align: center; }
+.s20-design .sh-bild { width: 100%; }
+.s20-design .knopf { min-height: 44px; margin-top: 4px; }
+.s20-aktiv { box-shadow: 0 0 0 3px var(--gold), var(--schatten); }
+.s20-design-bild { display: block; width: 100%; height: 100%; padding: 6px; }
+.s20-design-bild svg { display: block; width: 100%; height: 100%; }
+
+/* Öffnen-Animation: Vollbild-Overlay mit Stufen (s20-wackel, s20-reisst, s20-zeigt, s20-fertig) */
+.s20-hinter {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: calc(var(--sicht-oben) + 16px) 20px calc(var(--sicht-unten) + 16px);
+  background: rgba(107, 74, 58, 0.66);
+  overflow: hidden;
+  animation: s20-ein 0.25s ease-out;
+}
+
+.s20-buehne {
+  position: relative;
+  width: min(300px, 100%);
+  height: 300px;
+}
+
+.s20-licht {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 440px;
+  height: 440px;
+  margin: -220px 0 0 -220px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, var(--s20-farbe) 0deg 7deg, transparent 7deg 20deg);
+  -webkit-mask-image: radial-gradient(circle, #000 15%, transparent 68%);
+  mask-image: radial-gradient(circle, #000 15%, transparent 68%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease-out;
+}
+.s20-hinter.s20-reisst .s20-licht { opacity: 0.85; animation: s20-dreh 14s linear infinite; }
+
+.s20-tuete-svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 160px;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.4s ease-in, transform 0.4s ease-in;
+}
+.s20-tuete-svg svg { display: block; width: 100%; height: auto; overflow: visible; }
+.s20-hinter.s20-wackel .s20-tuete-svg svg { animation: s20-wackel 0.6s ease-in-out 2; transform-origin: 50% 90%; }
+.s20-klappe { transform-box: fill-box; transform-origin: 50% 100%; }
+.s20-hinter.s20-reisst .s20-klappe { animation: s20-aufreissen 0.5s ease-in forwards; }
+.s20-innen { fill: var(--s20-farbe, #fff6c9); opacity: 0; }
+.s20-hinter.s20-reisst .s20-innen { opacity: 1; transition: opacity 0.3s ease-out 0.2s; }
+.s20-hinter.s20-zeigt .s20-tuete-svg { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+
+.s20-ergebnis-wrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(250px, 100%);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.6);
+  pointer-events: none;
+}
+.s20-hinter.s20-zeigt .s20-ergebnis-wrap {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  transition: opacity 0.35s ease-out, transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.s20-ergebnis { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0; padding: 14px; text-align: center; }
+.s20-ergebnis-bild { width: 170px; max-width: 100%; }
+.s20-ergebnis-name { font-size: 18px; font-weight: 800; line-height: 1.2; }
+.s20-ergebnis-hinweis { font-weight: 700; color: var(--braun-2); }
+
+.s20-aktionen {
+  display: flex;
+  gap: 10px;
+  width: min(300px, 100%);
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+.s20-aktionen .knopf { flex: 1; padding: 0 10px; font-size: 15px; white-space: nowrap; }
+.s20-aktionen .knopf-leise { background: var(--creme); color: var(--braun); }
+.s20-hinter.s20-fertig .s20-aktionen {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.s20-konfetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.s20-konfetti span {
+  position: absolute;
+  top: -14px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  animation: s20-faellt 2.6s ease-in forwards;
+}
+
+@keyframes s20-ein { from { opacity: 0; } to { opacity: 1; } }
+@keyframes s20-wackel {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-6deg); }
+  75% { transform: rotate(6deg); }
+}
+@keyframes s20-aufreissen {
+  to { transform: translate(8px, -34px) rotate(-18deg); opacity: 0; }
+}
+@keyframes s20-dreh { to { transform: rotate(360deg); } }
+@keyframes s20-faellt {
+  from { transform: translate(0, 0) rotate(0deg); }
+  to { transform: translate(var(--s20-dx), 760px) rotate(var(--s20-rot)); opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .s20-hinter,
+  .s20-hinter * { animation: none !important; transition: none !important; }
+  .s20-konfetti { display: none; }
+}
+
+/* 2.0: Shop-Reiter umbrechen statt seitlich verstecken, damit alle neuen Reiter sichtbar sind */
+.sh-reiter { flex-wrap: wrap; overflow-x: visible; }
+.sh-reiter button { flex: 1 1 auto; min-width: calc(33% - 4px); }
