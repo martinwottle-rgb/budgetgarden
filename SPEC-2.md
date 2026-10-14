@@ -117,3 +117,9 @@ Nach Datum aktiv, Artikel nur dann kaufbar, danach dauerhaft im Besitz.
 - Frühling (1.3.–30.4.): kirschbluete (Topfpflanze groß, 400), tulpen (Topfpflanze klein, 90)
 - Sommer (1.6.–31.8.): sonnenschirm (Deko, 200), hibiskus (Topfpflanze groß, 300)
 Grafik `js/grafik/saison.js`, Export `SAISON = { typ: {name, art: 'pflanze'|'deko'|'saat', groesse?, zeichne} }`.
+
+## Nachträge (14.10.)
+- Level-Lücken geschlossen: teewagen L17, Rahmen senf L21, Rahmen messing L22, aquarium L23, Boden fliesen L24, plattenspieler L25.
+- Durch die Garantie (jede 40. Tüte legendär) liegt die tatsächliche Legendär-Quote bei etwa 3,6 %. Im Shop anzeigen: „2 % · garantiert spätestens jede 40. Tüte“.
+- Seltenheits-Schlüssel ohne Umlaut: gewoehnlich, selten, episch, legendaer (Anzeige mit Umlaut).
+- Saatpflanzen nutzen dieselben Typ-Namen wie Topfpflanzen (z. B. tomate) und tragen saat: true; die Szene zeichnet sie mit SAAT[typ].

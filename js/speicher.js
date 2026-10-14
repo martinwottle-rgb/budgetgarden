@@ -36,6 +36,12 @@ export function standardDaten(heute) {
       offeneAbschluesse: [],
       besuch: { letzter: null, serie: 0 },
       gutscheine: [],
+      saatgut: {},
+      tuete: { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 },
+      gratisTueten: 0,
+      design: { boden: 'dielen', rahmen: 'teak', dach: 'giebel' },
+      designs: ['dielen', 'teak', 'giebel'],
+      entdeckt: [],
       gewaechshaus: {
         groesse: 6,
         moebel: [

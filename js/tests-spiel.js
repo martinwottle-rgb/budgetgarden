@@ -5,6 +5,7 @@ import * as S from './spiel.js';
 import * as P from './speicher.js';
 import { PFLANZEN } from './grafik/pflanzen.js';
 import { DEKO } from './grafik/deko.js';
+import { PFLANZEN2 } from './grafik/pflanzen2.js';
 
 const ergebnisse = [];
 let aktuell = '';
@@ -73,17 +74,13 @@ function mitGehalt(startDatum, betrag = EUR(3100)) {
   return d;
 }
 
-// Gestaffelte Freischaltung: je Stufe ab 2 bis zur hoechsten Stufe höchstens `max` Artikel, keine Luecken
+// Je Stufe höchstens `max` Artikel einer Kategorie (Stufe 1 ausgenommen). Lücken prüft der Test "Level 1 bis 25".
 function gestaffelt(kategorie, max = 2) {
   const zaehl = {};
   for (const k of S.katalog(P.standardDaten('2026-10-01'))) {
     if (k.kategorie === kategorie) zaehl[k.level] = (zaehl[k.level] || 0) + 1;
   }
-  const hoechste = Math.max(...Object.keys(zaehl).map(Number));
-  for (let l = 2; l <= hoechste; l++) {
-    if (!zaehl[l] || zaehl[l] > max) return false;
-  }
-  return true;
+  return Object.keys(zaehl).every(l => Number(l) === 1 || zaehl[l] <= max);
 }
 
 // ---------- Level und Katalog ----------
@@ -98,14 +95,11 @@ test('levelAus', () => {
 
 test('Freischaltung Level 1 und Staffelung', () => {
   const k = S.katalog(P.standardDaten('2026-10-01'));
-  gleich(k.filter(x => x.kategorie === 'pflanze' && x.level === 1).length, 6, 'Level 1: 6 Pflanzen');
+  gleich(k.filter(x => x.kategorie === 'pflanze' && x.level === 1).length, 4, 'Level 1: 4 Pflanzen (Basilikum und Tomate nicht mehr im Shop)');
   // Auftrag 1.1: Brett auf Ziegeln (Möbel) ist Level 1, Katze wird erst ab Level 3 freigeschaltet
   gleich(k.filter(x => x.kategorie === 'moebel' && x.level === 1).length, 4, 'Level 1: 4 Möbel (mit Brett auf Ziegeln)');
   gleich(k.filter(x => x.kategorie === 'deko' && x.level === 1).length, 3, 'Level 1: 3 Deko (Katze ab Level 3)');
-  gleich(gestaffelt('pflanze'), true, 'Pflanzen gestaffelt');
-  gleich(gestaffelt('moebel'), true, 'Möbel gestaffelt');
-  // Level 3 hat durch die Katze drei Deko, deshalb höchstens 3 je Stufe
-  gleich(gestaffelt('deko', 3), true, 'Deko gestaffelt (höchstens 3 je Stufe)');
+  gleich(['pflanze', 'moebel', 'deko'].every(kat => gestaffelt(kat, 3)), true, 'je Kategorie höchstens 3 Artikel je Stufe (Stufe 1 ausgenommen)');
 });
 
 // Ein Pflanzentyp, der (noch) nicht gezeichnet ist. Null, wenn alle gezeichnet sind.
@@ -118,7 +112,7 @@ test('Katalog: gezeichnet und Freischaltung', () => {
   const k = S.katalog(P.standardDaten('2026-10-01'));
   const finde = (kat, typ) => k.find(x => x.kategorie === kat && x.typ === typ);
   gleich(finde('pflanze', 'monstera').gezeichnet, true, 'Monstera gezeichnet');
-  gleich(k.filter(x => x.kategorie === 'pflanze').every(x => x.gezeichnet === Object.prototype.hasOwnProperty.call(PFLANZEN, x.typ)), true, 'gezeichnet = in PFLANZEN');
+  gleich(k.filter(x => x.kategorie === 'pflanze').every(x => x.gezeichnet === (Object.prototype.hasOwnProperty.call(PFLANZEN, x.typ) || Object.prototype.hasOwnProperty.call(PFLANZEN2, x.typ))), true, 'gezeichnet = in PFLANZEN oder PFLANZEN2');
   gleich(finde('pflanze', 'bogenhanf').freigeschaltet, false, 'Bogenhanf ab Level 2');
   gleich(finde('erweiterung', 'flaeche7').level, 6, 'Fläche 7 ab Level 6');
   gleich(finde('erweiterung', 'flaeche8').preis, 2000, 'Fläche 8 kostet 2000');
@@ -691,7 +685,7 @@ test('Katze kostet 250 und ist ab Level 3', () => {
 test('Lichterglas heißt die Lichterkette, Brett auf Ziegeln ist im Katalog', () => {
   gleich(S.PREISE_DEKO.lichterkette.name, 'Lichterglas', 'Name Lichterglas');
   const z = S.katalog(basis()).find(k => k.kategorie === 'moebel' && k.typ === 'ziegelbrett');
-  gleich([z.name, z.preis, z.level], ['Brett auf Ziegeln', 60, 1], 'Name, Preis 60, Level 1');
+  gleich([z.name, z.preis, z.level], ['Brett auf Betonsteinen', 60, 1], 'Name, Preis 60, Level 1');
 });
 
 test('Tagesgeschenk: Serie läuft weiter bei Folgetag', () => {
@@ -716,9 +710,9 @@ test('Tagesgeschenk: Samen Tag 1 bis 3 ohne Gutschein', () => {
 
 test('Tagesgeschenk: Tag 4 und Tag 7 mit Gutschein', () => {
   const t4 = S.tagesgeschenk(mitBesuch(GESTERN, 3), HEUTE).belohnung;
-  gleich([t4.samen, t4.gutschein.kategorie, PFLANZEN[t4.gutschein.typ].groesse], [15, 'pflanze', 'klein'], 'Tag 4: 15 Samen, kleine Pflanze');
+  gleich([t4.samen, t4.gutschein.kategorie, S.katalog(basis()).find(k => k.typ === t4.gutschein.typ).groesse], [15, 'pflanze', 'klein'], 'Tag 4: 15 Samen, kleine Pflanze');
   const t7 = S.tagesgeschenk(mitBesuch(GESTERN, 6), HEUTE).belohnung;
-  gleich([t7.samen, t7.gutschein.kategorie, !!DEKO[t7.gutschein.typ]], [60, 'deko', true], 'Tag 7: 60 Samen, gezeichnete Deko');
+  gleich([t7.samen, t7.gutschein.kategorie, S.katalog(basis()).find(k => k.typ === t7.gutschein.typ).gezeichnet], [60, 'deko', true], 'Tag 7: 60 Samen, gezeichnete Deko');
 });
 
 test('Tagesgeschenk: Gutschein deterministisch und nur gezeichnet und freigeschaltet', () => {
@@ -840,6 +834,339 @@ test('challengeStatus: Einsteiger-Zähl-Challenge ist geschafft', () => {
   d.buchungen.push({ id: 'e1', art: 'ausgabe', name: 'Brot', betrag: EUR(3), datum: '2026-10-09', kategorie: 'lebensmittel', notiz: '' });
   const a = S.challengesDerWoche('2026-10-05', d)[0];
   gleich(S.challengeStatus(d, a, '2026-10-05', '2026-10-09').zustand, 'geschafft', 'Zustand geschafft');
+});
+
+// Toleranzen der Samentüten-Verteilung in Prozentpunkten (Garantie hebt die Legendär-Quote an, siehe Bericht)
+const TOL_GEW = 3;
+const TOL_SEL = 3;
+const TOL_EPI = 2;
+const TOL_LEG = 2;
+
+// ---------- SPEC-2: Saatgut, Samentüten, Beete, Ernte, Designs, Herbarium, Saison ----------
+
+// Startstand mit Level 8 (XP 2800) und Gratis-Tüten
+function ab8(samen = 500, gratis = 0) {
+  const d = basis(samen, 2800);
+  d.spiel.gratisTueten = gratis;
+  return d;
+}
+
+// Kräuterbeet b1 (Stellplätze 0 bis 3) direkt in den Garten gestellt
+function mitBeet(d, typ = 'kraeuterbeet', id = 'b1', gx = 0, gy = 4) {
+  d.spiel.gewaechshaus.moebel.push({ id, typ, gx, gy, drehung: 0 });
+  return d;
+}
+
+// Saatpflanze direkt auf Platz 0 von b1
+function saatPflanze(d, typ, stufe = 1, ernteTage = 0, id = 'sp1') {
+  d.spiel.gewaechshaus.pflanzen.push({ id, typ, stufe, ort: { moebel: 'b1', platz: 0 }, saat: true, ernteTage, fortschritt: 0 });
+  return d;
+}
+
+const anzahlSaatgut = (d) => Object.values(d.spiel.saatgut).reduce((a, b) => a + b, 0);
+
+test('Samentüte: Level 8, 50 Samen, Saatgut, Herbarium', () => {
+  scheitert(S.samentuete(basis(500, 2100), HEUTE), 'Level 7: gesperrt');
+  scheitert(S.samentuete(basis(20, 2800), HEUTE), 'zu wenig Samen');
+  const r = S.samentuete(basis(200, 2800), HEUTE);
+  klappt(r, 'Tüte ab Level 8');
+  gleich(r.daten.spiel.samen, 150, '50 Samen abgezogen');
+  gleich(anzahlSaatgut(r.daten), 1, 'ein Samen im Inventar');
+  gleich(r.daten.spiel.entdeckt.includes(r.sorte), true, 'Saat im Herbarium');
+  gleich(r.umgetauscht, 0, 'erstes Exemplar: kein Umtausch');
+  gleich(basis(200, 2800).spiel.samen, 200, 'Eingabe unverändert');
+});
+
+test('Samentüte: Gratis-Tüte kostet keine Samen', () => {
+  const r = S.samentuete(ab8(0, 1), HEUTE);
+  klappt(r, 'Gratis-Tüte ohne Samen');
+  gleich([r.daten.spiel.samen, r.daten.spiel.gratisTueten, r.gratis], [0, 0, true], '0 Samen, Gratis verbraucht');
+  scheitert(S.samentuete(ab8(0, 0), HEUTE), 'ohne Gratis und ohne Samen');
+});
+
+test('Samentüte: Verteilung über 10000 deterministische Ziehungen', () => {
+  let d = ab8(0, 10000);
+  const zaehl = { 'gewoehnlich': 0, 'selten': 0, 'episch': 0, 'legendaer': 0 };
+  let lauf = 0;
+  let laengsterLauf = 0;
+  let ohneLeg = 0;
+  let laengsterOhneLeg = 0;
+  for (let i = 0; i < 10000; i++) {
+    const r = S.samentuete(d, HEUTE);
+    d = r.daten;
+    zaehl[r.seltenheit]++;
+    lauf = r.seltenheit === 'gewoehnlich' ? lauf + 1 : 0;
+    laengsterLauf = Math.max(laengsterLauf, lauf);
+    ohneLeg = r.seltenheit === 'legendaer' ? 0 : ohneLeg + 1;
+    laengsterOhneLeg = Math.max(laengsterOhneLeg, ohneLeg);
+  }
+  const p = (k) => zaehl[k] / 100;
+  const text = 'gew ' + p('gewoehnlich') + ' %, selten ' + p('selten') + ' %, episch ' + p('episch') + ' %, legendär ' + p('legendaer') + ' %';
+  gleich(Math.abs(p('gewoehnlich') - 60) <= TOL_GEW && Math.abs(p('selten') - 28) <= TOL_SEL && Math.abs(p('episch') - 10) <= TOL_EPI && Math.abs(p('legendaer') - 2) <= TOL_LEG, true, 'Anteile in Toleranz (' + text + ')');
+  gleich(laengsterLauf <= 9, true, 'Garantie: höchstens 9 gewöhnliche in Folge');
+  gleich(laengsterOhneLeg <= 39, true, 'Garantie: höchstens 39 ohne legendär');
+});
+
+test('Samentüte: Garantie 10. Tüte mindestens selten, 40. legendär', () => {
+  let gewoehnlich = 0;
+  let nichtLegendaer = 0;
+  for (let i = 1; i <= 30; i++) {
+    const tag = '2026-10-' + String(i).padStart(2, '0');
+    const d = ab8(0, 1);
+    d.spiel.tuete = { seitSelten: 9, seitLegendaer: 0, geoeffnet: i };
+    if (S.samentuete(d, tag).seltenheit === 'gewoehnlich') gewoehnlich++;
+    const e = ab8(0, 1);
+    e.spiel.tuete = { seitSelten: 0, seitLegendaer: 39, geoeffnet: i };
+    if (S.samentuete(e, tag).seltenheit !== 'legendaer') nichtLegendaer++;
+  }
+  gleich(gewoehnlich, 0, '10. Tüte nie gewöhnlich');
+  gleich(nichtLegendaer, 0, '40. Tüte immer legendär');
+});
+
+test('Samentüte: Umtausch ab dem 4. Exemplar', () => {
+  let d = ab8(0, 3000);
+  d.spiel.saatgut = { schnittlauch: 3 };
+  let treffer = 0;
+  let falsch = 0;
+  for (let i = 0; i < 3000; i++) {
+    const r = S.samentuete(d, HEUTE);
+    d = r.daten;
+    if (r.sorte === 'schnittlauch') {
+      treffer++;
+      if (r.umgetauscht !== 10) falsch++;
+    }
+  }
+  gleich(treffer > 20, true, 'Schnittlauch mehrfach gezogen');
+  gleich(falsch, 0, 'jedes weitere Exemplar: 10 Samen');
+  gleich(d.spiel.saatgut.schnittlauch, 3, 'Bestand bleibt 3');
+  gleich(Object.values(d.spiel.saatgut).every(n => n <= 3), true, 'nie mehr als 3 je Sorte');
+});
+
+test('Samentüte: Zierkürbis nur im Herbst', () => {
+  const zieh = (heute) => {
+    let d = ab8(0, 3000);
+    let n = 0;
+    for (let i = 0; i < 3000; i++) {
+      const r = S.samentuete(d, heute);
+      d = r.daten;
+      if (r.sorte === 'zierkuerbis') n++;
+    }
+    return n;
+  };
+  gleich(zieh('2026-11-15') > 0, true, 'Herbst: Zierkürbis aus Tüten');
+  gleich(zieh('2026-12-15'), 0, 'Winter: kein Zierkürbis');
+});
+
+test('Saat: nur auf Beetplätzen, Topfpflanzen nie auf dem Beet', () => {
+  const d = mitBeet(basis(500));
+  d.spiel.saatgut = { schnittlauch: 2 };
+  gleich(S.freiePlaetze(d, 'saat', 'schnittlauch').length, 4, 'Kräuterbeet: 4 Beetplätze frei');
+  gleich(S.freiePlaetze(d, 'saat', 'schnittlauch').every(o => o.moebel === 'b1'), true, 'nur Beetplätze');
+  scheitert(S.saatPflanzen(d, 'schnittlauch', { feld: [3, 3] }), 'Saat auf Feld');
+  scheitert(S.saatPflanzen(d, 'schnittlauch', { moebel: 'm2', platz: 1 }), 'Saat auf Tischplatz ohne Beet');
+  const r = S.saatPflanzen(d, 'schnittlauch', { moebel: 'b1', platz: 0 });
+  klappt(r, 'Saat auf Beetplatz');
+  const p = r.daten.spiel.gewaechshaus.pflanzen.find(x => x.saat);
+  gleich([p.typ, p.stufe, p.ernteTage, p.saat], ['schnittlauch', 1, 0, true], 'Saatpflanze Stufe 1');
+  gleich(r.daten.spiel.saatgut.schnittlauch, 1, 'Saatgut verbraucht');
+  gleich(S.freiePlaetze(r.daten, 'pflanze', 'kaktus').some(o => o.moebel === 'b1'), false, 'Topfpflanzen: kein Beetplatz frei');
+  const topf = S.kaufen(r.daten, 'pflanze', 'kaktus', { moebel: 'b1', platz: 1 });
+  scheitert(topf, 'Topfpflanze auf Beet');
+  gleich(String(topf.fehler).includes('Beet'), true, 'Meldung nennt das Beet');
+});
+
+test('Saat: Wachstum nach Budget-Tagen', () => {
+  const d = saatPflanze(mitBeet(mitGehalt('2026-10-01')), 'schnittlauch');
+  const pf = (r) => r.daten.spiel.gewaechshaus.pflanzen.find(p => p.id === 'sp1');
+  const r2 = S.bewerte(d, '2026-10-03');
+  gleich(pf(r2).stufe, 2, 'nach 2 Budget-Tagen Stufe 2');
+  const r4 = S.bewerte(r2.daten, '2026-10-05');
+  gleich(pf(r4).stufe, 3, 'nach 4 Budget-Tagen Stufe 3');
+  const r6 = S.bewerte(r4.daten, '2026-10-07');
+  gleich([pf(r6).stufe, pf(r6).ernteTage], [4, 6], 'nach 6 Budget-Tagen Stufe 4, Erntezeit 6');
+  const ueber = mitBeet(mitGehalt('2026-10-01'));
+  ueber.buchungen.push({ id: 'x1', art: 'ausgabe', name: 'Teuer', betrag: EUR(500), datum: '2026-10-01', kategorie: 'shopping', notiz: '' });
+  saatPflanze(ueber, 'schnittlauch');
+  gleich(pf(S.bewerte(ueber, '2026-10-02')).stufe, 1, 'Tag über Budget: kein Wachstum');
+});
+
+test('Ernte: Abklingzeit 3 Budget-Tage, Samen je Seltenheit', () => {
+  const reif = saatPflanze(mitBeet(basis(0, 2800)), 'basilikum', 4, 0);
+  scheitert(S.ernten(reif, 'sp1', HEUTE), 'frisch auf Stufe 4 aber ohne Wartezeit');
+  const bereit = saatPflanze(mitBeet(basis(0, 2800)), 'basilikum', 4, 3);
+  const r = S.ernten(bereit, 'sp1', HEUTE);
+  klappt(r, 'Ernte nach 3 Budget-Tagen');
+  gleich([r.samen, r.daten.spiel.samen, r.daten.spiel.xp], [15, 15, 2815], 'selten: 15 Samen, auch XP');
+  gleich(r.daten.spiel.gewaechshaus.pflanzen.find(p => p.id === 'sp1').stufe, 4, 'Stufe 4 bleibt');
+  scheitert(S.ernten(r.daten, 'sp1', HEUTE), 'sofort nach der Ernte nicht erneut');
+  const legendaer = saatPflanze(mitBeet(basis(0, 2800)), 'safran', 4, 3);
+  gleich(S.ernten(legendaer, 'sp1', HEUTE).samen, 60, 'legendär: 60 Samen');
+  const gewoehnlich = saatPflanze(mitBeet(basis(0, 2800)), 'minze', 4, 3);
+  gleich(S.ernten(gewoehnlich, 'sp1', HEUTE).samen, 8, 'gewöhnlich: 8 Samen');
+  const z = saatPflanze(mitBeet(mitGehalt('2026-10-01')), 'basilikum', 4, 0);
+  const z1 = S.bewerte(z, '2026-10-03').daten;
+  scheitert(S.ernten(z1, 'sp1', HEUTE), 'nach 2 Budget-Tagen noch nicht');
+  const z2 = S.bewerte(z1, '2026-10-04').daten;
+  klappt(S.ernten(z2, 'sp1', HEUTE), 'nach 3 Budget-Tagen erntereif');
+});
+
+test('Ernte: 10 % Gratis-Tüte, deterministisch', () => {
+  let gratis = 0;
+  let zaehl = 0;
+  for (let i = 0; i < 400; i++) {
+    const f = saatPflanze(mitBeet(basis(0, 2800)), 'schnittlauch', 4, 3, 'sp' + i);
+    const r = S.ernten(f, 'sp' + i, HEUTE);
+    zaehl++;
+    if (r.gratis) gratis++;
+  }
+  gleich(zaehl, 400, 'alle 400 Ernten');
+  gleich(gratis >= 25 && gratis <= 55, true, 'Gratis-Tüten ' + gratis + ' von 400 (Richtwert 40)');
+});
+
+test('Saatpflanze: verkaufen gibt 0 Samen, leveln geht nicht', () => {
+  const d = saatPflanze(mitBeet(basis(100)), 'schnittlauch');
+  const v = S.verkaufen(d, 'pflanze', 'sp1');
+  klappt(v, 'Saatpflanze verkaufen');
+  gleich([v.daten.spiel.samen, v.daten.spiel.gewaechshaus.pflanzen.some(p => p.id === 'sp1')], [100, false], '0 Samen, Pflanze weg');
+  scheitert(S.pflanzeLeveln(d, 'sp1'), 'Saatpflanze wächst nicht mit Samen');
+});
+
+test('Level 1 bis 25: jede Stufe hat mindestens einen Artikel', () => {
+  const d = basis();
+  const stufen = new Set([...S.katalog(d).map(k => k.level), ...S.designListe(d).map(x => x.level)]);
+  const luecken = [];
+  for (let l = 1; l <= 25; l++) if (!stufen.has(l)) luecken.push(l);
+  gleich(luecken, [], 'keine Lücke 1 bis 25');
+});
+
+test('Basilikum: nicht mehr im Shop, vorhandenes bleibt', () => {
+  gleich(S.katalog(basis()).some(k => k.typ === 'basilikum'), false, 'nicht im Katalog');
+  scheitert(S.kaufen(basis(500), 'pflanze', 'basilikum', { feld: [5, 5] }), 'nicht kaufbar');
+  const d = basis(12);
+  d.spiel.gewaechshaus.pflanzen.push({ id: 'b9', typ: 'basilikum', stufe: 1, ort: { feld: [5, 5] } });
+  gleich(S.verkaufen(d, 'pflanze', 'b9').daten.spiel.samen, 12 + 20, 'verkauft für 50 % von 40');
+  const l = S.pflanzeLeveln(d, 'b9');
+  gleich(l.daten.spiel.samen, 0, 'Stufe 2 kostet 30 % von 40 = 12');
+});
+
+test('SPEC-2-Tabellen: Pflanzen, Möbel, Deko mit Level und Preis', () => {
+  const k = S.katalog(basis());
+  const f = (kat, typ) => k.find(x => x.kategorie === kat && x.typ === typ);
+  gleich([f('pflanze', 'strelitzie').preis, f('pflanze', 'strelitzie').level], [300, 6], 'Strelitzie');
+  gleich([f('pflanze', 'hoya').preis, f('pflanze', 'hoya').level], [300, 16], 'Hoya');
+  gleich([f('moebel', 'kraeuterbeet').preis, f('moebel', 'kraeuterbeet').level], [500, 8], 'Kräuterbeet');
+  gleich([f('moebel', 'hochbeet').preis, f('moebel', 'hochbeet').level], [900, 10], 'Hochbeet');
+  gleich([f('moebel', 'hochregal').preis, f('moebel', 'hochregal').level], [900, 15], 'Hochregal');
+  gleich([f('deko', 'skulptur').preis, f('deko', 'skulptur').level], [800, 18], 'Skulptur');
+  gleich([f('deko', 'teewagen').level, f('deko', 'aquarium').level, f('deko', 'plattenspieler').level], [17, 23, 25], 'verschobene Deko-Level');
+  gleich(f('deko', 'katzenkorb').preis, 180, 'Katzenkorb');
+  gleich(f('moebel', 'ziegelbrett').name, 'Brett auf Betonsteinen', 'Möbelname angeglichen');
+});
+
+test('Erweiterungen 9 × 9 (Level 15) und 10 × 10 (Level 20)', () => {
+  const k = S.katalog(basis());
+  gleich([k.find(x => x.typ === 'flaeche9').preis, k.find(x => x.typ === 'flaeche9').level], [3500, 15], '9 × 9');
+  gleich([k.find(x => x.typ === 'flaeche10').preis, k.find(x => x.typ === 'flaeche10').level], [6000, 20], '10 × 10');
+  scheitert(S.kaufen(basis(3500, 10499), 'erweiterung', 'flaeche9'), 'Level 14: gesperrt');
+  const r = S.kaufen(basis(3500, 10500), 'erweiterung', 'flaeche9');
+  klappt(r, '9 × 9 ab Level 15');
+  gleich(r.daten.spiel.gewaechshaus.groesse, 9, 'Raster 9');
+  const r10 = S.kaufen(basis(6000, 19000), 'erweiterung', 'flaeche10');
+  klappt(r10, '10 × 10 ab Level 20');
+  gleich(r10.daten.spiel.gewaechshaus.groesse, 10, 'Raster 10');
+});
+
+test('Designs: kaufen einmalig, wählen, Level-Sperre', () => {
+  scheitert(S.designKaufen(basis(400, 0), 'boden', 'terrazzo'), 'Level 1: gesperrt');
+  const r = S.designKaufen(basis(400, 2100), 'boden', 'terrazzo');
+  klappt(r, 'Terrazzo ab Level 7');
+  gleich([r.daten.spiel.samen, r.daten.spiel.designs.includes('terrazzo')], [0, true], '400 Samen, gekauft');
+  scheitert(S.designKaufen(r.daten, 'boden', 'terrazzo'), 'zweimal kaufen');
+  const w = S.designWaehlen(r.daten, 'boden', 'terrazzo');
+  klappt(w, 'wählen');
+  gleich([w.daten.spiel.design.boden, w.daten.spiel.design.rahmen], ['terrazzo', 'teak'], 'Boden gewählt, Rahmen unverändert');
+  scheitert(S.designWaehlen(w.daten, 'boden', 'fischgraet'), 'nicht gekauft');
+  scheitert(S.designWaehlen(w.daten, 'rahmen', 'terrazzo'), 'falsche Kategorie');
+  const liste = S.designListe(w.daten).find(x => x.id === 'terrazzo');
+  gleich([liste.gekauft, liste.gewaehlt, liste.freigeschaltet], [true, true, true], 'Liste');
+  gleich(S.designListe(basis()).find(x => x.id === 'dielen').gekauft, true, 'Start-Design gekauft');
+});
+
+test('Herbarium: Sets, Bonus einmalig und Abzeichen', () => {
+  const h = S.herbarium(basis());
+  gleich(h.sets.length, 7, 'sieben Sets');
+  gleich(h.gesamt.von, 35, '35 Mitglieder');
+  const d = basis(0);
+  d.spiel.entdeckt = ['schnittlauch', 'petersilie', 'minze', 'thymian', 'rosmarin', 'salbei'];
+  const r1 = S.bewerte(d, '2026-10-01');
+  const sets = r1.ereignisse.filter(e => e.art === 'set');
+  gleich(sets.map(e => [e.text, e.samen]), [['Herbarium-Set vollständig: Kräutergarten', 150]], 'Bonus 150 mit Ereignis');
+  gleich(r1.daten.spiel.abzeichen.includes('set_kraeutergarten'), true, 'Abzeichen');
+  const r2 = S.bewerte(r1.daten, '2026-10-01');
+  gleich(r2.ereignisse.filter(e => e.art === 'set').length, 0, 'zweiter Aufruf: kein Bonus');
+  gleich(r2.daten.spiel.samen, 150, 'Samen unverändert');
+  gleich(S.herbarium(r1.daten).sets.find(s => s.id === 'kraeutergarten').belohnt, true, 'belohnt');
+});
+
+test('Saison: Grenzen nach Datum', () => {
+  gleich(S.aktiveSaison('2026-09-30'), null, '30.9. keine Saison');
+  gleich(S.aktiveSaison('2026-10-01'), 'herbst', '1.10. Herbst');
+  gleich(S.aktiveSaison('2026-11-30'), 'herbst', '30.11. Herbst');
+  gleich(S.aktiveSaison('2026-12-01'), 'winter', '1.12. Winter');
+  gleich(S.aktiveSaison('2027-01-06'), 'winter', '6.1. Winter');
+  gleich(S.aktiveSaison('2027-01-07'), null, '7.1. keine Saison');
+  gleich(S.aktiveSaison('2027-03-01'), 'fruehling', '1.3. Frühling');
+  gleich(S.aktiveSaison('2027-06-01'), 'sommer', '1.6. Sommer');
+  gleich(S.aktiveSaison('2027-08-31'), 'sommer', '31.8. Sommer');
+  gleich(S.aktiveSaison('2027-09-01'), null, '1.9. keine Saison');
+});
+
+test('Saison: Artikel nur in ihrer Saison, Kauf außerhalb scheitert', () => {
+  const herbst = S.saisonKatalog(basis(), '2026-11-15').map(x => x.typ);
+  gleich(herbst.includes('kuerbis') && herbst.includes('herbstlaub') && !herbst.includes('weihnachtsstern'), true, 'Herbst-Artikel');
+  gleich(S.saisonKatalog(basis(), '2026-12-15').some(x => x.typ === 'weihnachtsstern'), true, 'Winter: Weihnachtsstern');
+  gleich(S.saisonKatalog(basis(), '2026-07-15').some(x => x.typ === 'hibiskus'), true, 'Sommer: Hibiskus');
+  gleich(S.saisonKatalog(basis(), '2026-09-15'), [], 'September: keine Saison');
+  const r = S.kaufen(basis(500), 'saison', 'weihnachtsstern', { feld: [2, 2] }, '2026-10-05');
+  scheitert(r, 'Weihnachtsstern im Herbst');
+  gleich(String(r.fehler).includes('Winter'), true, 'Meldung nennt den Winter');
+  scheitert(S.kaufen(basis(500), 'saison', 'zierkuerbis', { feld: [2, 2] }, '2026-10-05'), 'Zierkürbis nicht kaufbar');
+  const kz = S.saisonKatalog(basis(), '2026-10-05').find(x => x.typ === 'kuerbis');
+  const r2 = S.kaufen(basis(500), 'saison', 'kuerbis', { feld: [2, 2] }, '2026-10-05');
+  gleich(r2.fehler === undefined, kz.gezeichnet, 'Kürbis im Herbst kaufbar genau dann, wenn gezeichnet');
+  scheitert(S.kaufen(basis(500), 'saison', 'kuerbis', { feld: [2, 2] }, '2026-12-05'), 'Kürbis im Winter: scheitert');
+});
+
+test('Hängeampel: Höhenregel für neue Möbel', () => {
+  const sput = reich();
+  sput.spiel.gewaechshaus.moebel.push({ id: 's1', typ: 'sputnik', gx: 4, gy: 0, drehung: 0 });
+  scheitert(S.kaufen(sput, 'deko', 'haengeampel', { haken: 'h1' }), 'Sputnik (110) unter h1');
+  const beet = reich();
+  beet.spiel.gewaechshaus.moebel.push({ id: 'k1', typ: 'kraeuterbeet', gx: 4, gy: 0, drehung: 0 });
+  klappt(S.kaufen(beet, 'deko', 'haengeampel', { haken: 'h1' }), 'Kräuterbeet (45) unter h1 ok');
+  const hoch = reich();
+  hoch.spiel.gewaechshaus.moebel.push({ id: 'h2m', typ: 'hochbeet', gx: 4, gy: 0, drehung: 0 });
+  klappt(S.kaufen(hoch, 'deko', 'haengeampel', { haken: 'h1' }), 'Hochbeet (60) unter h1 ok');
+});
+
+test('Migration: alte Spielstände bekommen die neuen Felder', () => {
+  const alt = basis(50, 2800);
+  for (const f of ['saatgut', 'tuete', 'gratisTueten', 'design', 'designs', 'entdeckt']) delete alt.spiel[f];
+  const r = S.bewerte(alt, '2026-10-01');
+  gleich(r.daten.spiel.saatgut, {}, 'saatgut leer');
+  gleich(r.daten.spiel.tuete, { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 }, 'tuete');
+  gleich(r.daten.spiel.design, { boden: 'dielen', rahmen: 'teak', dach: 'giebel' }, 'design');
+  gleich(r.daten.spiel.designs, ['dielen', 'teak', 'giebel'], 'designs');
+  gleich(r.daten.spiel.gratisTueten, 0, 'gratisTueten');
+  gleich(r.daten.spiel.entdeckt, ['efeutute'], 'entdeckt: Garten-Pflanzen');
+  klappt(S.samentuete(alt, HEUTE), 'Tüte mit altem Spielstand');
+  gleich(alt.spiel.saatgut, undefined, 'Eingabe unverändert');
+});
+
+test('standardDaten: SPEC-2-Startwerte', () => {
+  const s = P.standardDaten('2026-10-01').spiel;
+  gleich([s.saatgut, s.tuete, s.gratisTueten, s.design, s.designs, s.entdeckt],
+    [{}, { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 }, 0, { boden: 'dielen', rahmen: 'teak', dach: 'giebel' }, ['dielen', 'teak', 'giebel'], []], 'Startwerte');
 });
 
 // ---------- Speicher ----------
