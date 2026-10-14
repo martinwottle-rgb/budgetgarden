@@ -23,6 +23,11 @@ const DATEIEN = [
   './js/grafik/moebel.js',
   './js/grafik/deko.js',
   './js/grafik/raritaeten.js',
+  './js/grafik/pflanzen2.js',
+  './js/grafik/moebel2.js',
+  './js/grafik/deko2.js',
+  './js/grafik/saat.js',
+  './js/grafik/saison.js',
   './js/ui/bausteine.js',
   './js/ui/garten.js',
   './js/ui/buchen.js',
@@ -32,6 +37,7 @@ const DATEIEN = [
   './js/ui/shop.js',
   './js/ui/einstellungen.js',
   './js/ui/einrichtung.js',
+  './js/ui/herbarium.js',
 ];
 
 self.addEventListener('install', (event) => {

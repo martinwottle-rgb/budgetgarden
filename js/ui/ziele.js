@@ -598,6 +598,8 @@ function abzeichenBereich(ctx) {
   const erreicht = new Set(ctx.daten.spiel.abzeichen || []);
   const anzahl = ABZEICHEN.filter(a => erreicht.has(a.id)).length;
   return el('div', {},
+    el('div', { class: 'h20-zugang' },
+      el('button', { type: 'button', class: 'knopf knopf-primaer knopf-voll', text: '📖 Herbarium öffnen', onclick: () => ctx.navigiere('herbarium') })),
     el('div', { class: 'klein zi-wand-zahl', text: `${anzahl} von ${ABZEICHEN.length} erreicht` }),
     el('div', { class: 'zi-wand' }, ABZEICHEN.map(a => {
       const ok = erreicht.has(a.id);

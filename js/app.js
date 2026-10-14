@@ -17,8 +17,9 @@ import * as ziele from './ui/ziele.js';
 import * as shop from './ui/shop.js';
 import * as einstellungen from './ui/einstellungen.js';
 import * as einrichtung from './ui/einrichtung.js';
+import * as herbarium from './ui/herbarium.js';
 
-const BILDSCHIRME = { garten, buchen, uebersicht, ziele, shop, einstellungen, einrichtung };
+const BILDSCHIRME = { garten, buchen, uebersicht, ziele, shop, einstellungen, einrichtung, herbarium };
 const RING_RADIUS = 18;
 const RING_UMFANG = 2 * Math.PI * RING_RADIUS;
 
@@ -271,10 +272,10 @@ function muenzFlug(anzahl) {
 // bei Samen Münzflug und Zählen (einmal)
 function belohnen(ereignisse) {
   const samen = ereignisse.reduce((s, e) => s + (e.samen || 0), 0);
-  // Challenges bekommen ihren eigenen Glückwunsch-Dialog, deshalb nicht im Sammel-Toast
-  const ohneChallenges = ereignisse.filter(e => e.art !== 'challenge');
-  const samenToast = ohneChallenges.reduce((s, e) => s + (e.samen || 0), 0);
-  const anzahl = (art) => ohneChallenges.filter(e => e.art === art).length;
+  // Challenges und Herbarium-Sets bekommen ihren eigenen Glückwunsch-Dialog, deshalb nicht im Sammel-Toast
+  const ohneDialoge = ereignisse.filter(e => e.art !== 'challenge' && e.art !== 'set');
+  const samenToast = ohneDialoge.reduce((s, e) => s + (e.samen || 0), 0);
+  const anzahl = (art) => ohneDialoge.filter(e => e.art === art).length;
   const teile = [];
   if (samenToast > 0) teile.push(`+${zahl(samenToast)} Samen`);
   const tage = anzahl('tag');
@@ -304,6 +305,11 @@ function belohnen(ereignisse) {
   const challenges = ereignisse.filter(e => e.art === 'challenge');
   for (const e of challenges) challengeWarteschlange.push(e);
   if (challenges.length) challengeZeigen();
+
+  // Herbarium-Sets vollständig: eigener Glückwunsch-Dialog, nacheinander
+  const sets = ereignisse.filter(e => e.art === 'set');
+  for (const e of sets) setWarteschlange.push(e);
+  if (sets.length) setZeigen();
 
   if (samen > 0) {
     muenzFlug(samen >= 100 ? 8 : samen >= 30 ? 6 : 5);
@@ -475,6 +481,40 @@ async function challengeFest(e) {
     titel: 'Challenge geschafft! 🎉',
     text: e.text,
     inhalt: el('div', { class: 'sp12-belohnung', text: `Deine Belohnung: +${zahl(e.samen)} Samen` }),
+    knoepfe: [{ text: 'Weiter so!', art: 'primaer' }]
+  });
+}
+
+// ---------- Glückwunsch-Dialoge der Herbarium-Sets ----------
+
+// Wartende Set-Ereignisse und die Kette, die sie nacheinander zeigt
+const setWarteschlange = [];
+let setLauf = Promise.resolve();
+
+function setZeigen() {
+  setLauf = setLauf.then(async () => {
+    while (setWarteschlange.length) {
+      const e = setWarteschlange.shift();
+      try {
+        await setFest(e);
+      } catch (fehler) {
+        console.error(fehler);
+      }
+    }
+  });
+  return setLauf;
+}
+
+// Set vollständig: Setname, Belohnung, Münzflug. Der Text kommt aus spiel.js: „Herbarium-Set vollständig: Name“
+async function setFest(e) {
+  muenzFlug(e.samen >= 30 ? 6 : 5);
+  const name = e.text.replace(/^Herbarium-Set vollständig: /, '');
+  await ctx.dialog({
+    titel: 'Set vollständig! 📖',
+    text: 'Alle Pflanzen dieses Sets stehen jetzt im Herbarium.',
+    inhalt: el('div', { class: 'h20-set-dialog' },
+      el('div', { class: 'h20-set-dialog-name', text: name }),
+      el('div', { class: 'sp12-belohnung', text: `+${zahl(e.samen)} Samen` })),
     knoepfe: [{ text: 'Weiter so!', art: 'primaer' }]
   });
 }
