@@ -22,7 +22,7 @@ jobs:
       - name: Node einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Abhängigkeiten installieren
         run: cd tools && npm install --omit=dev

@@ -3,13 +3,33 @@
 
 import webpush from 'web-push';
 
-const vapidPublic = process.env.VAPID_PUBLIC;
-const vapidPrivate = process.env.VAPID_PRIVATE;
-const pushAboText = process.env.PUSH_ABO;
+// Secrets tolerant lesen: Leerzeichen, Anführungszeichen oder eine mitkopierte JSON-Zeile
+// wie "VAPID_PUBLIC": "..." werden entfernt, übrig bleibt nur der Base64url-Schlüssel.
+const schluessel = (wert) => {
+  const t = (wert || '').trim();
+  const treffer = t.match(/[A-Za-z0-9_-]{40,}/g);
+  return treffer ? treffer[treffer.length - 1] : '';
+};
+const vapidPublic = schluessel(process.env.VAPID_PUBLIC);
+const vapidPrivate = schluessel(process.env.VAPID_PRIVATE);
+const pushAboText = (process.env.PUSH_ABO || '').trim();
 const erzwingen = process.env.ERZWINGEN === '1';
+const APP_PUBLIC = 'BPMiuHw0_UefWeytfcIMckdt5dyB6PMbMPl8QZP6KI2USLROLBC8n4eZdoJNrHlRQlgwuEZGRwHqystY5FgX5b0';
 
-if (!vapidPublic || !vapidPrivate || !pushAboText) {
-  console.error('Fehlende Env-Variable: VAPID_PUBLIC, VAPID_PRIVATE und PUSH_ABO müssen gesetzt sein.');
+const fehlt = [];
+if (!vapidPublic) fehlt.push('VAPID_PUBLIC');
+if (!vapidPrivate) fehlt.push('VAPID_PRIVATE');
+if (!pushAboText) fehlt.push('PUSH_ABO');
+if (fehlt.length) {
+  console.error('FEHLER: Diese Secrets fehlen oder sind leer: ' + fehlt.join(', ') + '. In GitHub unter Settings, Secrets and variables, Actions anlegen.');
+  process.exit(1);
+}
+if (vapidPublic !== APP_PUBLIC) {
+  console.error('FEHLER: VAPID_PUBLIC passt nicht zum Schlüssel der App. Erwartet beginnt mit ' + APP_PUBLIC.slice(0, 10) + '…, gefunden beginnt mit ' + vapidPublic.slice(0, 10) + '…');
+  process.exit(1);
+}
+if (vapidPrivate.length < 42 || vapidPrivate.length > 44) {
+  console.error('FEHLER: VAPID_PRIVATE hat eine unerwartete Länge (' + vapidPrivate.length + ' Zeichen, erwartet 43). Bitte nur den Wert aus vapid.json ohne Anführungszeichen eintragen.');
   process.exit(1);
 }
 
@@ -38,14 +58,21 @@ if (!erzwingen) {
 
 let abos;
 try {
-  const daten = JSON.parse(pushAboText);
+  let text = pushAboText;
+  // Falls das Abo in Anführungszeichen eingefügt wurde, diese entfernen
+  if (text.startsWith('"') && text.endsWith('"')) text = JSON.parse(text);
+  const daten = JSON.parse(text);
   abos = Array.isArray(daten) ? daten : [daten];
+  for (const a of abos) {
+    if (!a || !a.endpoint || !a.keys || !a.keys.p256dh || !a.keys.auth) throw new Error('endpoint oder keys fehlen');
+  }
 } catch (fehler) {
-  console.error('PUSH_ABO ist kein gültiges JSON:', fehler.message);
+  console.error('FEHLER: PUSH_ABO ist kein vollständiger Abo-Code (' + fehler.message + '). In der App unter Einstellungen den Code neu kopieren und komplett, mit { am Anfang und } am Ende, als Secret einfügen.');
   process.exit(1);
 }
 
-webpush.setVapidDetails('mailto:budgetgarten@example.invalid', vapidPublic, vapidPrivate);
+// Apple verlangt einen echten Absender (mailto oder https), daher die Adresse der App
+webpush.setVapidDetails('https://martinwottle-rgb.github.io/budgetgarden/', vapidPublic, vapidPrivate);
 
 const payload = JSON.stringify({ text: 'Wie viel hast du heute ausgegeben? 🌱' });
 
@@ -60,7 +87,8 @@ for (const abo of abos) {
     if (fehler.statusCode === 404 || fehler.statusCode === 410) {
       console.error('Abo abgelaufen, in der App neu aktivieren (Status ' + fehler.statusCode + ').');
     } else {
-      console.error('Senden fehlgeschlagen (Status ' + (fehler.statusCode ?? 'unbekannt') + '):', fehler.body || fehler.message);
+      console.error('FEHLER beim Senden an ' + new URL(abo.endpoint).host + ' (Status ' + (fehler.statusCode ?? 'unbekannt') + '): ' + (fehler.body || fehler.message));
+      if (fehler.statusCode === 403) console.error('Hinweis: 403 heißt meist, dass VAPID_PRIVATE nicht zu VAPID_PUBLIC passt.');
     }
   }
 }
