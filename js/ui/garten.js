@@ -4,16 +4,41 @@
 // im Shop (param.platzieren).
 
 import * as L from '../logik.js';
-import { zeichneSzene, vorschau, einpassen, feldAusPunkt, punktAusOrt, FELD_PX } from '../szene.js';
+import { zeichneSzene, vorschau, einpassen, feldAusPunkt, punktAusOrt, FELD_PX, erntereif, ERNTE_WARTE_TAGE } from '../szene.js';
 import { iso } from '../grafik/hilfen.js';
-import { welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
+import { welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
+import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { RARITAETEN } from '../grafik/raritaeten.js';
 import { MOEBEL } from '../grafik/moebel.js';
+import { MOEBEL2 } from '../grafik/moebel2.js';
 import { DEKO } from '../grafik/deko.js';
+import { DEKO2 } from '../grafik/deko2.js';
+import { SAAT } from '../grafik/saat.js';
+import { SAISON } from '../grafik/saison.js';
 import { el, euro, muenzSvg, svgBox, balken, vorzeichen, tage, kurzDatum, zahl } from './bausteine.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Grafiken aus allen Quellen (SPEC-2): Grundbestand plus Beete, Spaetspiel und Saison
+const MOEBEL_ALLE = { ...MOEBEL, ...MOEBEL2 };
+const PFLANZEN_ALLE = { ...PFLANZEN, ...PFLANZEN2 };
+const DEKO_ALLE = { ...DEKO, ...DEKO2 };
+// Eintrag nur, wenn der Typ wirklich in der Tabelle steht
+const hat = (tabelle, typ) => (Object.prototype.hasOwnProperty.call(tabelle, typ) ? tabelle[typ] : null);
+// Saisonartikel mit Grafik-Eintrag einer Art (pflanze, deko, saat), sonst null
+const saisonEintrag = (typ, art) => {
+  const e = hat(SAISON, typ);
+  return e && e.art === art ? e : null;
+};
+const pflanzenDef = (p) => {
+  if (p.rar) return hat(RARITAETEN, p.typ);
+  if (p.saat) return hat(SAAT, p.typ) || saisonEintrag(p.typ, 'saat');
+  return hat(PFLANZEN_ALLE, p.typ) || saisonEintrag(p.typ, 'pflanze');
+};
+const dekoDef = (typ) => hat(DEKO_ALLE, typ) || saisonEintrag(typ, 'deko');
+// Seltenheit der Saat (Schluessel aus spiel.js) mit Anzeigetext; Farben stehen in styles.css (g20-selten-*)
+const SELTEN_TEXT = { gewoehnlich: 'gewöhnlich', selten: 'selten', episch: 'episch', legendaer: 'legendär' };
 // Bewegungsmodus: Zeit bis zum Start (ms), Abstand (px) ab dem eine Bewegung als Ziehen gilt, Dauer des Zurückgleitens (ms)
 const LANG_DRUCK = 500;
 const SCHWELLE = 8;
@@ -80,7 +105,9 @@ export function zeige(container, ctx, param) {
     groesse: gh.groesse,
     welk: welk(d, hd),
     ausschnitt: true,
-    markierungen: markierungenFuer(d, aktion)
+    design: d.spiel.design,
+    saison: aktiveSaison(hd),
+    markierungen: markierungenFuer(d, aktion, hd)
   });
   platz.addEventListener('click', (e) => szeneKlick(e, ctx, aktion));
   // Im Bewegungsmodus gehört jeder Klick den Zeigerereignissen, nicht dem Blatt
@@ -162,10 +189,19 @@ function bewegungsLeiste(ctx) {
   );
 }
 
-// Markierungen nur bei der Platzwahl nach einem Kauf
-function markierungenFuer(d, aktion) {
+// Markierungen nur bei der Platzwahl nach einem Kauf oder einer Saat
+function markierungenFuer(d, aktion, hd) {
   if (!aktion) return [];
-  return freiePlaetze(d, aktion.kategorie, aktion.typ).map(ort => ({ ort, ok: true, typ: aktion.typ }));
+  const kat = platzKategorie(d, aktion, hd);
+  if (!kat) return [];
+  return freiePlaetze(d, kat, aktion.typ).map(ort => ({ ort, ok: true, typ: aktion.typ }));
+}
+
+// Kategorie für freiePlaetze: Saat auf 'saat', Saisonartikel nach seiner Art (pflanze oder deko), sonst die Kategorie selbst
+function platzKategorie(d, aktion, hd) {
+  if (aktion.kategorie !== 'saison') return aktion.kategorie;
+  const s = saisonKatalog(d, hd).find(x => x.typ === aktion.typ);
+  return s && s.art !== 'saat' ? s.art : null;
 }
 
 // Tippen auf eine Markierung: Platz wählen. Tippen auf ein Objekt: Blatt (nur ohne Platzwahl).
@@ -179,17 +215,21 @@ function szeneKlick(e, ctx, aktion) {
   if (objekt && !aktion) oeffneBlatt(ctx, objekt.dataset.art, objekt.dataset.id);
 }
 
-// Platz gewählt: kaufen. Danach Platzwahl beenden und speichern.
+// Platz gewählt: kaufen, Rarität pflanzen, Saat setzen oder Saisonartikel kaufen. Danach Platzwahl beenden und speichern.
 function zielGewaehlt(ctx, aktion, ort) {
   const istRaritaet = aktion.kategorie === 'raritaet';
-  const r = istRaritaet
-    ? raritaetPflanzen(ctx.daten, aktion.typ, ort)
-    : kaufen(ctx.daten, aktion.kategorie, aktion.typ, ort);
+  const r = platzAktion(ctx, aktion, ort);
   if (r.fehler) return ctx.toast(r.fehler);
   ctx.navigiere('garten');  // Platzwahl beenden, bevor gespeichert und neu gezeichnet wird
   konfettiNaechstes = true;
   konfettiGold = istRaritaet;
   return ctx.speichern(r.daten);
+}
+
+function platzAktion(ctx, aktion, ort) {
+  if (aktion.kategorie === 'raritaet') return raritaetPflanzen(ctx.daten, aktion.typ, ort);
+  if (aktion.kategorie === 'saat') return saatPflanzen(ctx.daten, aktion.typ, ort);
+  return kaufen(ctx.daten, aktion.kategorie, aktion.typ, ort, ctx.heute);
 }
 
 // Aus dem Blatt: Blatt schließen und den Bewegungsmodus mit diesem Objekt ausgewählt starten
@@ -247,7 +287,7 @@ function bewegungsAufbau(ctx, container, karte, platz) {
 
 // Runder Knopf über dem Möbel: dreht 0 und 90 Grad
 function drehKnopf(ctx, m, svg, karte) {
-  const def = MOEBEL[m.typ];
+  const def = hat(MOEBEL_ALLE, m.typ);
   const breite = def ? def.breite : 1;
   const tiefe = def ? def.tiefe : 1;
   const [w, h] = m.drehung === 90 ? [tiefe, breite] : [breite, tiefe];
@@ -436,8 +476,8 @@ function vorbereiten(ctx, z) {
     if (!a0) return false;
     z.a0 = a0;
     z.teile.push(teil(z.obj.el, a0, true));
-    // Kandidaten: freie Orte, der eigene Platz zählt als frei
-    const kat = z.obj.art === 'deko' ? 'deko' : 'pflanze';
+    // Kandidaten: freie Orte, der eigene Platz zählt als frei. Saatpflanzen nur Beetplätze, Topfpflanzen nie.
+    const kat = z.obj.art === 'deko' ? 'deko' : dat.saat ? 'saat' : 'pflanze';
     const liste = freiePlaetze(ctx.daten, kat, dat.typ);
     liste.push(dat.ort);
     const gesehen = new Set();
@@ -449,6 +489,8 @@ function vorbereiten(ctx, z) {
       const p = punktAusOrt(o, gh);
       if (p) z.kand.push({ ort: o, p });
     }
+    // Beetplätze sind für Topfpflanzen gesperrt (nur Saatpflanzen dürfen dorthin)
+    z.beet = z.obj.art === 'pflanze' && !dat.saat ? beetPunkte(gh) : [];
     z.ziel = dat.ort;
     z.fehler = null;
   }
@@ -458,6 +500,21 @@ function vorbereiten(ctx, z) {
   z.vor.kreis.style.display = 'none';
   z.svg.append(z.vor.raute, z.vor.kreis);
   return true;
+}
+
+// Beetplätze aller Möbel als Bildschirmpunkte (Topfpflanzen dürfen dort nicht hin)
+function beetPunkte(gh) {
+  const punkte = [];
+  for (const m of gh.moebel || []) {
+    const def = hat(MOEBEL_ALLE, m.typ);
+    if (!def) continue;
+    def.plaetze.forEach((p, n) => {
+      if (!p.beet) return;
+      const q = punktAusOrt({ moebel: m.id, platz: n }, gh);
+      if (q) punkte.push(q);
+    });
+  }
+  return punkte;
 }
 
 // Gezogenes Objekt hebt sich: kein Wackeln, Schatten (per CSS-Klasse), Dreh-Knopf aus
@@ -496,7 +553,7 @@ function zielBestimmen(ctx, z) {
       z.ziel = r.fehler ? null : { gx, gy };
       z.fehler = r.fehler || null;
     }
-    const def = MOEBEL[dat.typ];
+    const def = hat(MOEBEL_ALLE, dat.typ);
     const breite = def ? def.breite : 1;
     const tiefe = def ? def.tiefe : 1;
     const [w, h] = dat.drehung === 90 ? [tiefe, breite] : [breite, tiefe];
@@ -512,7 +569,9 @@ function zielBestimmen(ctx, z) {
     const dd = Math.hypot(k.p[0] - anker[0], k.p[1] - anker[1]);
     if (dd < bestDist) { bestDist = dd; bestKand = k; }
   }
-  if (bestKand && bestDist <= 0.9 * FELD_PX) {
+  // Ein Beetplatz, der näher liegt als jeder freie Platz, sperrt den Zug (Topfpflanze auf dem Beet)
+  const beetDist = (z.beet || []).reduce((m, p) => Math.min(m, Math.hypot(p[0] - anker[0], p[1] - anker[1])), Infinity);
+  if (bestKand && bestDist <= 0.9 * FELD_PX && bestDist < beetDist) {
     z.ziel = bestKand.ort;
     z.fehler = null;
     const o = bestKand.ort;
@@ -524,9 +583,12 @@ function zielBestimmen(ctx, z) {
     }
   } else {
     z.ziel = null;
-    z.fehler = DEKO[dat.typ] && DEKO[dat.typ].haengend
+    const deko = dekoDef(dat.typ);
+    const beetSperre = beetDist <= 0.9 * FELD_PX && beetDist <= bestDist;
+    z.fehler = deko && deko.haengend
       ? 'Die Hängeampel passt nur an einen freien Haken.'
-      : 'Hier ist kein freier Platz.';
+      : beetSperre ? 'Auf dem Beet wachsen nur Saatpflanzen.'
+      : dat.saat ? 'Saatgut wächst nur auf einem freien Beetplatz.' : 'Hier ist kein freier Platz.';
     vorschauSetzen(z, null, anker, false);
   }
 }
@@ -678,8 +740,9 @@ function verkaufBereich(ctx, kategorie, id, name, schliessen) {
 }
 
 function pflanzenBlatt(ctx, p) {
+  if (p.saat) return saatBlatt(ctx, p);
   const d = ctx.daten;
-  const def = p.rar ? RARITAETEN[p.typ] : PFLANZEN[p.typ];
+  const def = pflanzenDef(p);
   const name = def ? def.name : (PREISE_PFLANZEN[p.typ] ? PREISE_PFLANZEN[p.typ].name : p.typ);
   const kosten = p.stufe >= 4 ? null : levelKosten(d, p.id);
   const zuWenig = kosten !== null && d.spiel.samen < kosten;
@@ -722,13 +785,87 @@ function pflanzenBlatt(ctx, p) {
   blatt = blattOeffnen(ctx, inhalt);
 }
 
+// Blatt einer Saatpflanze auf dem Beet: Name, Seltenheit, Wachstum, Ernte, Entfernen. Leveln gibt es hier nicht.
+function saatBlatt(ctx, p) {
+  const def = pflanzenDef(p);
+  const name = def ? def.name : p.typ;
+  const seltenheit = saatSeltenheit(p.typ);
+  const stufe = Math.min(4, p.stufe || 1);
+  const fortschritt = p.fortschritt || 0;
+  const ernteTage = p.ernteTage || 0;
+  const reif = erntereif(p);
+  let blatt = null;
+  const schliessen = () => { if (blatt) blatt.schliessen(); };
+
+  // Die Stufe steigt alle 2 Budget-Tage: bis zur nächsten fehlen 2 * Stufe - Fortschritt Tage
+  let status;
+  if (stufe < 4) {
+    const bis = Math.max(1, 2 * stufe - fortschritt);
+    status = `Wächst an Budget-Tagen: noch ${bis} ${bis === 1 ? 'Tag' : 'Tage'} bis Stufe ${stufe + 1}`;
+  } else if (reif) {
+    status = 'Erntereif! 🌾';
+  } else {
+    const noch = Math.max(1, ERNTE_WARTE_TAGE - ernteTage);
+    status = `Nächste Ernte in ${noch} ${noch === 1 ? 'Budget-Tag' : 'Budget-Tagen'}`;
+  }
+
+  const erntKnopf = reif
+    ? el('button', { type: 'button', class: 'knopf knopf-primaer knopf-voll', text: 'Ernten', onclick: () => ernteStarten(ctx, p, schliessen) })
+    : null;
+  const entfernKnopf = el('button', {
+    type: 'button',
+    class: 'knopf knopf-voll',
+    text: 'Entfernen',
+    onclick: async () => {
+      const wahl = await ctx.dialog({
+        titel: 'Entfernen?',
+        text: `${name} vom Beet entfernen? Die Saat bringt dabei keine Samen.`,
+        knoepfe: [
+          { text: 'Entfernen', art: 'gefahr', wert: true },
+          { text: 'Behalten', art: 'leise' }
+        ]
+      });
+      if (wahl !== true) return;
+      const r = verkaufen(ctx.daten, 'pflanze', p.id);
+      if (r.fehler) return ctx.toast(r.fehler);
+      schliessen();
+      ctx.speichern(r.daten);
+    }
+  });
+
+  const inhalt = el('div', {},
+    el('h2', { class: 'ga-titel', text: name }),
+    seltenheit ? el('div', { class: 'g20-selten g20-selten-' + seltenheit, text: SELTEN_TEXT[seltenheit] || seltenheit }) : null,
+    el('div', { class: 'ga-sterne', 'aria-hidden': 'true', text: '★'.repeat(stufe) + '☆'.repeat(4 - stufe) }),
+    el('div', { class: 'klein', text: `Stufe ${stufe} von 4` }),
+    def ? vorschau(def.zeichne(stufe, false), 'ga-vorschau') : null,
+    el('div', { class: 'aktionen' },
+      el('p', { class: reif ? 'g20-status g20-reif' : 'g20-status', text: status }),
+      erntKnopf,
+      entfernKnopf
+    )
+  );
+  blatt = blattOeffnen(ctx, inhalt);
+}
+
+// Ernte: Samen gutschreiben (Münzflug über belohnen), bei Gratis-Tüte ein zweiter Hinweis
+function ernteStarten(ctx, p, schliessen) {
+  const r = ernten(ctx.daten, p.id, ctx.heute);
+  if (r.fehler) return ctx.toast(r.fehler);
+  schliessen();
+  ctx.speichern(r.daten);
+  ctx.belohnen([{ art: 'ernte', samen: r.samen }]);
+  if (r.gratis) ctx.toast('+ eine Samentüte gratis! 🎁');
+}
+
 function moebelBlatt(ctx, m) {
-  const def = MOEBEL[m.typ];
+  const def = hat(MOEBEL_ALLE, m.typ);
   const name = def ? def.name : (PREISE_MOEBEL[m.typ] ? PREISE_MOEBEL[m.typ].name : m.typ);
   const breite = def ? def.breite : 1;
   const tiefe = def ? def.tiefe : 1;
   const [w, h] = m.drehung === 90 ? [tiefe, breite] : [breite, tiefe];
   const plaetze = def ? def.plaetze.length : 0;
+  const beet = !!def && def.plaetze.some(p => p.beet);
   const neueDrehung = m.drehung === 90 ? 0 : 90;
   let blatt = null;
   const schliessen = () => { if (blatt) blatt.schliessen(); };
@@ -736,7 +873,7 @@ function moebelBlatt(ctx, m) {
   const inhalt = el('div', {},
     el('h2', { class: 'ga-titel', text: name }),
     def ? vorschau(def.zeichne(2, 2, m.drehung), 'ga-vorschau') : null,
-    el('p', { class: 'klein', text: `Belegt ${w} × ${h} Felder · ${plaetze} Stellplätze für Pflanzen` }),
+    el('p', { class: 'klein', text: `Belegt ${w} × ${h} Felder · ${plaetze} ${beet ? 'Beetplätze für Saatpflanzen' : 'Stellplätze für Pflanzen'}` }),
     el('div', { class: 'aktionen' },
       el('button', {
         type: 'button',
@@ -762,7 +899,7 @@ function moebelBlatt(ctx, m) {
 }
 
 function dekoBlatt(ctx, o) {
-  const def = DEKO[o.typ];
+  const def = dekoDef(o.typ);
   const name = def ? def.name : (PREISE_DEKO[o.typ] ? PREISE_DEKO[o.typ].name : o.typ);
   let blatt = null;
   const schliessen = () => { if (blatt) blatt.schliessen(); };

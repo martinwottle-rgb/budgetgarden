@@ -2,13 +2,60 @@
 // Deckenhaken) liegt hier; Moebel, Pflanzen und Deko (inkl. Haengeampel) kommen aus js/grafik/. Reines JavaScript, keine externen Bilder.
 
 import { iso, KON, BLATT_FARBEN, f, p2, tr, poly, linie, kreis, oval, pfad, gruppe, kiste, gerundet, qb, zufall, defs, bodenschatten, TW, TH, OX, OY } from './grafik/hilfen.js';
-import { MOEBEL, platzFeld } from './grafik/moebel.js';
+import { MOEBEL, feldPunkt } from './grafik/moebel.js';
+import { MOEBEL2 } from './grafik/moebel2.js';
 import { PFLANZEN } from './grafik/pflanzen.js';
+import { PFLANZEN2 } from './grafik/pflanzen2.js';
 import * as R from './grafik/raritaeten.js';
 import { DEKO } from './grafik/deko.js';
+import { DEKO2 } from './grafik/deko2.js';
+import { SAAT } from './grafik/saat.js';
+import { SAISON } from './grafik/saison.js';
 
 // Groessenfaktor fuer Raritaeten (ueber R.RAR_SKALA, falls das Grafik-Modul ihn exportiert; sonst 1.15)
 const RAR_SKALA = R.RAR_SKALA ?? 1.15;
+
+// Grafiken aus allen Quellen (SPEC-2): Grundbestand plus Beete, Spaetspiel und Saison
+const MOEBEL_ALLE = { ...MOEBEL, ...MOEBEL2 };
+const PFLANZEN_ALLE = { ...PFLANZEN, ...PFLANZEN2 };
+const DEKO_ALLE = { ...DEKO, ...DEKO2 };
+// Eintrag nur, wenn der Typ wirklich in der Tabelle steht (keine Treffer wie constructor)
+const hat = (tabelle, typ) => (Object.prototype.hasOwnProperty.call(tabelle, typ) ? tabelle[typ] : null);
+// Saisonartikel mit der gewuenschten art (pflanze, deko, saat), sonst null
+const saisonArt = (typ, art) => {
+  const e = hat(SAISON, typ);
+  return e && e.art === art ? e : null;
+};
+// Grafik eines Objekts: Raritaet, Saatpflanze (ohne Topf) oder Topf- bzw. Deko-Grafik. Unbekannt: null.
+function grafikVon(o) {
+  if (o.art === 'deko') return hat(DEKO_ALLE, o.typ) || saisonArt(o.typ, 'deko');
+  if (o.rar) return hat(R.RARITAETEN, o.typ);
+  if (o.saat) return hat(SAAT, o.typ) || saisonArt(o.typ, 'saat');
+  return hat(PFLANZEN_ALLE, o.typ) || saisonArt(o.typ, 'pflanze');
+}
+// Stellplatz n eines Moebels (MOEBEL oder MOEBEL2) in Feldkoordinaten plus Hoehe z, dazu beet (Beetplatz)
+function platzVon(m, n) {
+  const def = hat(MOEBEL_ALLE, m.typ);
+  const p = def && def.plaetze[n];
+  if (!p) return null;
+  const [gx, gy] = feldPunkt(m.gx, m.gy, m.drehung, p.dx, p.dy);
+  return { gx, gy, z: p.z, beet: !!p.beet };
+}
+// Wartezeit einer Saatpflanze bis zur Ernte in Budget-Tagen (wie in spiel.js)
+export const ERNTE_WARTE_TAGE = 3;
+// Erntereif: ausgewachsene Saatpflanze (Stufe 4) mit abgelaufener Wartezeit
+export function erntereif(p) {
+  return !!p && !!p.saat && p.stufe >= 4 && (p.ernteTage || 0) >= ERNTE_WARTE_TAGE;
+}
+// Erntemarke ueber einer reifen Beetpflanze: goldener Kreis mit Sichel, pulsiert (CSS-Klasse g20-ernte)
+const ERNTE_Y = -62;
+function erntemarke() {
+  return `<g class="g20-ernte" pointer-events="none">` +
+    kreis(0, ERNTE_Y, 8, 'fill="#e8b83a" stroke="#6b4a3a" stroke-width="1.1"') +
+    pfad(`M-4.5,${f(ERNTE_Y + 2)} Q0,${f(ERNTE_Y - 9)} 4.5,${f(ERNTE_Y - 3)} Q0,${f(ERNTE_Y - 4)} -4.5,${f(ERNTE_Y + 2)}Z`,
+      'fill="#fff6d5" stroke="#6b4a3a" stroke-width="0.6" stroke-linejoin="round"') +
+    '</g>';
+}
 
 const FUGE = 'stroke="#c9a27a" stroke-width="0.8" stroke-linejoin="round"';
 // Standardgroesse des Bodens in Feldern. Alle Masse unten sind auf 6 gerechnet und mit faktor skaliert.
@@ -538,7 +585,7 @@ function markierungenSvg(liste, moebel, hk) {
       s += poly([iso(gx, gy), iso(gx + 1, gy), iso(gx + 1, gy + 1), iso(gx, gy + 1)], attr);
     } else if (Number.isFinite(ort.gx) && Number.isFinite(ort.gy)) {
       // Moebel-Position: Grundflaeche des Moebels in der Drehung des Ortes
-      const def = MOEBEL[mk.typ];
+      const def = hat(MOEBEL_ALLE, mk.typ);
       const breite = def ? def.breite : 1;
       const tiefe = def ? def.tiefe : 1;
       const [w, h] = ort.drehung === 90 ? [tiefe, breite] : [breite, tiefe];
@@ -546,7 +593,7 @@ function markierungenSvg(liste, moebel, hk) {
       s += poly([iso(gx, gy), iso(gx + w, gy), iso(gx + w, gy + h), iso(gx, gy + h)], attr);
     } else if (ort.moebel !== undefined) {
       const m = (moebel || []).find(x => x.id === ort.moebel);
-      const pos = m && platzFeld(m, ort.platz);
+      const pos = m && platzVon(m, ort.platz);
       if (pos) {
         const p = iso(pos.gx, pos.gy, pos.z);
         s += kreis(p[0], p[1], 12, attr);
@@ -607,7 +654,7 @@ export function punktAusOrt(ort, zustand) {
   if (Array.isArray(ort.feld)) return iso(ort.feld[0] + 0.5, ort.feld[1] + 0.5, 0);
   if (ort.moebel !== undefined) {
     const m = ((zustand && zustand.moebel) || []).find(x => x.id === ort.moebel);
-    const pos = m && platzFeld(m, ort.platz);
+    const pos = m && platzVon(m, ort.platz);
     return pos ? iso(pos.gx, pos.gy, pos.z) : null;
   }
   if (ort.haken !== undefined) {
@@ -618,7 +665,7 @@ export function punktAusOrt(ort, zustand) {
     }
   }
   if (Number.isFinite(ort.gx) && Number.isFinite(ort.gy)) {
-    const def = MOEBEL[ort.typ];
+    const def = hat(MOEBEL_ALLE, ort.typ);
     const breite = def ? def.breite : 1;
     const tiefe = def ? def.tiefe : 1;
     const [w, h] = ort.drehung === 90 ? [tiefe, breite] : [breite, tiefe];
@@ -667,7 +714,7 @@ export function zeichneSzene(container, zustand) {
   const moebelEintraege = [];
   const moebelById = new Map();
   for (const m of z.moebel || []) {
-    const def = MOEBEL[m.typ];
+    const def = hat(MOEBEL_ALLE, m.typ);
     if (!def || moebelById.has(m.id)) continue;
     const e = { key: m.gx + m.gy, m, def, aufsatz: [] };
     moebelById.set(m.id, e);
@@ -683,14 +730,19 @@ export function zeichneSzene(container, zustand) {
     ...(z.deko || []).map((d) => ({ ...d, art: 'deko' })),
   ];
   for (const o of objekte) {
-    // Raritaeten (rar: true) kommen aus eigenem Grafik-Modul, mit Tageszeit und eigener Skalierung
+    // Raritaeten (rar: true) mit Tageszeit und eigener Skalierung; Saatpflanzen (saat: true) ohne Topf.
+    // Unbekannter Typ oder fehlender Ort: nichts zeichnen.
     const rar = o.art === 'pflanze' && !!o.rar;
-    const def = o.art === 'pflanze' ? (rar ? R.RARITAETEN[o.typ] : PFLANZEN[o.typ]) : DEKO[o.typ];
-    if (!def || !o.ort) continue;
+    const def = grafikVon(o);
+    if (!def || typeof def.zeichne !== 'function' || !o.ort || typeof o.ort !== 'object') continue;
     const aufMoebel = 'moebel' in o.ort;
     const ebene = aufMoebel ? 'brett' : 'boden';
-    const inhalt = rar ? def.zeichne(o.stufe, welk, ebene, { tageszeit: zeit })
-      : o.art === 'pflanze' ? def.zeichne(o.stufe, welk, ebene) : def.zeichne();
+    let inhalt;
+    if (rar) inhalt = def.zeichne(o.stufe, welk, ebene, { tageszeit: zeit });
+    else if (o.art === 'pflanze') inhalt = def.zeichne(o.stufe, welk, ebene);
+    else inhalt = def.zeichne();
+    // Reife Beetpflanze: Erntemarke darueber (nicht bei welk)
+    if (o.art === 'pflanze' && o.saat && !welk && erntereif(o)) inhalt += erntemarke();
     const skala = rar ? 1.6 * RAR_SKALA : 1.6;
     // Auf einem Moebel stehende Objekte tragen data-auf, damit der Bewegungsmodus sie mit dem Moebel verschieben kann
     const attr = `data-art="${o.art}" data-id="${escAttr(o.id)}"` + (aufMoebel ? ` data-auf="${escAttr(o.ort.moebel)}"` : '');
@@ -703,7 +755,7 @@ export function zeichneSzene(container, zustand) {
     }
     if (aufMoebel) {
       const e = moebelById.get(o.ort.moebel);
-      const pos = e && platzFeld(e.m, o.ort.platz);
+      const pos = e && platzVon(e.m, o.ort.platz);
       if (pos) {
         const svg = platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr, skala);
         if (istLicht) lichtEintraege.push({ key: e.key + 0.5, svg });
