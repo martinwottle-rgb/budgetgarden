@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de-DE">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saatgut-Vorschau</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #a9d3a5;
+      color: #6b4a3a;
+      font-family: ui-rounded, system-ui, sans-serif;
+    }
+    h1 { font-size: 22px; margin: 8px 0 4px; }
+    .hinweis { font-size: 13px; margin: 0 0 8px; }
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 6px;
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 8px;
+      color: #3b2a20;
+    }
+    .zeile {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-end;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.28);
+    }
+    .name { width: 118px; overflow-wrap: anywhere; font-size: 14px; font-weight: bold; align-self: center; }
+    .name small { font-weight: normal; font-size: 12px; }
+    .kachel { width: 150px; }
+    .kachel svg { width: 150px; height: 186px; display: block; border-radius: 12px; box-shadow: 0 2px 6px rgba(107, 74, 58, 0.25); }
+    .kachel .beschr { font-size: 12px; text-align: center; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <h1>Saatgut-Vorschau</h1>
+  <p class="hinweis">Ursprung = Erdoberfläche, ohne Topf. Stufe 1 bis 4 und welk (Stufe 4). Farbmarke links = Seltenheit.</p>
+  <div id="inhalt"></div>
+
+  <script type="module">
+    import { SAAT } from './js/grafik/saat.js';
+
+    const FARBE = { gewoehnlich: '#9aa1a8', selten: '#6fae6a', episch: '#9b6fc9', legendaer: '#e8b83a' };
+    const NAME = { gewoehnlich: 'Gewöhnlich', selten: 'Selten', episch: 'Episch', legendaer: 'Legendär' };
+    const GRUPPEN = ['gewoehnlich', 'selten', 'episch', 'legendaer'];
+
+    // Kachel: Himmel oben, ein Streifen Erde unten, Pflanze wächst aus der Erdoberfläche (y = 0)
+    const kachel = (inhalt, beschriftung) =>
+      `<div class="kachel"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-30 -62 60 74">` +
+      `<rect x="-30" y="-62" width="60" height="62" fill="#fff8ec"/>` +
+      `<rect x="-30" y="0" width="60" height="12" fill="#8a6246"/>` +
+      `<rect x="-30" y="0" width="60" height="1.2" fill="#6b4a3a"/>` +
+      `${inhalt}</svg><div class="beschr">${beschriftung}</div></div>`;
+
+    let html = '';
+    for (const g of GRUPPEN) {
+      html += `<h2 style="background:${FARBE[g]}">${NAME[g]}</h2>`;
+      for (const [typ, p] of Object.entries(SAAT).filter(([, p]) => p.seltenheit === g)) {
+        let kacheln = '';
+        for (let s = 1; s <= 4; s++) kacheln += kachel(p.zeichne(s), `Stufe ${s}`);
+        kacheln += kachel(p.zeichne(4, true), 'welk');
+        html += `<div class="zeile" style="border-left:8px solid ${FARBE[g]}">` +
+          `<div class="name">${p.name}<br><small>${p.seltenheit}</small></div>${kacheln}</div>`;
+      }
+    }
+    document.getElementById('inhalt').innerHTML = html;
+  </script>
+</body>
+</html>
