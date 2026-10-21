@@ -1,0 +1,619 @@
+/* Version 2.1: iOS-Stil (SPEC-3.md Abschnitt 8), wird nach styles.css geladen. Präfix ios-.
+   Farben bleiben wie in styles.css (Mint, Creme, Gold). Überschreibungen bestehender Klassen stehen oben. */
+
+/* ---------- Schrift und Zahlen ---------- */
+
+:root {
+  --schrift: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+}
+
+.betrag, .betrag-gross, .betrag-mittel, .kopf-muenze, .muenze-zahl, .level-zahl,
+.sh-preis, .sh-stand-zahl, .sh-stand-level, .sp12-level-gross, .ios-samen-zahl,
+.ios-geschenk-samen, .ios-aussicht-zahl, .ios-verlauf-samen, .ios-quellen-samen,
+.ios-lu-zahl, .ios-tag {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bildschirmtitel: 34 px fett */
+h1.titel {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- Tippflächen und Auswahl ---------- */
+
+button, .knopf, .chip, .reiter button, .listen-zeile {
+  min-height: 44px;
+}
+
+.karte, button, .tab, nav, header {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Statt Hover: Druck-Zustand (leicht kleiner, etwas dunkler) */
+button:not([disabled]):active,
+.knopf:active,
+.chip:active,
+.listen-zeile:active,
+.sh-karte:active,
+.tab:active {
+  transform: scale(0.97);
+  filter: brightness(0.94);
+}
+
+/* ---------- Sheets ---------- */
+
+.sheet {
+  border-radius: 16px 16px 0 0;
+}
+
+.griff::before {
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  background: #c4bcb4;
+}
+
+/* ---------- Toasts als iOS-Banner ---------- */
+
+.toast {
+  width: max-content;
+  max-width: 100%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(107, 74, 58, 0.86);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+}
+
+/* ---------- Einstellungen: Kurzbefehle-Anleitung und Web-Push (alt) ---------- */
+
+.es-kurzbefehl .es-schritte {
+  margin: 4px 0 12px;
+  padding-left: 22px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.es-kurzbefehl .es-schritte li { margin-bottom: 8px; }
+
+.es-altpush { margin-top: 12px; }
+
+.es-altpush-titel {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 6px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* ---------- Shop: Gutschein im Kaufknopf, Meilenstein-Band ---------- */
+
+.ios-knopf-gold {
+  background: var(--gold);
+  color: var(--braun);
+  box-shadow: 0 4px 0 #d9a93a, 0 6px 14px rgba(242, 193, 78, 0.35);
+}
+
+.ios-knopf-gold:active { box-shadow: 0 2px 0 #d9a93a; }
+
+.ios-stern-band {
+  display: block;
+  margin-bottom: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--braun);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ---------- Gemeinsame Bausteine ---------- */
+
+.ios-emoji { font-size: 32px; line-height: 1; }
+
+.ios-konfetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ios-konfetti span {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: ios-konfetti-fall 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
+}
+
+@keyframes ios-konfetti-fall {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), 340px) rotate(var(--rot)); }
+}
+
+@keyframes ios-dreh {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- Level-Up ---------- */
+
+.ios-lu {
+  position: relative;
+  text-align: center;
+}
+
+.ios-lu-kreis-wrap {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  margin: 22px auto 14px;
+  display: grid;
+  place-items: center;
+}
+
+.ios-lu-strahlen {
+  position: absolute;
+  inset: -18px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(242, 193, 78, 0.6) 0deg 9deg, rgba(242, 193, 78, 0) 9deg 22.5deg);
+  -webkit-mask: radial-gradient(circle, #000 30%, transparent 70%);
+          mask: radial-gradient(circle, #000 30%, transparent 70%);
+  animation: ios-dreh 9s linear infinite;
+}
+
+.ios-lu-kreis {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 4px solid #e0a93a;
+  background: radial-gradient(circle at 35% 30%, #fff6c9, var(--gold) 55%, #d9a02e);
+  box-shadow: 0 0 0 4px rgba(242, 193, 78, 0.35), 0 10px 24px rgba(201, 150, 40, 0.45);
+  animation: ios-lu-poppen 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.ios-lu-zahl {
+  font-size: 54px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--braun);
+}
+
+@keyframes ios-lu-poppen {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: none; }
+}
+
+.ios-lu-ueber {
+  margin: 8px 0 6px;
+  font-size: 17px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.ios-lu-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  text-align: left;
+}
+
+.ios-lu-zeile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  background: #fff8ee;
+}
+
+.ios-lu-bild {
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+}
+
+.ios-lu-vorschau,
+.ios-lu-vorschau svg { display: block; width: 100%; height: 100%; }
+
+.ios-lu-bild.ios-emoji { font-size: 30px; }
+
+.ios-lu-name { font-size: 16px; font-weight: 800; }
+
+.ios-lu-leer { margin: 6px 4px 0; }
+
+/* ---------- Tagesgeschenk ---------- */
+
+.ios-tage {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ios-tag {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 12px;
+  background: #fff8ee;
+  color: var(--braun);
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1px rgba(107, 74, 58, 0.12);
+}
+
+.ios-tag.erledigt { background: var(--positiv); color: #fff; }
+
+.ios-tag.meilenstein { box-shadow: inset 0 0 0 2px var(--gold); }
+
+.ios-tag.heute {
+  background: var(--gold);
+  color: var(--braun);
+  animation: ios-leuchten 1.6s ease-in-out infinite;
+}
+
+@keyframes ios-leuchten {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.7); }
+  50% { box-shadow: 0 0 0 6px rgba(242, 193, 78, 0); }
+}
+
+.ios-tag-stern {
+  position: absolute;
+  top: -7px;
+  right: -3px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.ios-meilen-hinweis { margin: 0; text-align: center; }
+
+.ios-geschenk-dialog { display: flex; flex-direction: column; gap: 12px; }
+
+.ios-geschenk-mitte {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ios-hinweis { margin: 0; text-align: center; }
+
+/* Die Box: wippt, schüttelt sich, der Deckel fliegt weg, dahinter drehen sich Strahlen */
+.ios-geschenk {
+  position: relative;
+  width: 170px;
+  height: 170px;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: grid;
+  place-items: center;
+}
+
+.ios-strahlen {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 300px;
+  height: 300px;
+  margin: -150px 0 0 -150px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(242, 193, 78, 0.6) 0deg 8deg, rgba(242, 193, 78, 0) 8deg 24deg);
+  -webkit-mask: radial-gradient(circle, #000 20%, transparent 68%);
+          mask: radial-gradient(circle, #000 20%, transparent 68%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.ios-geschenk.offen .ios-strahlen {
+  opacity: 1;
+  animation: ios-dreh 8s linear infinite;
+}
+
+.ios-geschenk-bild {
+  position: relative;
+  display: block;
+  width: 150px;
+  height: 150px;
+}
+
+.ios-geschenk-bild svg {
+  display: block;
+  width: 150px;
+  height: 150px;
+  overflow: visible;
+}
+
+.ios-geschenk.wippt .ios-geschenk-bild { animation: ios-wippen 1.8s ease-in-out infinite; }
+
+.ios-geschenk.schuettelt .ios-geschenk-bild { animation: ios-schuetteln 0.4s linear; }
+
+.ios-deckel { transform-box: view-box; transform-origin: 60px 40px; }
+
+.ios-geschenk.offen .ios-deckel {
+  animation: ios-deckel-hoch 0.7s cubic-bezier(0.2, 1.2, 0.4, 1) forwards;
+}
+
+@keyframes ios-wippen {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-6px) rotate(-2deg); }
+}
+
+@keyframes ios-schuetteln {
+  0%, 100% { transform: rotate(0deg); }
+  10% { transform: rotate(-7deg); }
+  20% { transform: rotate(7deg); }
+  30% { transform: rotate(-7deg); }
+  40% { transform: rotate(6deg); }
+  50% { transform: rotate(-5deg); }
+  60% { transform: rotate(5deg); }
+  70% { transform: rotate(-3deg); }
+  80% { transform: rotate(3deg); }
+  90% { transform: rotate(-1deg); }
+}
+
+@keyframes ios-deckel-hoch {
+  0% { transform: none; opacity: 1; }
+  30% { transform: translate(0, -6px) rotate(-4deg); }
+  100% { transform: translate(-40px, -110px) rotate(-30deg); opacity: 0; }
+}
+
+/* Belohnung springt mit Federeffekt herein */
+.ios-belohnung {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.ios-belohnung.sichtbar {
+  display: flex;
+  animation: ios-feder 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes ios-feder {
+  from { opacity: 0; transform: translateY(24px) scale(0.6); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+
+.ios-geschenk-samen {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--braun);
+}
+
+.ios-gutschein {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ios-gutschein-bild,
+.ios-meilenstein-bild {
+  width: 110px;
+  height: 110px;
+}
+
+.ios-gutschein-vorschau,
+.ios-gutschein-vorschau svg,
+.ios-meilenstein-vorschau,
+.ios-meilenstein-vorschau svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ios-extra {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.ios-meilenstein-karte {
+  width: 100%;
+  padding: 10px;
+  border-radius: 16px;
+  background: #fff8ee;
+  box-shadow: inset 0 0 0 2px var(--gold);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ios-meilenstein-karte .ios-stern-band { align-self: stretch; }
+
+/* Schild „+2 🌱“ fliegt in einem Bogen zur Münz-Anzeige (700 ms) */
+.ios-schild {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--creme);
+  color: var(--braun);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(107, 74, 58, 0.25);
+  opacity: 1;
+  animation: ios-schild-flug 0.7s cubic-bezier(0.4, 0, 0.6, 1) both;
+}
+
+@keyframes ios-schild-flug {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  55% { opacity: 1; transform: translate(calc(-50% + var(--dx) * 0.5), calc(-50% + var(--dy) * 0.5 - 90px)) scale(1); }
+  100% { opacity: 0.2; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.6); }
+}
+
+/* ---------- Samen-Blatt ---------- */
+
+.ios-samen-gross {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 6px 0 14px;
+}
+
+.ios-samen-muenze svg {
+  display: block;
+  width: 44px;
+  height: 44px;
+}
+
+.ios-samen-zahl {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--braun);
+}
+
+.ios-aussicht { margin-bottom: 6px; }
+
+.ios-aussicht-zahl {
+  margin-top: 2px;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--positiv);
+}
+
+.ios-aussicht-text {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--braun-2);
+}
+
+.ios-ueberschrift {
+  margin: 16px 2px 8px;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.ios-quellen {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ios-quellen th {
+  padding: 0 4px 6px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--braun-2);
+}
+
+.ios-quellen td {
+  padding: 8px 4px;
+  vertical-align: top;
+  border-top: 1px dashed rgba(107, 74, 58, 0.2);
+}
+
+.ios-quellen th:nth-child(2),
+.ios-quellen-samen { text-align: right; white-space: nowrap; }
+
+.ios-quellen-samen { font-weight: 800; }
+
+.ios-verlauf {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ios-verlauf-zeile {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 0;
+  border-top: 1px dashed rgba(107, 74, 58, 0.2);
+}
+
+.ios-verlauf-text {
+  min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.ios-verlauf-samen {
+  font-weight: 800;
+  color: var(--positiv);
+}
+
+/* ---------- Bewegung abschalten ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .ios-geschenk.wippt .ios-geschenk-bild,
+  .ios-geschenk.schuettelt .ios-geschenk-bild,
+  .ios-geschenk.offen .ios-strahlen,
+  .ios-lu-strahlen,
+  .ios-lu-kreis,
+  .ios-tag.heute,
+  .ios-belohnung.sichtbar,
+  .ios-schild,
+  .ios-konfetti span {
+    animation: none !important;
+  }
+
+  .ios-geschenk.offen .ios-deckel {
+    animation: none !important;
+    transform: translate(-40px, -110px) rotate(-30deg);
+    opacity: 0;
+  }
+
+  .ios-geschenk.offen .ios-strahlen { opacity: 1; }
+
+  .ios-konfetti { display: none; }
+}

@@ -17,10 +17,11 @@ export function zeige(container, ctx) {
     el('h1', { class: 'titel', text: 'Einstellungen' }),
     gehaltstagAbschnitt(ctx),
     kategorienAbschnitt(ctx),
-    erinnerungAbschnitt(ctx),
+    erinnerungAbschnitt(),
     datenAbschnitt(ctx),
     zuruecksetzenAbschnitt(ctx),
-    el('p', { class: 'es-version klein', text: VERSION })
+    el('p', { class: 'es-version klein', text: VERSION }),
+    webPushAbschnitt(ctx)
   );
 }
 
@@ -129,9 +130,37 @@ async function kategorieLoeschen(ctx, k, sheet) {
   ctx.toast('Kategorie gelöscht.');
 }
 
-// ---------- Erinnerung 22 Uhr ----------
+// ---------- Erinnerung 22 Uhr (Kurzbefehle-Automation, ANLEITUNG-ERINNERUNG.md) ----------
 
-function erinnerungAbschnitt(ctx) {
+const KURZBEFEHL_SCHRITTE = [
+  ['Die App ', 'Kurzbefehle', ' öffnen und unten ', 'Automation', ' wählen.'],
+  ['Oben rechts ', '+', ' antippen, dann ', 'Tageszeit', '.'],
+  ['', '22:00', ' einstellen, ', 'Täglich', ' wählen und darunter ', 'Sofort ausführen', ' aktivieren. ', 'Bei Ausführung mitteilen', ' ausschalten. Dann ', 'Weiter', '.'],
+  ['', 'Neue leere Automation', ' wählen, dann ', 'Aktion hinzufügen', ' antippen und nach ', 'Mitteilung anzeigen', ' suchen.'],
+  ['Als Text eintragen: Wie viel hast du heute ausgegeben? 🌱'],
+  ['Oben rechts ', 'Fertig', ' antippen.']
+];
+
+// Die Teile abwechselnd: normaler Text und fett (ungerade Position)
+function schrittInhalt(teile) {
+  return teile.map((t, i) => (i % 2 === 1 ? el('strong', { text: t }) : t)).filter(t => t !== '');
+}
+
+function erinnerungAbschnitt() {
+  return abschnitt('Erinnerung um 22 Uhr',
+    el('section', { class: 'karte es-kurzbefehl' },
+      el('p', { class: 'klein', text: 'Jeden Abend um 22 Uhr erinnert dich eine Mitteilung an deine Ausgaben. Sie läuft auf die Minute genau und braucht weder Server noch GitHub.' }),
+      el('ol', { class: 'es-schritte' },
+        KURZBEFEHL_SCHRITTE.map(teile => el('li', {}, schrittInhalt(teile)))),
+      el('p', { class: 'klein', text: 'Die Mitteilung kommt von Kurzbefehle. Antippen öffnet die Kurzbefehle-App, nicht den Budgetgarten.' }),
+      el('p', { class: 'klein', text: 'Ab jetzt erscheint jeden Abend um 22 Uhr die Mitteilung.' })
+    )
+  );
+}
+
+// ---------- Web-Push (alt): nicht mehr angeboten, nur noch zugeklappt erreichbar ----------
+
+function webPushAbschnitt(ctx) {
   const inhalt = [];
   const status = pushMoeglich();
   const eingerichtet = !!(ctx.daten.einstellungen.push && ctx.daten.einstellungen.push.abonniert);
@@ -149,7 +178,10 @@ function erinnerungAbschnitt(ctx) {
   }
   if (abo) inhalt.push(aboBox(ctx));
 
-  return abschnitt('Erinnerung um 22 Uhr', el('section', { class: 'karte' }, inhalt));
+  return el('details', { class: 'es-altpush' },
+    el('summary', { class: 'klein es-altpush-titel', text: 'Web-Push (alt)' }),
+    el('section', { class: 'karte' }, inhalt)
+  );
 }
 
 async function erinnerungAktivieren(ctx) {

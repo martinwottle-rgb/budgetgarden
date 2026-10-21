@@ -34,7 +34,7 @@ export function standardDaten(heute) {
       challenges: {},
       bewertet: { tage: [], wochen: [], zeitraeume: [] },
       offeneAbschluesse: [],
-      besuch: { letzter: null, serie: 0 },
+      besuch: { letzter: null, tag: 0 },
       gutscheine: [],
       saatgut: {},
       tuete: { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 },

@@ -5,6 +5,7 @@
 import * as L from '../logik.js';
 import { el, euro, balken, kategorieVon, kurzDatum, langDatum, tage, parseBetrag, betragText, zahl } from './bausteine.js';
 import * as statistik from './statistik.js';
+import { budgetKarte, tagesChip, wochenPrognoseText } from './garten.js';
 
 const VORSCHAU_MAX = 3; // so viele Zeiträume reicht die Vorschau nach vorn
 
@@ -65,10 +66,6 @@ function gueltigesDatum(iso) {
 }
 
 export function zeige(container, ctx, param) {
-  const d = ctx.daten;
-  const heute = ctx.heute;
-  const jetzt = L.zeitraum(d, heute);
-  const grenze = vorschauEnde(d, jetzt);
   const statistikAn = !!param && param.ansicht === 'statistik';
 
   container.append(
@@ -80,6 +77,107 @@ export function zeige(container, ctx, param) {
     return;
   }
 
+  const monat = !!param && param.ansicht === 'monat';
+  container.append(segment(ctx, monat ? 'monat' : 'woche', param));
+  if (monat) monatAnsicht(container, ctx, param);
+  else wochenAnsicht(container, ctx, param);
+}
+
+// Segment oben: Woche oder Monat (param.ansicht, Standard Woche)
+function segment(ctx, aktiv, param) {
+  const knopf = (text, wert) => el('button', {
+    type: 'button', role: 'tab', 'aria-selected': aktiv === wert ? 'true' : 'false',
+    class: aktiv === wert ? 'aktiv' : '', text,
+    onclick: () => ctx.navigiere('uebersicht', { ...param, ansicht: wert })
+  });
+  return el('div', { class: 'wk-segment', role: 'tablist', 'aria-label': 'Woche oder Monat' },
+    knopf('Woche', 'woche'),
+    knopf('Monat', 'monat')
+  );
+}
+
+// ---------- Woche ----------
+
+// Wochenkarte mit Pfeilen (param.woche = Montag). Zurück nur bis zur Woche des Startdatums, vor bis zur aktuellen Woche.
+function wochenAnsicht(container, ctx, param) {
+  const d = ctx.daten;
+  const heute = ctx.heute;
+  const jetzt = L.wochenbeginn(heute);
+  const st = (d.einstellungen && d.einstellungen.startDatum) || '';
+  const erste = st ? L.wochenbeginn(st) : null;
+  const angefragt = param && param.woche;
+  let mo = gueltigesDatum(angefragt) && L.wochenbeginn(angefragt) === angefragt ? angefragt : jetzt;
+  if (mo > jetzt || (erste && mo < erste)) mo = jetzt;
+  const aktuell = mo === jetzt;
+  const so = L.datumPlusTage(mo, 6);
+  const davor = erste && mo > erste ? L.datumPlusTage(mo, -7) : null;
+  const danach = aktuell ? null : L.datumPlusTage(mo, 7);
+
+  const pfeil = (zeichen, ziel, beschriftung) => el('button', {
+    type: 'button', class: 'wk-pfeil', text: zeichen, 'aria-label': beschriftung,
+    disabled: ziel === null ? true : null,
+    onclick: () => ctx.navigiere('uebersicht', { ...param, woche: ziel, ansicht: 'woche' })
+  });
+  const kopf = el('div', { class: 'wk-kopf-pfeile' },
+    pfeil('‹', davor, 'Frühere Woche'),
+    el('span', { class: 'wk-titel', text: `${kurzDatum(mo)} bis ${kurzDatum(so)}` }),
+    pfeil('›', danach, 'Nächste Woche')
+  );
+
+  if (aktuell) {
+    const w = L.wochenStand(d, heute);
+    container.append(budgetKarte({
+      symbol: '🗓️', kopf, chip: tagesChip(w.proTag), ausgegeben: w.ausgegeben, budget: w.W,
+      prognoseAusgaben: w.prognoseAusgaben, rest: w.rest, prognoseText: wochenPrognoseText(w)
+    }));
+  } else {
+    const w = L.woche(d, mo);
+    container.append(budgetKarte({
+      symbol: '🗓️', kopf, chip: 'abgeschlossen', ausgegeben: w.ausgegeben, budget: w.W,
+      prognoseAusgaben: null, rest: w.rest,
+      prognoseText: w.rest >= 0 ? 'Im Budget geblieben' : `${euro(-w.rest)} drüber`
+    }));
+  }
+  container.append(wochenKarte(ctx, L.zeitraum(d, mo), mo, 'Tag für Tag'));
+}
+
+// ---------- Monat ----------
+
+// Budgetkarte für den angesehenen Zeitraum. Nur der laufende Zeitraum hat eine Prognose.
+function monatKarte(d, zr, heute, istAktuell, zukunft, vb) {
+  const titel = istAktuell ? 'Dieser Monat' : `${kurzDatum(zr.start)} bis ${kurzDatum(zr.ende)}`;
+  if (istAktuell) {
+    const s = L.zeitraumStand(d, heute);
+    let text;
+    if (s.prognoseAusgaben === null) text = 'Ab morgen siehst du hier eine Prognose.';
+    else if (s.prognoseRest >= 0) text = `Bei deinem Tempo bleiben am ${kurzDatum(zr.ende)} noch ${euro(s.prognoseRest)} übrig.`;
+    else text = `Bei deinem Tempo fehlen am ${kurzDatum(zr.ende)} ${euro(-s.prognoseRest)}.`;
+    return budgetKarte({
+      symbol: '📅', titel, chip: tagesChip(s.proTag), ausgegeben: s.ausgegeben, budget: s.V,
+      prognoseAusgaben: s.prognoseAusgaben, rest: s.rest, prognoseText: text
+    });
+  }
+  if (zukunft) {
+    return budgetKarte({
+      symbol: '📅', titel, chip: tagesChip(L.rundeCent(vb.V / zr.tage)), ausgegeben: 0, budget: vb.V,
+      prognoseAusgaben: null, rest: vb.V, prognoseText: 'Noch keine Ausgaben. Gezeigt wird, was die App plant.'
+    });
+  }
+  const ausgegeben = L.ausgabenZwischen(d, zr.start, zr.ende);
+  const rest = vb.V - ausgegeben;
+  return budgetKarte({
+    symbol: '📅', titel, chip: 'abgeschlossen', ausgegeben, budget: vb.V,
+    prognoseAusgaben: null, rest,
+    prognoseText: rest >= 0 ? 'Im Budget geblieben' : `${euro(-rest)} drüber`
+  });
+}
+
+function monatAnsicht(container, ctx, param) {
+  const d = ctx.daten;
+  const heute = ctx.heute;
+  const jetzt = L.zeitraum(d, heute);
+  const grenze = vorschauEnde(d, jetzt);
+
   const zr = L.zeitraum(d, stichtagVon(d, heute, param, grenze));
   const istAktuell = zr.start === jetzt.start;
   const zukunft = zr.start > heute;
@@ -89,6 +187,7 @@ export function zeige(container, ctx, param) {
   // Wochenkarte: die Woche von heute, sonst die letzte Woche des angesehenen Zeitraums
   const anker = istAktuell ? heute : zr.ende;
 
+  container.append(monatKarte(d, zr, heute, istAktuell, zukunft, vb));
   container.append(zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell, grenze, zukunft));
   container.append(
     el('div', { class: 'abschnitt', text: 'Kalender dieses Zeitraums' }),
@@ -117,7 +216,7 @@ function reiter(ctx, statistikAn, param) {
     onclick: () => ctx.navigiere('uebersicht', p)
   });
   return el('div', { class: 'reiter', role: 'tablist', 'aria-label': 'Ansicht der Übersicht' },
-    knopf('Zeitraum', !statistikAn, param && param.stichtag ? { stichtag: param.stichtag } : null),
+    knopf('Budget', !statistikAn, param && param.stichtag ? { stichtag: param.stichtag } : null),
     knopf('Statistik', statistikAn, { ansicht: 'statistik' })
   );
 }
@@ -143,7 +242,7 @@ function zeitraumKarte(ctx, zr, vb, ausgegeben, heute, tagesInfo, istAktuell, gr
     text: zeichen,
     'aria-label': beschriftung,
     'aria-disabled': ok ? null : 'true',
-    onclick: () => (ok ? ctx.navigiere('uebersicht', { stichtag: ziel }) : ctx.toast(hinweis))
+    onclick: () => (ok ? ctx.navigiere('uebersicht', { stichtag: ziel, ansicht: 'monat' }) : ctx.toast(hinweis))
   });
 
   const kopf = el('div', { class: 'st12-zr-kopf' },

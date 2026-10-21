@@ -73,6 +73,8 @@ export const PREISE_MOEBEL = {
   leiterregal: { name: 'Leiterregal', preis: 220, level: 3 },
   wandregal: { name: 'Wandboard', preis: 170, level: 3 },
   metallregal: { name: 'Haarnadel-Regal', preis: 260, level: 4 },
+  zinkregal: { name: 'Zinkregal', preis: 120, level: 2 },
+  zinkregal_hoch: { name: 'Hohes Zinkregal', preis: 340, level: 6 },
   rattan_etagere: { name: 'Rattan-Etagere', preis: 240, level: 4 },
   blumenhocker: { name: 'Blumenhocker', preis: 200, level: 5 },
   steinsockel: { name: 'Terrazzo-Sockel', preis: 300, level: 5 },
@@ -209,7 +211,9 @@ const MOEBEL_NEU_MASSE = {
   pflanzentreppe: { breite: 1, tiefe: 1, plaetze: 3 },
   vitrine: { breite: 1, tiefe: 1, plaetze: 2 },
   sputnik: { breite: 1, tiefe: 1, plaetze: 4 },
-  hochregal: { breite: 3, tiefe: 1, plaetze: 6 }
+  hochregal: { breite: 3, tiefe: 1, plaetze: 6 },
+  zinkregal: { breite: 1, tiefe: 1, plaetze: 3 },
+  zinkregal_hoch: { breite: 2, tiefe: 1, plaetze: 6 }
 };
 const MOEBEL_NEU = Object.fromEntries(Object.entries(MOEBEL_NEU_MASSE).map(([typ, m]) => [typ, {
   breite: m.breite,
@@ -224,9 +228,10 @@ const PFLANZEN_ALLE = { ...PFLANZEN, ...PFLANZEN2 };
 const MOEBEL_ALLE = { ...MOEBEL, ...MOEBEL2 };
 const DEKO_ALLE = { ...DEKO, ...DEKO2 };
 
+// MOEBEL2 zuerst: neue Zeichnungen (z. B. Metallregal) ersetzen gleichnamige alte aus MOEBEL
 function moebelDaten(typ) {
-  if (hat(MOEBEL, typ)) return MOEBEL[typ];
   if (hat(MOEBEL2, typ)) return MOEBEL2[typ];
+  if (hat(MOEBEL, typ)) return MOEBEL[typ];
   if (hat(MOEBEL_NEU, typ)) return MOEBEL_NEU[typ];
   return null;
 }
@@ -792,6 +797,7 @@ export function bewerte(daten, heute) {
     sp.samen += samen;
     sp.xp += samen;
     ereignisse.push({ art, text, samen });
+    if (samen > 0) verlaufEintragen(d, heute, art, text, samen);
   };
 
   // 0. Dächer entfallen: gekaufte Dach-Designs werden einmalig mit Samen erstattet (ohne XP) und aus der Besitzliste genommen.
@@ -802,6 +808,7 @@ export function bewerte(daten, heute) {
     if (preis > 0) {
       sp.samen += preis;
       ereignisse.push({ art: 'erstattung', text: `Dachdesign erstattet: +${preis} Samen`, samen: preis });
+      verlaufEintragen(d, heute, 'erstattung', `Dachdesign erstattet: +${preis} Samen`, preis);
     }
     return false;
   });
@@ -830,7 +837,8 @@ export function bewerte(daten, heute) {
     } else {
       sp.serie = 0;
     }
-    if (buchungenAm(d, tag) > 0) gut('eintrag', `Eintrag am ${kurz(tag)}`, 2);
+    // Der erste Eintrag des Tages wurde schon sofort belohnt (eintragBelohnen), dann hier kein zweites Mal
+    if (buchungenAm(d, tag) > 0 && !sp.eintragSofort.includes(tag)) gut('eintrag', `Eintrag am ${kurz(tag)}`, 2);
     sp.besteSerie = Math.max(sp.besteSerie, sp.serie);
     sp.bewertet.tage.push({ datum: tag, erfuellt, samen: sp.samen - samenVorher });
   }
@@ -979,7 +987,7 @@ const MOEBEL_HOEHE = {
   regal_holz: 130, tisch_natur: 76, tisch_weiss: 76, leiterregal: 150,
   metallregal: 140, blumenhocker: 45, holzkiste: 30, steinsockel: 55,
   ziegelbrett: 25, gaertnertisch_guss: 80, wandregal: 100, rattan_etagere: 110,
-  kraeuterbeet: 45, hochbeet: 60, sideboard: 55, pflanzentreppe: 70, vitrine: 120, sputnik: 110, hochregal: 150
+  kraeuterbeet: 45, hochbeet: 60, sideboard: 55, pflanzentreppe: 70, vitrine: 120, sputnik: 110, hochregal: 150, zinkregal: 74, zinkregal_hoch: 140
 };
 const HOEHE_UNBEKANNT = 100;
 // Moebel und Pflanzen ueber dieser Hoehe passen nicht unter eine Haengeampel
@@ -1121,6 +1129,22 @@ export function katalog(daten) {
   eintragen('pflanze', PREISE_PFLANZEN, PFLANZEN_ALLE);
   eintragen('moebel', PREISE_MOEBEL, MOEBEL_ALLE);
   eintragen('deko', PREISE_DEKO, DEKO_ALLE);
+  // Meilenstein-Deko (SPEC-3): nur im Katalog, solange ein Gutschein dafür da ist. Gratis, Level 1.
+  for (const m of MEILENSTEINE) {
+    if (!gutscheinFuer(daten, 'deko', m.typ)) continue;
+    const gezeichnet = hat(DEKO2, m.typ);
+    liste.push({
+      kategorie: 'deko',
+      typ: m.typ,
+      name: (gezeichnet && DEKO2[m.typ].name) || m.name,
+      preis: 0,
+      level: 1,
+      freigeschaltet: true,
+      gezeichnet,
+      gutschein: true,
+      meilenstein: m.tag
+    });
+  }
   for (const e of ERWEITERUNGEN) {
     liste.push({
       kategorie: 'erweiterung',
@@ -1406,8 +1430,33 @@ export function wochenRueckblick(daten, wochenbeginn) {
 
 // ---------- Tagesgeschenk ----------
 
-// Samen je Tag der Serie (Tag 1 bis 7). Tag 4 und 7 bringen zusätzlich einen Gutschein.
+// Samen je Position im 7er-Block (Tag 1 bis 7). Ab der zweiten Woche kommen je Woche 5 Samen dazu, höchstens 20.
 const GESCHENK_SAMEN = [10, 15, 20, 15, 25, 30, 60];
+const GESCHENK_BONUS_MAX = 4;
+const MEILENSTEIN_SAMEN = 100;
+
+// Meilensteine (SPEC-3, Abschnitt 1): nicht kaufbar, nur über den Gutschein aus dem Tagesgeschenk
+export const MEILENSTEINE = [
+  { tag: 30, typ: 'goldene_giesskanne', name: 'Goldene Gießkanne' },
+  { tag: 50, typ: 'vogeltraenke', name: 'Terrazzo-Vogeltränke' },
+  { tag: 100, typ: 'sonnenuhr', name: 'Messing-Sonnenuhr' },
+  { tag: 200, typ: 'keramikpfau', name: 'Keramik-Pfau' },
+  { tag: 365, typ: 'jubilaeumsbrunnen', name: 'Jubiläums-Brunnen' }
+];
+
+// Besuchsstand: letzter Besuch und Anzahl abgeholter Geschenke (tag, nie zurückgesetzt).
+// Alte Spielstände haben serie statt tag: dann wird serie übernommen.
+function besuchVon(sp) {
+  const b = sp.besuch && typeof sp.besuch === 'object' ? sp.besuch : {};
+  const tag = Number.isFinite(b.tag) ? b.tag : (Number.isFinite(b.serie) ? b.serie : 0);
+  return { letzter: b.letzter || null, tag };
+}
+
+// Samen eines Geschenktags: Grundreihe der Position plus 5 je Woche ab Woche 2, höchstens 20
+function samenFuer(tag) {
+  const block = Math.floor((tag - 1) / 7);
+  return GESCHENK_SAMEN[(tag - 1) % 7] + 5 * Math.min(GESCHENK_BONUS_MAX, block);
+}
 
 // Gutschein-Artikel deterministisch aus dem Datum wählen. Null, wenn die Liste leer ist.
 function gutscheinAusDatum(liste, heute, salz) {
@@ -1421,39 +1470,64 @@ export function gutscheinFuer(daten, kategorie, typ) {
   return (daten.spiel.gutscheine || []).find(g => g.kategorie === kategorie && g.typ === typ) || null;
 }
 
-// Tagesgeschenk für heute. verfuegbar: noch nicht abgeholt. tag: 1 bis 7 der Serie.
-// Serie: gestern besucht → +1 (nach 7 wieder 1), sonst 1.
+// Tagesgeschenk für heute. verfuegbar: noch nicht abgeholt. tag: Nummer des Geschenks (zählt nie zurück).
+// wocheStart: erster Tag der 7er-Reihe, in der tag liegt.
 export function tagesgeschenk(daten, heute) {
-  const besuch = daten.spiel.besuch || { letzter: null, serie: 0 };
+  const besuch = besuchVon(daten.spiel);
   const verfuegbar = besuch.letzter !== heute;
-  const serieNeu = besuch.letzter === L.datumPlusTage(heute, -1) ? ((besuch.serie || 0) % 7) + 1 : 1;
-  const tag = verfuegbar ? serieNeu : (besuch.serie || 1);
-  const belohnung = { samen: GESCHENK_SAMEN[tag - 1] };
+  const tag = verfuegbar ? besuch.tag + 1 : Math.max(1, besuch.tag);
+  const wocheStart = Math.floor((tag - 1) / 7) * 7 + 1;
+  const position = (tag - 1) % 7;
+  const belohnung = { samen: samenFuer(tag) };
   const k = katalog(daten);
-  if (tag === 4) {
+  if (position === 3) {
     const liste = k.filter(a => a.kategorie === 'pflanze' && a.gezeichnet && a.freigeschaltet && groesseVon(a.typ) === 'klein');
     const g = gutscheinAusDatum(liste, heute, 'pflanze');
     if (g) belohnung.gutschein = { kategorie: 'pflanze', typ: g.typ };
   }
-  if (tag === 7) {
+  if (position === 6) {
     const lvl = levelAus(daten.spiel.xp).level;
-    const liste = k.filter(a => a.kategorie === 'deko' && a.gezeichnet && a.level <= lvl + 1);
-    const g = gutscheinAusDatum(liste, heute, 'deko');
-    if (g) belohnung.gutschein = { kategorie: 'deko', typ: g.typ };
+    if (lvl >= TUETE_LEVEL) {
+      belohnung.tuete = 1;
+    } else {
+      const liste = k.filter(a => a.kategorie === 'deko' && a.gezeichnet && !a.meilenstein && a.level <= lvl + 1);
+      const g = gutscheinAusDatum(liste, heute, 'deko');
+      if (g) belohnung.gutschein = { kategorie: 'deko', typ: g.typ };
+    }
   }
-  return { verfuegbar, tag, belohnung };
+  const meilenstein = MEILENSTEINE.find(m => m.tag === tag);
+  if (meilenstein) {
+    belohnung.samen += MEILENSTEIN_SAMEN;
+    belohnung.meilenstein = { tag: meilenstein.tag, typ: meilenstein.typ, name: meilenstein.name };
+    belohnung.meilensteinGutschein = { kategorie: 'deko', typ: meilenstein.typ };
+  }
+  return { verfuegbar, tag, wocheStart, belohnung };
 }
 
-// Tagesgeschenk abholen: Samen und XP, Gutschein, Besuch. Nur einmal am Tag.
+// Nächster noch nicht erreichter Meilenstein, null wenn alle erreicht sind
+export function naechsterMeilenstein(daten) {
+  const tag = besuchVon(daten.spiel).tag;
+  const m = MEILENSTEINE.find(x => x.tag > tag);
+  return m ? { tag: m.tag, typ: m.typ, name: m.name, inTagen: m.tag - tag } : null;
+}
+
+// Tagesgeschenk abholen: Samen und XP, Gutscheine, Tüte, Besuch und Verlauf. Nur einmal am Tag.
 export function geschenkAbholen(daten, heute) {
   const g = tagesgeschenk(daten, heute);
   if (!g.verfuegbar) return fehler('Das Tagesgeschenk hast du heute schon abgeholt.');
-  const d = kopie(daten);
-  d.spiel.samen += g.belohnung.samen;
-  d.spiel.xp += g.belohnung.samen;
-  if (g.belohnung.gutschein) d.spiel.gutscheine = [...(d.spiel.gutscheine || []), { ...g.belohnung.gutschein }];
-  d.spiel.besuch = { letzter: heute, serie: g.tag };
-  return { daten: d, belohnung: g.belohnung };
+  const d = migriere(kopie(daten));
+  const b = g.belohnung;
+  d.spiel.samen += b.samen;
+  d.spiel.xp += b.samen;
+  const neueGutscheine = [];
+  if (b.gutschein) neueGutscheine.push({ ...b.gutschein });
+  if (b.meilensteinGutschein) neueGutscheine.push({ ...b.meilensteinGutschein });
+  if (neueGutscheine.length) d.spiel.gutscheine = [...d.spiel.gutscheine, ...neueGutscheine];
+  if (b.tuete) d.spiel.gratisTueten += 1;
+  d.spiel.besuch = { letzter: heute, tag: g.tag };
+  const text = b.meilenstein ? `Tagesgeschenk, Tag ${g.tag}: ${b.meilenstein.name}` : `Tagesgeschenk, Tag ${g.tag}`;
+  verlaufEintragen(d, heute, 'geschenk', text, b.samen);
+  return { daten: d, belohnung: b, tag: g.tag };
 }
 
 // ---------- SPEC-2: Migration, Saatgut, Samentüten, Ernte, Designs, Herbarium, Saison ----------
@@ -1473,6 +1547,11 @@ function migriere(daten) {
   sp.design = { boden: de.boden || 'dielen', rahmen: de.rahmen || 'teak', dach: de.dach || 'giebel' };
   if (!Array.isArray(sp.designs)) sp.designs = ['dielen', 'teak'];
   if (!Array.isArray(sp.entdeckt)) sp.entdeckt = [];
+  // Besuch: tag statt serie (alte Stände werden übernommen)
+  sp.besuch = besuchVon(sp);
+  if (!Array.isArray(sp.gutscheine)) sp.gutscheine = [];
+  if (!Array.isArray(sp.verlauf)) sp.verlauf = [];
+  if (!Array.isArray(sp.eintragSofort)) sp.eintragSofort = [];
   for (const p of sp.gewaechshaus.pflanzen) entdecke(daten, p.typ);
   return daten;
 }
@@ -1542,6 +1621,7 @@ export function samentuete(daten, heute = heuteIso()) {
     umgetauscht = TUETE_UMTAUSCH[seltenheit];
     sp.samen += umgetauscht;
     sp.xp += umgetauscht;
+    verlaufEintragen(d, heute, 'tuete', `Doppelte Saat umgetauscht: ${saatName(sorte)}`, umgetauscht);
   } else {
     sp.saatgut[sorte] = anzahl + 1;
   }
@@ -1574,6 +1654,7 @@ export function ernten(daten, id, heute = heuteIso()) {
   const samen = ERNTE_SAMEN[saatSeltenheit(p.typ)];
   d.spiel.samen += samen;
   d.spiel.xp += samen;
+  verlaufEintragen(d, heute, 'ernte', `Ernte: ${saatName(p.typ)}`, samen);
   const gratis = zufallAusDatum(heute + '|ernte|' + id)() < ERNTE_GRATIS_CHANCE;
   if (gratis) d.spiel.gratisTueten += 1;
   p.ernteTage = 0;
@@ -1685,4 +1766,75 @@ export function herbarium(daten) {
 function setKomplett(daten, setId) {
   const s = herbarium(daten).sets.find(x => x.id === setId);
   return !!s && s.komplett;
+}
+
+// ---------- SPEC-3: Verlauf, Sofort-Belohnung, Samenquellen, Level-Up ----------
+
+const VERLAUF_MAX = 60;
+const EINTRAG_SOFORT_MAX = 60;
+
+// Eintrag oben in den Verlauf schreiben (neueste zuerst, höchstens 60)
+function verlaufEintragen(d, datum, art, text, samen) {
+  if (!Array.isArray(d.spiel.verlauf)) d.spiel.verlauf = [];
+  d.spiel.verlauf.unshift({ datum, art, text, samen });
+  if (d.spiel.verlauf.length > VERLAUF_MAX) d.spiel.verlauf.length = VERLAUF_MAX;
+}
+
+// Erste Buchung eines Tages gibt sofort 2 Samen und 2 XP. Nur für heute (datum === heute), einmal je Tag.
+// Der Tag wird in spiel.eintragSofort gemerkt, damit bewerte() ihn nicht noch einmal belohnt.
+export function eintragBelohnen(daten, heute, datum) {
+  const d = migriere(kopie(daten));
+  const sp = d.spiel;
+  if (datum !== heute || sp.eintragSofort.includes(datum)) return { daten: d, samen: 0 };
+  sp.samen += 2;
+  sp.xp += 2;
+  sp.eintragSofort.push(datum);
+  if (sp.eintragSofort.length > EINTRAG_SOFORT_MAX) sp.eintragSofort = sp.eintragSofort.slice(-EINTRAG_SOFORT_MAX);
+  verlaufEintragen(d, heute, 'eintrag', `Erster Eintrag am ${kurz(datum)}`, 2);
+  return { daten: d, samen: 2 };
+}
+
+// Woher Samen kommen, für das Info-Blatt. samen als Anzeigetext.
+export function samenQuellen(daten) {
+  return [
+    { was: 'Tag im Budget', samen: '10', hinweis: 'Gutschrift am nächsten Morgen.' },
+    { was: 'Erster Eintrag am Tag', samen: '2', hinweis: 'Sofort, nur der erste Eintrag eines Tages.' },
+    { was: '7-Tage-Serie', samen: '30', hinweis: 'Zusätzlich, wenn 7 Tage in Folge im Budget sind.' },
+    { was: 'Woche im Budget', samen: '50', hinweis: 'Gutschrift am Montag für die Woche davor.' },
+    { was: 'Wochen-Challenges', samen: '20 bis 80', hinweis: 'Je Woche zwei Aufgaben, je nach Schwierigkeit.' },
+    { was: 'Zeitraum im Budget', samen: '200', hinweis: 'Am Ende eines Zeitraums, wenn er im Budget ist.' },
+    { was: 'Tagesgeschenk', samen: '10 bis 80', hinweis: 'Jeden Tag abholen. Ab der zweiten Woche steigt die Menge, Meilensteine geben extra.' },
+    { was: 'Ernte', samen: '8 bis 60', hinweis: 'Je nach Seltenheit der Saat.' },
+    { was: 'Herbarium-Sets', samen: '150 bis 1000', hinweis: 'Wenn ein Set vollständig ist.' }
+  ];
+}
+
+// Was morgen früh gutgeschrieben wird, wenn heute so bleibt. Serie: wird die 7er-Serie voll, gibt es 30 extra.
+export function heuteInAussicht(daten, heute) {
+  if (!L.tagErfuellt(daten, heute)) {
+    return { samen: 0, text: 'Heute bist du über dem Tagesbudget, morgen gibt es dafür keine Samen.' };
+  }
+  const serie = (daten.spiel.serie || 0) + 1;
+  if (serie % 7 === 0) {
+    return { samen: 40, text: `Heute im Budget: morgen 10 Samen, und deine ${serie}-Tage-Serie ist voll, dafür 30 Samen extra.` };
+  }
+  return { samen: 10, text: 'Heute im Budget: morgen früh gibt es 10 Samen.' };
+}
+
+// Artikel mit genau diesem Level (Level-Up-Dialog). Erweiterungen, Designs und bei Level 8 die Samentüte.
+// Meilenstein-Deko und Raritäten und Seltenheiten-Saat gehören nicht dazu.
+export function freischaltungenBei(daten, level) {
+  const liste = [];
+  for (const k of katalog(daten)) {
+    if (k.kategorie === 'erweiterung' || k.meilenstein || k.level !== level) continue;
+    liste.push({ kategorie: k.kategorie, typ: k.typ, name: k.name });
+  }
+  for (const e of ERWEITERUNGEN) {
+    if (e.level === level) liste.push({ kategorie: 'erweiterung', typ: e.id, name: `Grundfläche ${e.groesse} × ${e.groesse}` });
+  }
+  for (const d of designListe(daten)) {
+    if (d.level === level) liste.push({ kategorie: 'design', typ: d.id, name: d.name });
+  }
+  if (level === TUETE_LEVEL) liste.push({ kategorie: 'tuete', typ: 'samentuete', name: 'Samentüten' });
+  return liste;
 }

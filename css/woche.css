@@ -1,0 +1,239 @@
+/* Version 2.1: Wochen- und Monatskarte (SPEC-3.md Abschnitt 6), Präfix wk-. Farben und Radius wie styles.css. */
+
+/* ---------- Karte ---------- */
+
+.wk-karte {
+  padding: 16px;
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.wk-kopf {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.wk-symbol {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--sand);
+  font-size: 21px;
+  line-height: 1;
+}
+
+.wk-kopf-mitte {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wk-titel {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--braun);
+}
+
+/* Chip rechts oben: Pille mit Tagesbetrag, bei aufgebrauchtem Budget rot */
+.wk-chip {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(169, 211, 165, 0.45);
+  color: var(--braun);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.wk-chip-rot {
+  background: rgba(217, 98, 90, 0.18);
+  color: #a8443c;
+}
+
+/* ---------- Fortschrittsbalken ---------- */
+
+.wk-balken {
+  position: relative;
+  height: 14px;
+  margin-top: 14px;
+  border-radius: 999px;
+  background: rgba(107, 74, 58, 0.10);
+}
+
+.wk-balken.wk-spur-rot {
+  background: rgba(217, 98, 90, 0.28);
+}
+
+.wk-fuellung {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  max-width: 100%;
+  border-radius: 999px;
+  transition: width 600ms ease;
+}
+
+.wk-gruen { background: var(--positiv); }
+.wk-senf { background: var(--gold); }
+
+/* Über 100 %: ganz voll, rot gestreift */
+.wk-rot {
+  background: repeating-linear-gradient(-45deg, var(--negativ) 0 6px, #ef9a92 6px 12px);
+}
+
+/* Prognosemarke: senkrechter Strich bei prognoseAusgaben / Budget */
+.wk-prognose {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--braun);
+}
+
+.wk-prognose.wk-ueber {
+  background: var(--negativ);
+  box-shadow: 0 0 8px rgba(217, 98, 90, 0.75);
+}
+
+/* ---------- Zahlen unter dem Balken ---------- */
+
+.wk-zeile {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.wk-links {
+  min-width: 0;
+}
+
+.wk-klein {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--braun-2);
+}
+
+.wk-klein b {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--braun);
+}
+
+.wk-verplant {
+  font-weight: 800;
+  color: var(--negativ);
+}
+
+.wk-rechts {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.wk-rest {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.wk-hinweis {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--braun);
+}
+
+.wk-fuss {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--braun-2);
+}
+
+/* ---------- Pfeile zum Blättern ---------- */
+
+.wk-kopf-pfeile {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wk-kopf-pfeile .wk-titel {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.wk-pfeil {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sand);
+  color: var(--braun);
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wk-pfeil:active { transform: translateY(2px); }
+.wk-pfeil:disabled { opacity: 0.35; }
+
+/* ---------- Segment-Schalter Woche / Monat (iOS-Stil) ---------- */
+
+.wk-segment {
+  display: flex;
+  height: 32px;
+  margin: 10px 0 4px;
+  padding: 2px;
+  border-radius: 9px;
+  background: rgba(107, 74, 58, 0.12);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.wk-segment button {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--braun);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wk-segment button.aktiv {
+  background: var(--creme);
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(107, 74, 58, 0.18), 0 1px 1px rgba(107, 74, 58, 0.08);
+}
+
+/* ---------- Bewegung ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .wk-fuellung { transition: none; }
+  .wk-pfeil:active { transform: none; }
+}

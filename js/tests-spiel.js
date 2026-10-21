@@ -657,10 +657,10 @@ test('Raritaeten: nicht im Katalog, Liste mit Zustand und Fortschritt', () => {
 const HEUTE = '2026-10-13';
 const GESTERN = '2026-10-12';
 
-// Startstand mit Besuch (letzter Tag, Serie)
-function mitBesuch(letzter, serie, samen = 50, xp = 0) {
+// Startstand mit Besuch (letzter Tag, Anzahl abgeholter Geschenke = tag)
+function mitBesuch(letzter, tag, samen = 50, xp = 0) {
   const d = basis(samen, xp);
-  d.spiel.besuch = { letzter, serie };
+  d.spiel.besuch = { letzter, tag };
   return d;
 }
 
@@ -693,13 +693,58 @@ test('Tagesgeschenk: Serie läuft weiter bei Folgetag', () => {
   gleich([r.verfuegbar, r.tag], [true, 4], 'gestern Serie 3 → heute Tag 4');
 });
 
-test('Tagesgeschenk: Lücke setzt die Serie auf 1', () => {
-  gleich(S.tagesgeschenk(mitBesuch('2026-10-10', 5), HEUTE).tag, 1, 'Lücke → Tag 1');
-  gleich(S.tagesgeschenk(basis(), HEUTE).tag, 1, 'nie besucht → Tag 1');
+test('Tagesgeschenk: Lücke setzt den Zähler nicht zurück', () => {
+  gleich(S.tagesgeschenk(mitBesuch('2026-10-10', 5), HEUTE).tag, 6, 'Lücke: nächster Tag ist 6');
+  gleich(S.tagesgeschenk(basis(), HEUTE).tag, 1, 'nie besucht: Tag 1');
 });
 
-test('Tagesgeschenk: nach Tag 7 wieder Tag 1', () => {
-  gleich(S.tagesgeschenk(mitBesuch(GESTERN, 7), HEUTE).tag, 1, 'Serie 7 gestern → Tag 1');
+test('Tagesgeschenk: nach Tag 7 kommt Tag 8 mit 15 Samen, Woche ab Tag 8', () => {
+  const r = S.tagesgeschenk(mitBesuch(GESTERN, 7), HEUTE);
+  gleich([r.tag, r.belohnung.samen, r.wocheStart], [8, 15, 8], 'Tag 8: 10 + 5 Samen');
+});
+
+test('Tagesgeschenk: Tag 14 mit 65 Samen, ab Level 8 Samentüte statt Deko-Gutschein', () => {
+  const r = S.tagesgeschenk(mitBesuch(GESTERN, 13), HEUTE).belohnung;
+  gleich([r.samen, r.tuete, r.gutschein.kategorie], [65, undefined, 'deko'], 'Tag 14 unter Level 8: Deko-Gutschein');
+  const h = S.tagesgeschenk(mitBesuch(GESTERN, 13, 50, 2800), HEUTE).belohnung;
+  gleich([h.samen, h.tuete, h.gutschein], [65, 1, undefined], 'Tag 14 ab Level 8: Tüte, kein Gutschein');
+});
+
+test('Tagesgeschenk: Tag 30 mit Meilenstein, +100 Samen und Gutschein goldene_giesskanne', () => {
+  const r = S.tagesgeschenk(mitBesuch(GESTERN, 29), HEUTE).belohnung;
+  gleich([r.samen, r.meilenstein.typ, r.meilensteinGutschein], [135, 'goldene_giesskanne', { kategorie: 'deko', typ: 'goldene_giesskanne' }], 'Tag 30: 15 + 20 + 100');
+  const a = S.geschenkAbholen(mitBesuch(GESTERN, 29), HEUTE);
+  klappt(a, 'Abholen Tag 30');
+  gleich(a.daten.spiel.gutscheine.some(g => g.typ === 'goldene_giesskanne'), true, 'Gutschein gespeichert');
+  gleich(a.daten.spiel.besuch, { letzter: HEUTE, tag: 30 }, 'Besuch Tag 30');
+});
+
+test('Migration: alter Spielstand mit serie 5 ergibt nächsten Tag 6', () => {
+  const d = basis();
+  d.spiel.besuch = { letzter: '2026-10-10', serie: 5 };
+  gleich(S.tagesgeschenk(d, HEUTE).tag, 6, 'nächster Tag 6');
+  gleich(S.bewerte(d, HEUTE).daten.spiel.besuch, { letzter: '2026-10-10', tag: 5 }, 'bewerte schreibt tag');
+});
+
+test('naechsterMeilenstein: Tag 18 nennt Tag 30 in 12 Tagen, nach Tag 365 keiner', () => {
+  const n = S.naechsterMeilenstein(mitBesuch(GESTERN, 18));
+  gleich([n.tag, n.typ, n.name, n.inTagen], [30, 'goldene_giesskanne', 'Goldene Gießkanne', 12], 'nächster Meilenstein');
+  gleich(S.naechsterMeilenstein(mitBesuch(GESTERN, 365)), null, 'alle erreicht');
+});
+
+test('Zinkregal und Hohes Zinkregal: Preise und Level', () => {
+  gleich([S.PREISE_MOEBEL.zinkregal.preis, S.PREISE_MOEBEL.zinkregal.level], [120, 2], 'Zinkregal 120, Level 2');
+  gleich([S.PREISE_MOEBEL.zinkregal_hoch.preis, S.PREISE_MOEBEL.zinkregal_hoch.level], [340, 6], 'Hohes Zinkregal 340, Level 6');
+  gleich(S.PREISE_MOEBEL.metallregal.name, 'Haarnadel-Regal', 'Haarnadel-Regal unverändert');
+});
+
+test('Meilenstein-Deko: nur mit Gutschein im Katalog, gratis', () => {
+  gleich(S.katalog(basis()).some(k => k.typ === 'goldene_giesskanne'), false, 'ohne Gutschein nicht im Katalog');
+  const d = basis(0);
+  d.spiel.gutscheine = [{ kategorie: 'deko', typ: 'goldene_giesskanne' }];
+  const k = S.katalog(d).find(x => x.typ === 'goldene_giesskanne');
+  gleich([k.preis, k.gutschein, k.meilenstein, k.freigeschaltet], [0, true, 30, true], 'gratis, Gutschein, Meilenstein 30');
+  klappt(S.kaufen(d, 'deko', 'goldene_giesskanne', { feld: [2, 2] }), 'Kauf mit Gutschein (braucht die Grafik aus deko2.js)');
 });
 
 test('Tagesgeschenk: Samen Tag 1 bis 3 ohne Gutschein', () => {
@@ -732,7 +777,7 @@ test('geschenkAbholen: Samen, XP, Besuch; zweiter Abruf am Tag scheitert', () =>
   const r = S.geschenkAbholen(basis(50), HEUTE);
   klappt(r, 'erster Abruf');
   gleich([r.daten.spiel.samen, r.daten.spiel.xp], [60, 10], 'Samen 50+10, XP 10');
-  gleich(r.daten.spiel.besuch, { letzter: HEUTE, serie: 1 }, 'Besuch gesetzt');
+  gleich(r.daten.spiel.besuch, { letzter: HEUTE, tag: 1 }, 'Besuch gesetzt');
   gleich(S.tagesgeschenk(r.daten, HEUTE).verfuegbar, false, 'heute nicht mehr verfügbar');
   scheitert(S.geschenkAbholen(r.daten, HEUTE), 'zweimal am Tag');
   gleich(r.daten.spiel.samen, 60, 'zweiter Abruf ändert nichts');
@@ -743,6 +788,48 @@ test('geschenkAbholen Tag 4: Gutschein wird gespeichert', () => {
   klappt(r, 'Tag 4');
   gleich(r.daten.spiel.gutscheine.length, 1, 'ein Gutschein');
   gleich(r.daten.spiel.gutscheine[0].kategorie, 'pflanze', 'Kategorie Pflanze');
+});
+
+test('eintragBelohnen: erste Buchung des Tages 2 Samen und 2 XP, die zweite nichts', () => {
+  const a = S.eintragBelohnen(basis(50), HEUTE, HEUTE);
+  gleich([a.samen, a.daten.spiel.samen, a.daten.spiel.xp], [2, 52, 2], 'erste Buchung');
+  const b = S.eintragBelohnen(a.daten, HEUTE, HEUTE);
+  gleich([b.samen, b.daten.spiel.samen], [0, 52], 'zweite Buchung am selben Tag');
+  gleich(S.eintragBelohnen(basis(50), HEUTE, GESTERN).samen, 0, 'Buchung für einen anderen Tag gibt nichts');
+});
+
+test('bewerte: Tag mit Sofort-Eintrag bekommt kein eintrag-Ereignis mehr', () => {
+  const d = basis(0);
+  d.einstellungen.startDatum = GESTERN;
+  d.buchungen.push(ausgabe(GESTERN, 500));
+  const ohne = S.bewerte(d, HEUTE).ereignisse.filter(e => e.art === 'eintrag').length;
+  const mit = { ...d, spiel: { ...d.spiel, eintragSofort: [GESTERN] } };
+  const mitE = S.bewerte(mit, HEUTE).ereignisse.filter(e => e.art === 'eintrag').length;
+  gleich([ohne, mitE], [1, 0], 'ohne Sofort-Eintrag 1, mit Sofort-Eintrag 0');
+});
+
+test('verlauf: Geschenk oben, wächst, höchstens 60 Einträge', () => {
+  const r = S.geschenkAbholen(basis(50), HEUTE);
+  gleich([r.daten.spiel.verlauf[0].art, r.daten.spiel.verlauf[0].samen], ['geschenk', 10], 'Geschenk oben mit 10 Samen');
+  const e = S.eintragBelohnen(r.daten, HEUTE, HEUTE);
+  gleich([e.daten.spiel.verlauf.length, e.daten.spiel.verlauf[0].art], [2, 'eintrag'], 'wächst, neueste zuerst');
+  const voll = basis();
+  voll.spiel.verlauf = Array.from({ length: 60 }, (_, i) => ({ datum: GESTERN, art: 'alt', text: 'alt ' + i, samen: 1 }));
+  const v = S.eintragBelohnen(voll, HEUTE, HEUTE);
+  gleich([v.daten.spiel.verlauf.length, v.daten.spiel.verlauf[0].art], [60, 'eintrag'], 'höchstens 60');
+});
+
+test('freischaltungenBei: Level 8 mit Samentüte, Level 2 mit Metallregal, ohne Meilenstein-Deko', () => {
+  gleich(S.freischaltungenBei(basis(), 8).some(x => x.kategorie === 'tuete' && x.typ === 'samentuete'), true, 'Level 8: Samentüte');
+  gleich(S.freischaltungenBei(basis(), 2).some(x => x.typ === 'zinkregal'), true, 'Level 2: Zinkregal');
+  gleich(S.freischaltungenBei(basis(), 6).some(x => x.typ === 'flaeche7'), true, 'Level 6: Grundfläche 7');
+  gleich(S.freischaltungenBei(basis(), 1).some(x => x.typ === 'goldene_giesskanne'), false, 'Meilenstein-Deko nie dabei');
+});
+
+test('samenQuellen: neun Quellen, heuteInAussicht liefert 0, 10 oder 40 Samen', () => {
+  gleich(S.samenQuellen(basis()).length, 9, 'neun Quellen');
+  const h = S.heuteInAussicht(basis(), HEUTE);
+  gleich([[0, 10, 40].includes(h.samen), typeof h.text], [true, 'string'], 'Samen und Text');
 });
 
 test('Gutschein-Kauf: 0 Samen, Gutschein verbraucht, Level-Sperre gilt nicht', () => {

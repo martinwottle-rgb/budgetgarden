@@ -3,10 +3,8 @@
 
 import * as L from './logik.js';
 import { laden, speichern as persistieren, standardDaten } from './speicher.js';
-import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze, katalog, tagesgeschenk, geschenkAbholen } from './spiel.js';
+import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze, katalog, tagesgeschenk, geschenkAbholen, MEILENSTEINE, naechsterMeilenstein, heuteInAussicht, samenQuellen, freischaltungenBei } from './spiel.js';
 import { RARITAETEN } from './grafik/raritaeten.js';
-import { PFLANZEN } from './grafik/pflanzen.js';
-import { DEKO } from './grafik/deko.js';
 import { vorschau, einpassen, tageszeitAus } from './szene.js';
 import { swRegistrieren } from './push.js';
 import { el, muenzSvg, zahl, heutigesDatum, svgBox, kurzDatum, tage, kategorieVon } from './ui/bausteine.js';
@@ -45,6 +43,7 @@ const ebenenStapel = [];   // offene Sheets und Dialoge, oberstes zuletzt
 let dialogeLaufen = false; // Abschluss- und Gehaltsdialoge laufen gerade
 let swRegistrierung = null; // Service-Worker-Registrierung, für Update-Prüfung
 let updateGezeigt = false;  // Update-Hinweis schon angezeigt
+let samenHalt = false;     // Samen-Anzeige bleibt auf dem alten Stand, bis der Samenflug landet
 
 // ---------- Kontext ----------
 
@@ -57,7 +56,8 @@ const ctx = {
   belohnen,
   sheet,
   dialog,
-  kopfAktualisieren
+  kopfAktualisieren,
+  samenFlug
 };
 let letzterTag = ctx.heute; // für den Tageswechsel ohne Neustart
 
@@ -72,6 +72,7 @@ function starte() {
   anzeigeSamen = daten.spiel.samen;
 
   // Bewertung beim Start: fällige Tage, Wochen, Zeiträume
+  const vorLevel = levelAus(daten.spiel.xp).level;
   const ergebnis = bewerte(daten, ctx.heute);
   daten = ergebnis.daten;
   ctx.daten = daten;
@@ -79,6 +80,7 @@ function starte() {
     if (!persistieren(daten)) toast('Die Daten konnten nicht gespeichert werden.');
   }
   if (ergebnis.ereignisse.length) belohnen(ergebnis.ereignisse);
+  levelPruefen(vorLevel);
 
   // Start-Bildschirm: ?eintragen=heute öffnet direkt das Buchen mit Fokus auf dem Betrag
   const url = new URL(window.location.href);
@@ -158,11 +160,13 @@ function hinweisUnten(text, knopfText, aktion, { bleibt = false } = {}) {
 
 // Neue Daten setzen, bewerten, speichern, Ereignisse feiern, neu zeichnen
 function speichern(neueDaten) {
+  const vorLevel = levelAus(ctx.daten.spiel.xp).level;
   ctx.heute = heutigesDatum();
   const ergebnis = bewerte(neueDaten, ctx.heute);
   ctx.daten = ergebnis.daten;
   if (!persistieren(ctx.daten)) toast('Die Daten konnten nicht gespeichert werden (Speicher voll?).');
   if (ergebnis.ereignisse.length) belohnen(ergebnis.ereignisse);
+  levelPruefen(vorLevel);
   render();
 }
 
@@ -202,7 +206,7 @@ tabs.addEventListener('click', (e) => {
   const knopf = e.target.closest('[data-ziel]');
   if (knopf) navigiere(knopf.dataset.ziel);
 });
-kopf.muenze.addEventListener('click', () => navigiere('shop'));
+kopf.muenze.addEventListener('click', () => samenBlattZeigen());
 kopf.zahnrad.addEventListener('click', () => navigiere('einstellungen'));
 
 // ---------- Kopfleiste ----------
@@ -210,9 +214,9 @@ kopf.zahnrad.addEventListener('click', () => navigiere('einstellungen'));
 function kopfAktualisieren() {
   const sp = ctx.daten.spiel;
   const lv = levelAus(sp.xp);
-  if (!zaehlt) anzeigeSamen = sp.samen;
+  if (!zaehlt && !samenHalt) anzeigeSamen = sp.samen;
   kopf.muenzzahl.textContent = zahl(anzeigeSamen);
-  kopf.muenze.setAttribute('aria-label', `${zahl(anzeigeSamen)} Samen, zum Shop`);
+  kopf.muenze.setAttribute('aria-label', `${zahl(anzeigeSamen)} Samen, Übersicht`);
   kopf.levelzahl.textContent = String(lv.level);
   kopf.ringfill.style.strokeDasharray = `${(RING_UMFANG * lv.anteil).toFixed(2)} ${RING_UMFANG.toFixed(2)}`;
 }
@@ -266,6 +270,29 @@ function muenzFlug(anzahl) {
     flug.append(m);
     setTimeout(() => m.remove(), 1600);
   }
+}
+
+// Samen-Schild: „+2 🌱“ fliegt in einem Bogen vom Ausgangselement (Mitte) zur Münz-Anzeige (700 ms).
+// Danach zählt die Anzeige von der alten Zahl auf den neuen Stand und wackelt.
+// samenHalt hält die Anzeige auf dem alten Stand, weil speichern() den Kopf sonst sofort neu setzt.
+function samenFlug(von, samen) {
+  samenHalt = true;
+  const a = von.getBoundingClientRect();
+  const ziel = kopf.muenze.getBoundingClientRect();
+  const sx = a.left + a.width / 2;
+  const sy = a.top + a.height / 2;
+  const schild = el('div', { class: 'ios-schild', text: `+${zahl(samen)} 🌱` });
+  schild.style.left = sx + 'px';
+  schild.style.top = sy + 'px';
+  schild.style.setProperty('--dx', (ziel.left + ziel.width / 2 - sx) + 'px');
+  schild.style.setProperty('--dy', (ziel.top + ziel.height / 2 - sy) + 'px');
+  flug.append(schild);
+  setTimeout(() => {
+    schild.remove();
+    samenHalt = false;
+    zaehleHoch(ctx.daten.spiel.samen);
+    wackeln();
+  }, 700);
 }
 
 // Ereignisse aus bewerte(): ein Sammel-Toast mit den Summen, jedes Abzeichen einzeln,
@@ -522,6 +549,84 @@ async function setFest(e) {
   });
 }
 
+// ---------- Level-Up-Dialoge ----------
+
+// Wartende Stufen und die Kette, die sie nacheinander zeigt. Sie kommt nach den Challenge-Dialogen.
+const levelWarteschlange = [];
+let levelLauf = Promise.resolve();
+
+// Neue Stufen seit vorLevel in die Warteschlange, dann anzeigen
+function levelPruefen(vorLevel) {
+  const jetzt = levelAus(ctx.daten.spiel.xp).level;
+  if (jetzt <= vorLevel) return;
+  for (let lv = vorLevel + 1; lv <= jetzt; lv++) levelWarteschlange.push(lv);
+  levelZeigen();
+}
+
+function levelZeigen() {
+  levelLauf = levelLauf.then(() => challengeLauf).then(async () => {
+    while (levelWarteschlange.length) {
+      const lv = levelWarteschlange.shift();
+      try {
+        await levelFest(lv);
+      } catch (fehler) {
+        console.error(fehler);
+      }
+    }
+  });
+  return levelLauf;
+}
+
+// Level-Up: große Stufe im goldenen Kreis mit Strahlenkranz, Liste der Freischaltungen, Zum Shop oder Weiter
+async function levelFest(lv) {
+  const neu = freischaltungenBei(ctx.daten, lv);
+  const liste = neu.length
+    ? el('ul', { class: 'ios-lu-liste' }, neu.map(f => el('li', { class: 'ios-lu-zeile' },
+      freischaltBild(f),
+      el('span', { class: 'ios-lu-name', text: f.name }))))
+    : el('p', { class: 'klein ios-lu-leer', text: 'Diesmal nichts Neues im Shop, aber deine Pflanzen freuen sich.' });
+  const inhalt = el('div', { class: 'ios-lu' },
+    konfettiSchicht(40),
+    el('div', { class: 'ios-lu-kreis-wrap', 'aria-hidden': 'true' },
+      el('div', { class: 'ios-lu-strahlen' }),
+      el('div', { class: 'ios-lu-kreis' }, el('span', { class: 'ios-lu-zahl', text: String(lv) }))),
+    el('h3', { class: 'ios-lu-ueber', text: 'Neu freigeschaltet' }),
+    liste
+  );
+  const wahlPromise = ctx.dialog({
+    titel: `Level ${lv} erreicht!`,
+    inhalt,
+    knoepfe: [
+      { text: 'Zum Shop', wert: 'shop', art: 'primaer' },
+      { text: 'Weiter', wert: 'weiter', art: 'leise' }
+    ]
+  });
+  einpassen(inhalt);
+  if ((await wahlPromise) === 'shop') navigiere('shop');
+}
+
+// Vorschaubild einer Freischaltung: Grafik, wenn vorhanden, sonst ein Emoji
+function freischaltBild(f) {
+  const bild = shop.bildFuer(f.kategorie, f.typ);
+  if (bild) return el('span', { class: 'ios-lu-bild' }, vorschau(bild, 'ios-lu-vorschau'));
+  const emoji = { erweiterung: '🏡', design: '🎨', tuete: '🌱' }[f.kategorie] || '🪴';
+  return el('span', { class: 'ios-lu-bild ios-emoji', 'aria-hidden': 'true', text: emoji });
+}
+
+// Konfetti: Schnipsel fallen aus der Schicht. Sie ist absolut positioniert im relativen Eltern-Element.
+function konfettiSchicht(anzahl = 36) {
+  const farben = ['#f2c14e', '#e88a7a', '#6fae6a', '#fbf3e6', '#a9d3a5', '#e8b83a'];
+  const schicht = el('div', { class: 'ios-konfetti', 'aria-hidden': 'true' });
+  for (let i = 0; i < anzahl; i++) {
+    schicht.append(el('span', {
+      style: `left:${(Math.random() * 100).toFixed(1)}%;background:${farben[i % farben.length]};` +
+        `--dx:${Math.round(Math.random() * 120 - 60)}px;--rot:${Math.round(Math.random() * 720 - 360)}deg;` +
+        `animation-delay:${(Math.random() * 0.35).toFixed(2)}s`
+    }));
+  }
+  return schicht;
+}
+
 // ---------- Level-Blatt ----------
 
 // Erklärung zum Level: Fortschritt, nächste Freischaltungen, wie man Samen und XP verdient
@@ -532,15 +637,6 @@ function levelBlattZeigen() {
   const naechste = katalog(d)
     .filter(a => a.level > lv.level && a.level <= lv.level + 3)
     .sort((a, b) => a.level - b.level);
-  const zeilen = [
-    ['Tag im Budget', '10'],
-    ['Eintrag an einem Tag', '2'],
-    ['7-Tage-Serie', '30'],
-    ['Woche im Budget', '50'],
-    ['Challenges', '20 bis 80'],
-    ['Zeitraum im Budget', '200'],
-    ['Tagesgeschenk', '10 bis 60']
-  ];
   sheet(el('div', { class: 'sp12-level' },
     el('h2', { class: 'sh-titel', text: 'Dein Level' }),
     el('div', { class: 'sp12-level-gross', text: String(lv.level) }),
@@ -554,10 +650,7 @@ function levelBlattZeigen() {
         el('span', { class: 'klein', text: `Level ${a.level}` }))))
       : el('p', { class: 'klein', text: 'Im Shop ist für die nächsten Level nichts mehr offen.' }),
     el('h3', { class: 'sp12-ueberschrift', text: 'So verdienst du Samen und XP' }),
-    el('table', { class: 'sp12-tabelle' },
-      el('tbody', {}, zeilen.map(([was, wie]) => el('tr', {},
-        el('td', { text: was }),
-        el('td', { text: wie + ' Samen' }))))),
+    samenTabelle(),
     el('p', { class: 'klein sp12-raritaet-hinweis', text: 'Raritäten sind seltene echte Pflanzen. Sie gibt es nicht im Shop, du schaltest sie durch besondere Leistungen frei. Der Goldene Ginkgo-Bonsai zum Beispiel ab Level 15.' })
   ));
 }
@@ -577,12 +670,12 @@ levelKreis.addEventListener('keydown', (e) => {
 
 // ---------- Tagesgeschenk ----------
 
-// Geschenkbox mit Schleife (fest gezeichnet, der Deckel wird per CSS angehoben)
+// Geschenkbox (fest gezeichnet). Der Deckel hat die Klasse ios-deckel und wird per CSS angehoben.
 const GESCHENK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="150" height="150" aria-hidden="true">' +
   '<ellipse cx="60" cy="110" rx="42" ry="6" fill="#6b4a3a" opacity="0.18"/>' +
   '<rect x="22" y="50" width="76" height="60" rx="6" fill="#e88a7a" stroke="#6b4a3a" stroke-width="2"/>' +
   '<rect x="54" y="50" width="12" height="60" fill="#f2c14e" stroke="#6b4a3a" stroke-width="1.5"/>' +
-  '<g class="sp12-deckel">' +
+  '<g class="ios-deckel">' +
   '<rect x="16" y="36" width="88" height="18" rx="5" fill="#f08f7e" stroke="#6b4a3a" stroke-width="2"/>' +
   '<rect x="54" y="36" width="12" height="18" fill="#f2c14e" stroke="#6b4a3a" stroke-width="1.5"/>' +
   '<path d="M60 36 C44 14 24 20 32 34 C38 42 54 38 60 36 Z" fill="#f2c14e" stroke="#6b4a3a" stroke-width="2" stroke-linejoin="round"/>' +
@@ -590,17 +683,41 @@ const GESCHENK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 1
   '<circle cx="60" cy="36" r="5" fill="#e0a93a" stroke="#6b4a3a" stroke-width="1.5"/>' +
   '</g></svg>';
 
-// Vorschau des Gutscheins: Pflanze oder Deko, gratis im Shop
+// Vorschau eines Gutscheins (Pflanze, Deko, auch aus den Grafiken der Erweiterungen PFLANZEN2 und DEKO2)
 function gutscheinVorschau(daten, gutschein) {
-  const name = (katalog(daten).find(k => k.kategorie === gutschein.kategorie && k.typ === gutschein.typ) || {}).name || '';
-  const bild = gutschein.kategorie === 'pflanze' ? PFLANZEN[gutschein.typ].zeichne(4) : DEKO[gutschein.typ].zeichne();
-  return el('div', { class: 'sp12-gutschein' },
-    el('div', { class: 'sp12-gutschein-bild' }, vorschau(bild, 'sp12-gutschein-vorschau')),
+  const treffer = katalog(daten).find(k => k.kategorie === gutschein.kategorie && k.typ === gutschein.typ);
+  const name = treffer ? treffer.name : gutschein.typ;
+  const bild = shop.bildFuer(gutschein.kategorie, gutschein.typ);
+  return el('div', { class: 'ios-gutschein' },
+    el('div', { class: 'ios-gutschein-bild' }, bild ? vorschau(bild, 'ios-gutschein-vorschau') : el('span', { class: 'ios-emoji', 'aria-hidden': 'true', text: '🪴' })),
     el('div', { class: 'sh-name', text: name }),
-    el('div', { class: 'klein', text: `Gutschein: ${name} gratis im Shop` }));
+    el('div', { class: 'klein', text: 'Gutschein, gratis im Shop' }));
 }
 
-// Erster Besuch am Tag: Geschenkbox antippen, Belohnung ansehen, „Danke!“ holt sie ab (Gutschein, Samen, XP)
+// Meilenstein-Karte: die exklusive Deko (DEKO2) mit Tag und Name
+function meilensteinKarte(m) {
+  const bild = shop.bildFuer('deko', m.typ);
+  return el('div', { class: 'ios-meilenstein-karte' },
+    el('div', { class: 'ios-stern-band', text: '⭐ Meilenstein' }),
+    el('div', { class: 'ios-meilenstein-bild' }, bild ? vorschau(bild, 'ios-meilenstein-vorschau') : el('span', { class: 'ios-emoji', 'aria-hidden': 'true', text: '🏆' })),
+    el('div', { class: 'sh-name', text: `Tag ${m.tag}: ${m.name}` }),
+    el('div', { class: 'klein', text: 'Gratis im Shop, mit diesem Gutschein' }));
+}
+
+// Samen-Zahl im Geschenk von 0 auf den Wert zählen (ease-out, 900 ms)
+function zaehleZahl(ziel, element, dauer = 900) {
+  const start = performance.now();
+  const schritt = (jetzt) => {
+    const t = Math.min(1, (jetzt - start) / dauer);
+    element.textContent = `+${zahl(Math.round(ziel * (1 - Math.pow(1 - t, 3))))} Samen`;
+    if (t < 1) requestAnimationFrame(schritt);
+  };
+  requestAnimationFrame(schritt);
+}
+
+// Erster Besuch am Tag: Geschenk antippen. Die Box wippt, dann schüttelt sie sich (400 ms), der Deckel fliegt auf,
+// Strahlen und Konfetti erscheinen, die Belohnung springt herein und die Samen zählen hoch.
+// „Danke!“ holt sie ab: Münzen fliegen zur Anzeige, der Zähler wächst.
 function tagesgeschenkZeigen() {
   const heute = ctx.heute;
   const g = tagesgeschenk(ctx.daten, heute);
@@ -608,17 +725,32 @@ function tagesgeschenkZeigen() {
   return new Promise((resolve) => {
     let ebene = null;
     let offen = false;
+    const timer = [];
+    const meilensteinTage = new Set(MEILENSTEINE.map(m => m.tag));
 
-    const tage = el('div', { class: 'sp12-tage' },
-      [1, 2, 3, 4, 5, 6, 7].map(t => el('span', {
-        class: 'sp12-tag' + (t < g.tag ? ' erledigt' : '') + (t === g.tag ? ' heute' : ''),
-        text: t < g.tag ? '✓' : String(t),
-        'aria-label': `Tag ${t}`
-      })));
-    const hinweis = el('p', { class: 'klein sp12-hinweis', text: 'Tippe auf das Geschenk.' });
+    // Die sieben Kästchen der Woche mit echten Tageszahlen
+    const kaestchen = [];
+    for (let t = g.wocheStart; t < g.wocheStart + 7; t++) {
+      const erledigt = t < g.tag;
+      const heuteTag = t === g.tag;
+      const meilen = meilensteinTage.has(t);
+      kaestchen.push(el('span', {
+        class: 'ios-tag' + (erledigt ? ' erledigt' : '') + (heuteTag ? ' heute' : '') + (meilen ? ' meilenstein' : ''),
+        'aria-label': `Tag ${t}` + (erledigt ? ', erledigt' : '') + (heuteTag ? ', heute' : '') + (meilen ? ', Meilenstein' : '')
+      }, erledigt ? '✓' : String(t), meilen ? el('span', { class: 'ios-tag-stern', 'aria-hidden': 'true', text: '⭐' }) : null));
+    }
+    // Entfernung ab dem heutigen Geschenktag: Tag 30 heute zeigt den Meilenstein, nicht „noch 1 Tag“
+    const naechster = MEILENSTEINE.find(m => m.tag >= g.tag) || null;
+    const meilenHinweis = !naechster ? null
+      : naechster.tag === g.tag
+        ? el('p', { class: 'klein ios-meilen-hinweis', text: `Heute ist Tag ${g.tag}: ein Meilenstein! ⭐` })
+        : el('p', { class: 'klein ios-meilen-hinweis', text: `Nächster Meilenstein: Tag ${naechster.tag} (in ${tage(naechster.tag - g.tag)})` });
+
+    const hinweis = el('p', { class: 'klein ios-hinweis', text: 'Tippe auf das Geschenk.' });
+    const samenZahl = el('div', { class: 'ios-geschenk-samen', text: '+0 Samen', 'aria-live': 'polite' });
     const danke = el('button', {
       type: 'button',
-      class: 'knopf knopf-primaer knopf-voll sp12-danke',
+      class: 'knopf knopf-primaer knopf-voll ios-danke',
       text: 'Danke!',
       onclick: () => {
         danke.disabled = true;
@@ -635,33 +767,109 @@ function tagesgeschenkZeigen() {
         resolve();
       }
     });
-    const belohnung = el('div', { class: 'sp12-belohnung-block' },
-      el('div', { class: 'sp12-samen', text: `+${zahl(g.belohnung.samen)} Samen` }),
+    const belohnung = el('div', { class: 'ios-belohnung' },
+      samenZahl,
       g.belohnung.gutschein ? gutscheinVorschau(ctx.daten, g.belohnung.gutschein) : null,
+      g.belohnung.tuete
+        ? el('div', { class: 'ios-extra' },
+          el('span', { class: 'ios-emoji', 'aria-hidden': 'true', text: '🌱' }),
+          el('div', {}, el('div', { class: 'sh-name', text: '+1 Samentüte' }), el('div', { class: 'klein', text: 'Gratis im Shop öffnen' })))
+        : null,
+      g.belohnung.meilenstein ? meilensteinKarte(g.belohnung.meilenstein) : null,
       danke);
+
+    const strahlen = el('div', { class: 'ios-strahlen', 'aria-hidden': 'true' });
+    const bild = el('span', { class: 'ios-geschenk-bild' });
+    bild.innerHTML = GESCHENK_SVG;
     const box = el('button', {
       type: 'button',
-      class: 'sp12-geschenk-knopf',
+      class: 'ios-geschenk wippt',
       'aria-label': 'Geschenk öffnen',
       onclick: () => {
         if (offen) return;
         offen = true;
-        box.classList.add('offen');
         box.disabled = true;
+        box.classList.remove('wippt');
+        box.classList.add('schuettelt');
         hinweis.remove();
-        belohnung.classList.add('sichtbar');
+        timer.push(setTimeout(() => {
+          box.classList.remove('schuettelt');
+          box.classList.add('offen');
+          panel.append(konfettiSchicht(44));
+          timer.push(setTimeout(() => {
+            belohnung.classList.add('sichtbar');
+            requestAnimationFrame(() => einpassen(belohnung));
+            zaehleZahl(g.belohnung.samen, samenZahl);
+          }, 150));
+        }, 400));
       }
-    });
-    box.innerHTML = GESCHENK_SVG;
+    }, strahlen, bild);
 
-    const panel = el('div', { class: 'dialog sp12-geschenk-dialog', role: 'alertdialog' },
+    const panel = el('div', { class: 'dialog ios-geschenk-dialog', role: 'alertdialog' },
       el('h2', { class: 'dialog-titel', text: 'Dein Tagesgeschenk 🎁' }),
-      tage,
-      el('div', { class: 'sp12-geschenk-mitte' }, box, hinweis),
+      el('div', { class: 'ios-tage' }, kaestchen),
+      meilenHinweis,
+      el('div', { class: 'ios-geschenk-mitte' }, box, hinweis),
       belohnung
     );
-    ebene = oeffneEbene(panel, { mitte: true, abbruch: () => resolve() });
+    ebene = oeffneEbene(panel, {
+      mitte: true,
+      abbruch: () => {
+        timer.forEach(clearTimeout);
+        resolve();
+      }
+    });
+    einpassen(panel);
   });
+}
+
+// ---------- Samen-Blatt ----------
+
+// Tabelle „So verdienst du Samen“ (Spalten: was, samen, hinweis), aus samenQuellen
+function samenTabelle() {
+  return el('table', { class: 'ios-quellen' },
+    el('thead', {}, el('tr', {}, el('th', { text: 'Was' }), el('th', { text: 'Samen' }), el('th', { text: 'Hinweis' }))),
+    el('tbody', {}, samenQuellen(ctx.daten).map(q => el('tr', {},
+      el('td', { text: q.was }),
+      el('td', { class: 'ios-quellen-samen', text: q.samen }),
+      el('td', { class: 'klein', text: q.hinweis }))))
+  );
+}
+
+// Tippen auf die Münz-Anzeige: Bestand, Aussicht für morgen, Quellen, letzte Gutschriften und Weg zum Shop
+function samenBlattZeigen() {
+  const d = ctx.daten;
+  const aussicht = heuteInAussicht(d, ctx.heute);
+  const letzte = (d.spiel.verlauf || []).slice(0, 10);
+  const blatt = sheet(el('div', { class: 'ios-samen-blatt' },
+    el('h2', { class: 'sh-titel', text: 'Deine Samen' }),
+    el('div', { class: 'ios-samen-gross' },
+      svgBox(muenzSvg(44), 'ios-samen-muenze'),
+      el('span', { class: 'ios-samen-zahl', text: zahl(d.spiel.samen) })),
+    el('section', { class: 'karte ios-aussicht' },
+      el('div', { class: 'klein', text: 'Heute in Aussicht' }),
+      aussicht.samen > 0 ? el('div', { class: 'ios-aussicht-zahl', text: `+${zahl(aussicht.samen)} Samen` }) : null,
+      el('p', { class: 'ios-aussicht-text', text: aussicht.text })),
+    el('h3', { class: 'ios-ueberschrift', text: 'So verdienst du Samen' }),
+    samenTabelle(),
+    el('h3', { class: 'ios-ueberschrift', text: 'Zuletzt verdient' }),
+    letzte.length
+      ? el('ul', { class: 'ios-verlauf' }, letzte.map(e => el('li', { class: 'ios-verlauf-zeile' },
+        el('span', { class: 'ios-verlauf-datum klein', text: kurzDatum(e.datum) }),
+        el('span', { class: 'ios-verlauf-text', text: e.text }),
+        el('span', { class: 'ios-verlauf-samen', text: `+${zahl(e.samen)}` }))))
+      : el('p', { class: 'klein', text: 'Noch nichts, trag deine erste Ausgabe ein.' }),
+    el('div', { class: 'aktionen' },
+      el('button', {
+        type: 'button',
+        class: 'knopf knopf-primaer knopf-voll',
+        text: 'Zum Shop',
+        onclick: () => {
+          blatt.schliessen();
+          navigiere('shop');
+        }
+      }))
+  ));
 }
 
 // ---------- Dialoge nach dem Start und nach dem Tageswechsel ----------

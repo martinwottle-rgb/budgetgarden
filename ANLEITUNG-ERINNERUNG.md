@@ -1,41 +1,27 @@
 # Anleitung: Erinnerung um 22 Uhr
 
-Jeden Abend um 22 Uhr erinnert dich der Budgetgarten daran, deine Ausgaben einzutragen. Die Erinnerung kommt als Benachrichtigung auf dein iPhone. Sie funktioniert nur, wenn die App auf dem Home-Bildschirm liegt (iOS 16.4 oder neuer).
+Die tägliche Erinnerung kommt über die Kurzbefehle-App deines iPhones. Sie läuft auf die Minute genau und braucht weder Server noch GitHub.
 
-## 1. App auf den Home-Bildschirm legen
+Früher kam sie über GitHub Actions. GitHub startet zeitgesteuerte Läufe aber oft bis zu drei Stunden zu spät, deshalb ist dieser Weg seit dem 21.10.2026 abgeschaltet.
 
-1. Budgetgarten in Safari öffnen.
-2. Teilen-Symbol antippen, dann "Zum Home-Bildschirm".
-3. Die App von dort öffnen. Ab jetzt läuft sie als eigene App.
+## Einrichten (einmalig, etwa 1 Minute)
 
-## 2. Erinnerung in der App aktivieren
+1. Die App **Kurzbefehle** öffnen und unten **Automation** wählen.
+2. Oben rechts **+** antippen, dann **Tageszeit**.
+3. **22:00** einstellen, **Täglich** wählen und darunter **Sofort ausführen** aktivieren.
+   **Bei Ausführung mitteilen** ausschalten. Dann **Weiter**.
+4. **Neue leere Automation** wählen, dann **Aktion hinzufügen** antippen und nach **Mitteilung anzeigen** suchen.
+5. Als Text eintragen: `Wie viel hast du heute ausgegeben? 🌱`
+6. Oben rechts **Fertig**.
 
-1. In der App auf "Einstellungen" gehen.
-2. "Erinnerung aktivieren" antippen und die Benachrichtigungen erlauben.
-3. Es erscheint ein Abo-Code. Den Kopieren-Knopf drücken.
+Ab jetzt erscheint jeden Abend um 22 Uhr die Mitteilung.
 
-## 3. Abo-Code in GitHub hinterlegen
+## Gut zu wissen
 
-Der Code wird als Geheimnis (Secret) im Repository gespeichert.
+- Die Mitteilung kommt von der App „Kurzbefehle“. Antippen öffnet die Kurzbefehle-App, nicht den Budgetgarten. Den Budgetgarten öffnest du wie gewohnt über das Symbol auf dem Home-Bildschirm.
+- Im Fokus-Modus „Schlafen“ oder „Nicht stören“ werden Mitteilungen still zugestellt. Wer sie trotzdem sehen will, erlaubt im jeweiligen Fokus die App Kurzbefehle.
+- Uhrzeit ändern: In Kurzbefehle unter Automation die Automation antippen und die Zeit anpassen.
 
-1. Repository auf GitHub öffnen.
-2. Settings → Secrets and variables → Actions → "New repository secret".
-3. Name: `PUSH_ABO`, Wert: den kopierten Abo-Code einfügen, speichern.
-4. Ein zweites Secret anlegen: Name `VAPID_PUBLIC`, Wert: der öffentliche Schlüssel aus der Datei `vapid.json` (Ordner `budget-gewaechshaus-geheim` auf deinem Laptop).
-5. Ein drittes Secret anlegen: Name `VAPID_PRIVATE`, Wert: der private Schlüssel aus derselben Datei.
+## Web-Push (alt, nur noch manuell)
 
-Die Datei mit dem privaten Schlüssel gehört nur auf deinen Rechner. Sie darf nicht in das Projekt kopiert oder dort abgelegt werden.
-
-## 4. Test
-
-1. Im Repository auf "Actions" gehen.
-2. Links "Erinnerung 22 Uhr" wählen.
-3. "Run workflow" drücken, die Option "erzwingen" aktivieren und starten.
-4. Nach kurzer Zeit sollte die Benachrichtigung auf dem iPhone erscheinen.
-
-Ohne "erzwingen" sendet der Workflow nur, wenn es in Berlin gerade 22:00 bis 22:29 Uhr ist. Der Lauf meldet dann "Nicht 22 Uhr in Berlin, übersprungen".
-
-## Wenn keine Erinnerung kommt
-
-- Meldung "Abo abgelaufen, in der App neu aktivieren" im Actions-Lauf: In der App auf "Erinnerung aktivieren" tippen, den neuen Code kopieren und das Secret `PUSH_ABO` ersetzen.
-- Benachrichtigungen für Budgetgarten in den iPhone-Einstellungen prüfen.
+Der GitHub-Workflow „Erinnerung 22 Uhr“ bleibt bestehen und lässt sich unter Actions mit **Run workflow** und der Option **erzwingen** von Hand starten. Er nutzt die Secrets `PUSH_ABO`, `VAPID_PUBLIC` und `VAPID_PRIVATE`. Der private Schlüssel liegt nur auf dem Laptop im Ordner `budget-gewaechshaus-geheim` und gehört nie ins Projekt.

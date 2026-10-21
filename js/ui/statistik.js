@@ -139,7 +139,7 @@ export function zeige(container, ctx) {
     abschnitt('Ziele und Verträge'),
     sparziele(d, heute),
     fixkosten(d, heute),
-    abschnitt('Spiel'),
+    abschnitt('Garten und Fortschritt'),
     spiel(d, heute)
   );
 }
@@ -628,6 +628,26 @@ function sparziele(d, heute) {
 
 // ---------- j) Fixkosten-Struktur ----------
 
+const VERTRAG_EMOJI = { Wohnen: '🏠', Versicherung: '🛡️', Abos: '📺', 'Mobilität': '🚗', Kommunikation: '📱', Sonstiges: '✨' };
+const VERTRAG_REIHE = Object.keys(VERTRAG_EMOJI);
+
+// Name der Vertragskategorie: Namen bleiben, eine Buchungskategorie-ID wird über kategorieVon aufgelöst, leer wird Sonstiges
+function vertragKategorie(d, wert) {
+  if (!wert) return 'Sonstiges';
+  if (VERTRAG_EMOJI[wert]) return wert;
+  const kat = (d.kategorien || []).find(k => k.id === wert);
+  return kat ? kat.name : wert;
+}
+
+function vertragKat(name) {
+  return { name, emoji: VERTRAG_EMOJI[name] || '🏷️' };
+}
+
+function vertragFarbe(name) {
+  const i = VERTRAG_REIHE.indexOf(name);
+  return i >= 0 ? PASTELL[i % PASTELL.length] : NEUTRAL;
+}
+
 function fixkosten(d, heute) {
   const monatlich = (v) => L.rundeCent(v.betrag / Math.max(1, v.intervall || 1));
   const aktiv = (d.vertraege || []).filter(v => !v.ende || v.ende >= heute);
@@ -637,9 +657,10 @@ function fixkosten(d, heute) {
     return karte('Fixkosten', 'Deine Verträge nach Kategorie', leer('Noch keine Verträge. Unter Ziele legst du Fixkosten an, dann siehst du hier ihren Anteil.'));
   }
 
+  // Verträge speichern ihre Kategorie als Namen (Wohnen, Abos …), ältere Einträge evtl. als Buchungskategorie-ID
   const gruppen = new Map();
   for (const v of ausgabenV) {
-    const id = v.kategorie || 'sonstiges';
+    const id = vertragKategorie(d, v.kategorie);
     gruppen.set(id, (gruppen.get(id) || 0) + monatlich(v));
   }
   const liste = [...gruppen].sort((a, b) => b[1] - a[1]);
@@ -652,8 +673,8 @@ function fixkosten(d, heute) {
   for (const [id, cent] of liste) {
     const breite = cent / skala * 300;
     if (breite > 0) {
-      const r = svg('rect', { x: off.toFixed(1), y: 6, width: breite.toFixed(1), height: 26, fill: farbe(d, id), class: 'st12-segment' });
-      const kat = kategorieVon(d, id);
+      const r = svg('rect', { x: off.toFixed(1), y: 6, width: breite.toFixed(1), height: 26, fill: vertragFarbe(id), class: 'st12-segment' });
+      const kat = vertragKat(id);
       antippen(r, info, `${kat.emoji} ${kat.name}: ${euro(cent)} im Monat`);
       stapel.push(r);
     }
@@ -673,9 +694,9 @@ function fixkosten(d, heute) {
       ? `${prozent(gesamt / einkommen)} deines monatlichen Einkommens gehen in Fixkosten.`
       : 'Ohne Einkommen-Vertrag lässt sich kein Anteil berechnen.' }),
     el('div', { class: 'st12-kat-liste' }, liste.map(([id, cent]) => {
-      const kat = kategorieVon(d, id);
+      const kat = vertragKat(id);
       return el('div', { class: 'st12-kat-zeile' },
-        el('span', { class: 'st12-punkt', style: `background:${farbe(d, id)}` }),
+        el('span', { class: 'st12-punkt', style: `background:${vertragFarbe(id)}` }),
         el('span', { class: 'st12-kat-name', text: `${kat.emoji} ${kat.name}` }),
         el('span', { class: 'ue-zahl', text: `${euro(cent)} im Monat` }),
         el('span', { class: 'klein', text: einkommen > 0 ? prozent(cent / einkommen) : 'k. A.' })
@@ -722,7 +743,7 @@ function spiel(d, heute) {
   const bild = svg('svg', { viewBox: `0 0 300 ${BASIS + 26}`, class: 'st12-svg', role: 'img', 'aria-label': 'Samen pro Woche, letzte 8 Wochen' }, ...kinder);
   const alleNull = werte.every(w => w.s === 0);
 
-  return karte('Spiel', 'Samen pro Woche in den letzten 8 Wochen, dazu dein Level und deine Abzeichen.',
+  return karte('Samen und Level', 'Samen pro Woche in den letzten 8 Wochen, dazu dein Level und deine Abzeichen.',
     el('div', { class: 'st12-kacheln' },
       el('div', { class: 'st12-kachel' },
         el('div', { class: 'klein', text: 'Level' }),

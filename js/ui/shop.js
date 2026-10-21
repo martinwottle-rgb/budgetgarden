@@ -168,6 +168,7 @@ function artikelKarte(ctx, a) {
     class: 'karte sh-karte' + (ausgegraut ? ' sh-ausgegraut' : ''),
     onclick: () => kaufBlatt(ctx, a)
   },
+    a.meilenstein ? el('div', { class: 'ios-stern-band', text: `★ Meilenstein Tag ${a.meilenstein} ★` }) : null,
     bildVon(a),
     el('div', { class: 'sh-name', text: a.name }),
     gratis
@@ -200,6 +201,14 @@ function erweiterungKarte(ctx, a) {
     vorhanden ? null : el('div', { class: 'sh-preis' }, svgBox(muenzSvg(18), 'muenze-klein'), zahl(a.preis)),
     status ? el('div', { class: 'sh-hinweis', text: status }) : null
   );
+}
+
+// Vorschau-Inhalt eines Artikels für Level-Up und Tagesgeschenk (SVG-Text). Null, wenn nichts gezeichnet ist.
+export function bildFuer(kategorie, typ) {
+  if (kategorie === 'pflanze') return pflanzenGrafik(typ) ? pflanzenGrafik(typ).zeichne(4) : null;
+  if (kategorie === 'moebel') return moebelDef(typ) ? moebelDef(typ).zeichne(2, 2, 0) : null;
+  if (kategorie === 'deko') return dekoDef(typ) ? dekoDef(typ).zeichne() : null;
+  return null;
 }
 
 // Vorschau: Bild aus dem Grafik-Modul, oder "bald" wenn der Artikel noch nicht gezeichnet ist
@@ -283,16 +292,16 @@ function kaufBlatt(ctx, a) {
     el('h2', { class: 'sh-titel', text: a.name }),
     inhalt ? vorschau(inhalt, 'sh-vorschau-gross') : el('div', { class: 'sh-vorschau-gross sh-bald', text: 'bald' }),
     el('p', { class: 'sh-beschreibung klein', text: beschreibung(a) }),
-    gratis
-      ? el('div', { class: 'sh-preis sh-preis-gross sp12-gratis', text: '🎁 Gratis mit Gutschein' })
+    // Mit Gutschein steckt der Hinweis im Kaufknopf, kein eigenes Feld über dem Objekt
+    gratis ? null
       : nurTueten
         ? el('div', { class: 'sh-preis sh-preis-gross', text: 'Nur aus Samentüten' })
         : el('div', { class: 'sh-preis sh-preis-gross' }, svgBox(muenzSvg(22), 'muenze-klein'), `${zahl(a.preis)} Samen`),
     el('div', { class: 'aktionen' },
       el('button', {
         type: 'button',
-        class: 'knopf knopf-primaer knopf-voll',
-        text: 'Kaufen',
+        class: gratis ? 'knopf knopf-voll ios-knopf-gold' : 'knopf knopf-primaer knopf-voll',
+        text: gratis ? '🎁 Mit Gutschein gratis platzieren' : 'Kaufen',
         disabled: !kaufbar,
         onclick: () => {
           if (!platzFuer(ctx.daten, a).length) return ctx.toast(KEIN_PLATZ);
@@ -300,6 +309,7 @@ function kaufBlatt(ctx, a) {
           ctx.navigiere('garten', { platzieren: { kategorie: a.kategorie, typ: a.typ } });
         }
       }),
+      gratis ? el('p', { class: 'klein sh-grund', text: 'Dein Gutschein aus dem Tagesgeschenk' }) : null,
       grund ? el('p', { class: 'sh-grund', text: grund }) : null,
       el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Abbrechen', onclick: () => blatt.schliessen() })
     )

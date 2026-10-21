@@ -196,12 +196,12 @@ function monsteraBreite(L, y) {
   return 0;
 }
 
-// Keilfoermiger Einschnitt von einer Seite (sd = +1 rechts, -1 links). Spitze bei 35 % der Halbbreite,
+// Keilfoermiger Einschnitt von einer Seite (sd = +1 rechts, -1 links). Spitze bei 20 % der Halbbreite (nahe an der Mittelrippe),
 // leicht zur Blattspitze geneigt. keil: Maskenform (schwarz), kante: Konturlinie an den Schnittstellen.
-function monsteraSchlitz(L, y, sd) {
+function monsteraSchlitz(L, y, sd, tief) {
   const wE = monsteraBreite(L, y);
-  const xI = 0.35 * wE, yI = y - 0.1 * L;
-  const xo = wE + 0.12 * L, hb = 0.05 * L;
+  const xI = tief * wE, yI = y - 0.1 * L;
+  const xo = wE + 0.12 * L, hb = 0.075 * L;
   const at = (x, yy) => [sd * x, yy];
   const t = (wE - xI) / (xo - xI); // Schnitt der Keilkanten mit dem Rand
   return {
@@ -214,19 +214,19 @@ function monsteraSchlitz(L, y, sd) {
   };
 }
 
-// Farben: Licht von links (links heller), Mittelader und Glanz hell
-const MON_GRUEN = { links: '#5e9a52', rechts: '#477d43', mittel: '#9ccc7a', glanz: '#9ccc7a' };
-const MON_WELK = { links: '#c4c98f', rechts: '#a8a36a', mittel: '#e4e3b4', glanz: '#f0efcc' };
+// Farben: Licht von links (linke Haelfte heller), Mittelader und Glanz hell
+const MON_GRUEN = { links: '#58995b', rechts: '#3f7d4a', mittel: '#a8d690', glanz: '#c9e8b4', ader: '#8fc27a' };
+const MON_WELK = { links: '#c4c98f', rechts: '#a8a36a', mittel: '#e4e3b4', glanz: '#f0efcc', ader: '#d6d59c' };
 
-// Monsterablatt: Ansatz bei (0,0), Winkel dreht das Blatt um den Ansatz.
-// schlitze: Einschnitte je Seite, loecher: Anzahl kleiner Ovale, ton: 'gruen' oder 'welk'.
-// Schlitze und Loecher liegen ueber eine <mask>, damit der Umriss sauber ausgeschnitten ist.
-function monsteraBlatt(L, winkel, schlitze, loecher, ton) {
+// Monsterablatt: Ansatz bei (0,0), Winkel dreht das Blatt um den Ansatz, persp staucht es in Laengsrichtung
+// (schraeg gestellt, perspektivisch verkuerzt). schlitze: Einschnitte je Seite, loecher: Anzahl ovaler Loecher,
+// ton: 'gruen' oder 'welk'. Schlitze und Loecher liegen ueber eine <mask>, damit der Umriss sauber ausgeschnitten ist.
+function monsteraBlatt(L, winkel, schlitze, loecher, ton, persp = 1, tief = 0.3) {
   const welk = ton === 'welk';
   const T = welk ? MON_WELK : MON_GRUEN;
   const kon = kontur(welk);
   const U = monsteraUmriss(L);
-  const id = `mon${Math.round(L)}s${schlitze}h${loecher}`;
+  const id = `mon${Math.round(L)}s${schlitze}h${loecher}t${Math.round(tief * 100)}`;
   const ys = schlitze === 0 ? [] : Array.from({ length: schlitze }, (_, k) =>
     (schlitze === 1 ? -0.5 : -(0.15 + 0.7 * k / (schlitze - 1))) * L);
 
@@ -234,76 +234,96 @@ function monsteraBlatt(L, winkel, schlitze, loecher, ton) {
   let kanten = '';
   for (const y of ys) {
     for (const sd of [1, -1]) {
-      const k = monsteraSchlitz(L, y, sd);
+      const k = monsteraSchlitz(L, y, sd, tief);
       maske += poly(k.keil, 'fill="#000"');
       kanten += pfad(`M${sp(k.kante[0])}L${sp(k.kante[1])}L${sp(k.kante[2])}`, `fill="none" ${kon}`);
     }
   }
+  // Loecher: eine Reihe neben der Mittelrippe, abwechselnd links und rechts
   const lochPos = [];
   for (let j = 0; j < loecher; j++) {
-    const y = -(0.27 + 0.2 * j) * L;
-    const x = (j % 2 ? -1 : 1) * 0.17 * monsteraBreite(L, y);
+    const y = -(0.3 + 0.2 * j) * L;
+    const x = (j % 2 ? -1 : 1) * 0.22 * monsteraBreite(L, y);
     lochPos.push([x, y]);
-    maske += oval(x, y, 0.05 * L, 0.03 * L, 'fill="#000"');
+    maske += oval(x, y, 0.07 * L, 0.045 * L, 'fill="#000"');
   }
 
-  // Seitenadern, von der Mittelader zum Rand nach oben
+  // Seitenadern: von der Mittelrippe schraeg nach oben zum Rand, heller als die Flaeche
   const nAd = L > 20 ? 4 : 3;
   let adern = '';
   for (let k = 0; k < nAd; k++) {
     const yk = -(0.28 + 0.42 * k / (nAd - 1)) * L;
     for (const sd of [1, -1]) {
       const w1 = monsteraBreite(L, yk), w2 = monsteraBreite(L, yk - 0.2 * L);
-      adern += pfad(`M0,${f(yk)}Q${f(sd * w1 * 0.5)},${f(yk - 0.03 * L)} ${f(sd * w2 * 0.9)},${f(yk - 0.2 * L)}`, `fill="none" ${ADER}`);
+      adern += pfad(`M0,${f(yk)}Q${f(sd * w1 * 0.5)},${f(yk - 0.03 * L)} ${f(sd * w2 * 0.9)},${f(yk - 0.2 * L)}`,
+        `fill="none" stroke="${T.ader}" stroke-width="0.6" stroke-linecap="round" opacity="0.7"`);
     }
   }
 
   const innen = pfad(U.halbRechts, `fill="${T.rechts}"`) +
     pfad(U.halbLinks, `fill="${T.links}"`) +
     adern +
-    linie([0, 0], [0, -0.9 * L], `stroke="${T.mittel}" stroke-width="1" stroke-linecap="round"`) +
-    linie([-0.22 * L, -0.25 * L], [-0.3 * L, -0.5 * L], `stroke="${T.glanz}" stroke-width="1.2" stroke-linecap="round" opacity="0.5"`) +
+    linie([0, 0], [0, -0.92 * L], `stroke="${T.mittel}" stroke-width="1" stroke-linecap="round"`) +
+    linie([-0.22 * L, -0.25 * L], [-0.3 * L, -0.5 * L], `stroke="${T.glanz}" stroke-width="1.2" stroke-linecap="round" opacity="0.55"`) +
     pfad(U.ganz, `fill="none" ${kon}`);
-  const lochKontur = lochPos.map(([x, y]) => oval(x, y, 0.05 * L, 0.03 * L, `fill="none" ${kon}`)).join('');
+  const lochKontur = lochPos.map(([x, y]) => oval(x, y, 0.07 * L, 0.045 * L, `fill="none" ${kon}`)).join('');
 
-  return gruppe(`transform="rotate(${f(winkel)})"`,
+  const sc = persp === 1 ? '' : ` scale(1,${f(persp)})`;
+  return gruppe(`transform="rotate(${f(winkel)})${sc}"`,
     `<defs><mask id="${id}" maskUnits="userSpaceOnUse" x="${f(-1.5 * L)}" y="${f(-1.5 * L)}" width="${f(3 * L)}" height="${f(3 * L)}">${maske}</mask></defs>` +
     `<g mask="url(#${id})">${innen}</g>` + kanten + lochKontur);
 }
 
-// Monstera-Stufen: [Winkel, Stiellaenge, Blattlaenge, Schlitze je Seite, Loecher]
+// Monstera-Stufen: [Winkel, Stiellaenge, Blattlaenge, Schlitze je Seite, Loecher, Verkuerzung (1 = flach von vorn)]
 const MONSTERA = {
-  1: [[-35, 15, 14, 0, 0], [30, 16, 14, 0, 0]],
-  2: [[-45, 17, 18, 0, 0], [0, 19, 18, 2, 0], [42, 17, 18, 0, 0]],
-  3: [[-55, 19, 22, 1, 0], [-18, 21, 22, 2, 1], [20, 21, 22, 3, 2], [52, 19, 22, 3, 2]],
-  4: [[-60, 22, 26, 1, 0], [-30, 24, 26, 2, 1], [0, 25, 26, 3, 2], [30, 24, 26, 4, 3], [60, 22, 26, 4, 3]],
+  1: [[-35, 15, 14, 0, 0, 1], [30, 16, 14, 0, 0, 0.9]],
+  2: [[-45, 17, 18, 0, 0, 0.9], [0, 19, 18, 0, 0, 1], [42, 17, 18, 0, 0, 0.85]],
+  // Stufe 3: zwei tiefe, zwei mittelhohe Blaetter mit kuerzeren Schlitzen (tief 0.45, siehe monstera())
+  3: [[-70, 18, 22, 2, 1, 0.9], [68, 18, 22, 2, 1, 0.9], [-26, 28, 23, 3, 2, 1], [12, 34, 22, 3, 2, 1]],
+  // Stufe 4: lockerer Busch, zwei tief seitlich, zwei mittelhoch, eins oben
+  4: [[-84, 16, 26, 5, 3, 0.9], [82, 18, 26, 5, 3, 0.9], [-50, 30, 26, 5, 3, 1], [48, 30, 26, 5, 3, 1], [-6, 40, 24, 4, 2, 0.95]],
 };
+// Junges, noch eingerolltes Blatt (nur Stufe 4): [Winkel, Stiellaenge, Blattlaenge]
+const MONSTERA_ROLLE = { 4: [14, 34, 13] };
 
 // Welk: Blaetter haengen nach aussen und unten
 const welkWinkel = (a0) => (a0 < 0 ? -120 : 120) + a0 * 0.2;
 
-// Moosstab (braun-gruen, 2.5 breit) mit zwei Luftwurzeln, nur Stufe 4
+// Junges, eingerolltes Blatt: schmale, hellgruene Spindel mit Rolllinie
+function monsteraRolle(L, winkel) {
+  const R = ovalKante(L, 1.6, false);
+  return gruppe(`transform="rotate(${f(winkel)})"`,
+    zweiseitig(R, '#c8e8a8', '#8cc47a') +
+    linie([0.3, -L * 0.2], [0.8, -L * 0.75], 'stroke="#5e9a52" stroke-width="0.6" stroke-linecap="round" opacity="0.8"') +
+    pfad(p2pfad(umriss(R)), `fill="none" ${KON_GRUEN}`));
+}
+
+// Moosstab (braun-gruen, 2.5 breit) mit einer Luftwurzel, nur Stufe 4
 function monsteraStab(welk) {
   const holz = welk ? '#9c9466' : '#8a7f4e';
   const moos = welk ? '#a8a36a' : '#5e9a52';
-  let out = rechteck(-1.25, -62, 2.5, 62, 1.2, `fill="${holz}" ${KON_TOPF}`);
-  for (let k = 0; k < 9; k++) {
-    out += oval(k % 2 ? -0.6 : 0.6, -6 - k * 6.5, 2.2, 1.3, `fill="${moos}" stroke="#3a6b3a" stroke-width="0.5"`);
+  const moos2 = welk ? '#c4c98f' : '#8cc47a';
+  let out = rechteck(-1.25, -44, 2.5, 44, 1.2, `fill="${holz}" ${KON_TOPF}`) +
+    linie([-0.6, -42], [-0.6, -3], 'stroke="#b3a774" stroke-width="0.5" stroke-linecap="round" opacity="0.7"');
+  for (let k = 0; k < 7; k++) {
+    out += oval(k % 2 ? -0.6 : 0.6, -6 - k * 6, 2.2, 1.3, `fill="${k % 2 ? moos2 : moos}" stroke="#3a6b3a" stroke-width="0.5"`);
   }
-  out += pfad('M-1.2,-24Q-4.5,-22 -6,-14', 'fill="none" stroke="#a86b43" stroke-width="0.9" stroke-linecap="round"') +
-    pfad('M1.2,-40Q4.5,-38 6,-30', 'fill="none" stroke="#a86b43" stroke-width="0.9" stroke-linecap="round"');
+  // Eine Luftwurzel: vom Stab nach unten Richtung Topfrand
+  out += pfad('M1.2,-26Q5,-21 3.6,-6', 'fill="none" stroke="#a86b43" stroke-width="0.9" stroke-linecap="round"') +
+    pfad('M1.5,-26Q4.4,-21.5 3,-7', 'fill="none" stroke="#e2b07c" stroke-width="0.35" stroke-linecap="round" opacity="0.8"');
   return out;
 }
 
 function monstera(s, welk) {
   const ton = welk ? 'welk' : 'gruen';
-  const tab = MONSTERA[s].map(([a0, S, L, schlitze, loecher]) => ({ a0, S, L, schlitze, loecher }));
+  const tab = MONSTERA[s].map(([a0, S, L, schlitze, loecher, persp]) => ({ a0, S, L, schlitze, loecher, persp }));
+  const rolle = welk || !MONSTERA_ROLLE[s] ? null
+    : { a0: MONSTERA_ROLLE[s][0], S: MONSTERA_ROLLE[s][1], L: MONSTERA_ROLLE[s][2] };
   let stiele = '';
-  const ansatz = tab.map((b) => {
+  const ansatz = [...tab, ...(rolle ? [rolle] : [])].map((b) => {
     const ex = b.S * Math.sin(b.a0 * RAD) * (welk ? 0.8 : 1);
     const ey = -b.S * Math.cos(b.a0 * RAD) * (welk ? 0.7 : 1);
-    stiele += pfad(`M0,0Q${f(ex * 0.1)},${f(ey * 0.75)} ${f(ex)},${f(ey)}`,
-      `fill="none" stroke="${welk ? '#a8a36a' : '#5e9a52'}" stroke-width="2" stroke-linecap="round"`);
+    stiele += stiel(`M0,0Q${f(ex * 0.1)},${f(ey * 0.75)} ${f(ex)},${f(ey)}`, welk, 2.2);
     return [ex, ey];
   });
   // Hintere (weit aussen) zuerst, die mittleren Blaetter liegen oben
@@ -312,7 +332,11 @@ function monstera(s, welk) {
   for (const { b, i } of reihe) {
     const [ex, ey] = ansatz[i];
     const winkel = welk ? welkWinkel(b.a0) : b.a0;
-    blaetter += an(ex, ey, 0, monsteraBlatt(b.L, winkel, b.schlitze, b.loecher, ton));
+    blaetter += an(ex, ey, 0, monsteraBlatt(b.L, winkel, b.schlitze, b.loecher, ton, b.persp, s === 3 ? 0.45 : 0.3));
+  }
+  if (rolle) {
+    const [ex, ey] = ansatz[tab.length];
+    blaetter += an(ex, ey, 0, monsteraRolle(rolle.L, rolle.a0));
   }
   return (s === 4 ? monsteraStab(welk) : '') + stiele + blaetter;
 }
@@ -566,53 +590,79 @@ function zweiseitig(R, hell, dunkel) {
 }
 
 // ---------- Bogenhanf (Sansevieria) ----------
-// Steife, schwertfoermige Blaetter, dunkelgruen mit hellen Querbaendern und gelbem Rand
-const BOG = { gruen: '#3a6b3a', hell: '#4a7e47', band: '#8fbf7a', rand: '#e3d36b' };
-const BOG_WELK = { gruen: '#a8a36a', hell: '#c4c98f', band: '#d8d6a0', rand: '#a6845a' };
+// Steife, schwertfoermige Blaetter, dunkelgruen mit hellen Zickzack-Baendern und breitem gelbem Rand.
+// Licht von links: linke Haelfte heller. Hintere Blaetter dunkler.
+const BOG = { gruen: '#3f6b45', hell: '#4f8056', band: '#9fb79a', rand: '#e3c95a', glanz: '#c8dcc0' };
+const BOG_HINTEN = { gruen: '#345a3a', hell: '#3f6c46', band: '#8aa58c', rand: '#cfb24c', glanz: '#a9c4a3' };
+const BOG_WELK = { gruen: '#a8a36a', hell: '#c4c98f', band: '#d8d6a0', rand: '#a6845a', glanz: '#dcdcb0', spitze: '#8f6a45' };
 
-// Schwertkante: Grund (0,0), Spitze (0,-L), halbe Breite W (am breitesten bei etwa der Mitte)
-function schwertKante(L, W) {
-  const pts = [];
+// Schwertkanten mit Mittellinie. Die Mitte wandert mit bieg * t^2 leicht zur Seite, damit das Blatt gedreht wirkt.
+// Liefert Mitte, rechte und linke Kante mit je 41 Punkten (Grund (0,0), Spitze (0,-L)).
+function bogKanten(L, W, bieg) {
+  const mitte = [], rechts = [], links = [];
   for (let i = 0; i <= 40; i++) {
     const t = i / 40;
-    pts.push([W * Math.sin(Math.PI * Math.pow(t, 0.55)), -L * t]);
+    const cx = bieg * t * t, hb = W * Math.sin(Math.PI * Math.pow(t, 0.55));
+    mitte.push([cx, -L * t]);
+    rechts.push([cx + hb, -L * t]);
+    links.push([cx - hb, -L * t]);
   }
-  return pts;
+  return { mitte, rechts, links };
 }
 
-function bogBlatt(L, W, welk) {
-  const T = welk ? BOG_WELK : BOG;
-  const aussen = schwertKante(L, W);
-  const innen = schwertKante(L, W * 0.82);
-  // Querbaender als Zickzack-Linien, innerhalb des Blattkoerpers
-  let baender = '';
-  const n = Math.max(2, Math.round(L / 9));
+function bogBlatt(L, W, welk, hinten, bieg) {
+  const T = welk ? BOG_WELK : (hinten ? BOG_HINTEN : BOG);
+  const au = bogKanten(L, W, bieg);          // aeussere Kontur (gelber Rand)
+  const innen = bogKanten(L, W * 0.68, bieg); // dunkler Koerper innerhalb des Randes
+  let out = pfad(p2pfad([...au.rechts, ...au.links.slice().reverse()]), `fill="${T.rand}"`) +
+    pfad(p2pfad([...innen.mitte, ...innen.links.slice().reverse()]), `fill="${T.hell}"`) +
+    pfad(p2pfad([...innen.rechts, ...innen.mitte.slice().reverse()]), `fill="${T.gruen}"`);
+  // Querbaender als Zickzack-Linien ueber die ganze Blattbreite
+  const n = Math.max(3, Math.round(L / 7));
   for (let k = 0; k < n; k++) {
-    const t = 0.2 + 0.6 * k / (n - 1);
-    const y0 = -L * t, w = W * 0.7 * Math.sin(Math.PI * Math.pow(t, 0.55));
+    const i = Math.round((0.2 + 0.62 * k / (n - 1)) * 40);
+    const y = innen.mitte[i][1];
+    const x0 = innen.links[i][0], x1 = innen.rechts[i][0];
     const pts = [];
-    for (let j = 0; j <= 6; j++) pts.push([-w + 2 * w * j / 6, y0 + (j % 2 ? -L * 0.03 : L * 0.01)]);
-    baender += pfad('M' + pts.map(p2).join('L'), `fill="none" stroke="${T.band}" stroke-width="0.8" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"`);
+    for (let j = 0; j <= 4; j++) {
+      pts.push([x0 + (x1 - x0) * j / 4, y + (j % 2 ? -0.9 : 0.5)]);
+    }
+    out += pfad('M' + pts.map(p2).join('L'), `fill="none" stroke="${T.band}" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"`);
   }
-  return pfad(p2pfad(umriss(aussen)), `fill="${T.rand}"`) +
-    zweiseitig(innen, T.hell, T.gruen) +
-    baender +
-    pfad(p2pfad(umriss(aussen)), `fill="none" ${kontur(welk)}`);
+  // Glanzstreifen entlang der Mitte (leicht links)
+  const glanz = [];
+  for (let i = 4; i <= 34; i += 2) glanz.push([innen.mitte[i][0] - W * 0.18, innen.mitte[i][1]]);
+  out += pfad('M' + glanz.map(p2).join('L'), `fill="none" stroke="${T.glanz}" stroke-width="0.6" stroke-linecap="round" opacity="0.45"`);
+  // Welk: braune Spitze
+  if (welk) out += pfad(p2pfad([...au.rechts.slice(32), ...au.links.slice(32).reverse()]), `fill="${T.spitze}" opacity="0.8"`);
+  return out + pfad(p2pfad([...au.rechts, ...au.links.slice().reverse()]), `fill="none" ${kontur(welk)}`);
 }
 
-// Blaetter: [Winkel, Laenge, halbe Breite, Fussversatz x]. Mittlere Blaetter zuletzt gezeichnet.
-const BOG_BLAETTER = {
-  1: [[-10, 20, 2.3, -2], [9, 18, 2.2, 2]],
-  2: [[-16, 27, 2.4, -3], [-5, 31, 2.5, -1], [6, 29, 2.5, 1], [17, 25, 2.3, 3]],
-  3: [[-20, 34, 2.3, -4], [-10, 38, 2.5, -2], [0, 40, 2.6, 0], [11, 37, 2.5, 2], [21, 33, 2.3, 4]],
-  4: [[-24, 36, 2.2, -5], [-15, 41, 2.4, -3], [-7, 44, 2.5, -1], [1, 45, 2.6, 0], [8, 43, 2.5, 1], [15, 40, 2.4, 3], [25, 35, 2.2, 5]],
+// Stufen: Blattanzahl, Faecherwinkel der aeussersten Blaetter (Grad), Blattlaenge, halbe Breite
+const BOG_STUFE = {
+  1: { n: 5, faecher: 14, L: 19, W: 2.2 },
+  2: { n: 6, faecher: 17, L: 28, W: 2.4 },
+  3: { n: 7, faecher: 19, L: 36, W: 2.5 },
+  4: { n: 9, faecher: 22, L: 44, W: 2.6 },
 };
 
 function bogenhanf(s, welk) {
+  const B = BOG_STUFE[s];
+  const r = zufall(23 + s);
+  const liste = [];
+  for (let i = 0; i < B.n; i++) {
+    const u = B.n === 1 ? 0 : (2 * i) / (B.n - 1) - 1; // -1 ganz links bis 1 ganz rechts
+    const a = u * B.faecher + (r() - 0.5) * 4;
+    const L = B.L * (1 - 0.15 * Math.abs(u)) * (0.94 + 0.12 * r());
+    const W = B.W * (0.94 + 0.12 * r());
+    liste.push({ a, L, W, dx: u * 2.5, hinten: Math.abs(u) > 0.6 });
+  }
+  // Hintere (aeussere) Blaetter zuerst, die mittleren liegen davor
+  liste.sort((p, q) => Number(q.hinten) - Number(p.hinten));
   let out = '';
-  for (const [a, L, W, dx] of BOG_BLAETTER[s]) {
+  for (const { a, L, W, dx, hinten } of liste) {
     const rot = welk ? a * 1.4 + Math.sign(a) * 30 : a;
-    out += an(dx, 1, rot, bogBlatt(welk ? L * 0.75 : L, W, welk));
+    out += an(dx, 1, rot, bogBlatt(welk ? L * 0.75 : L, W, welk, hinten, 0.04 * L * Math.sign(a)));
   }
   return out;
 }
@@ -683,52 +733,105 @@ function aloe(s, welk) {
 }
 
 // ---------- Gruenlilie (Chlorophytum) ----------
-// Schmale, ueberhaengende Blaetter mit cremefarbenem Mittelstreifen, Auslaeufer mit Kindeln
-const GRL = { gruen: '#5e9a52', schatten: '#477d43', streifen: '#f1ecc4' };
-const GRL_WELK = { gruen: '#c4c98f', schatten: '#a8a36a', streifen: '#e4e3b4' };
+// Schmale, ueberhaengende Blaetter mit cremefarbenem Mittelstreifen und gruenen Raendern (Licht links).
+// Hintere Blaetter dunkler. Ab Stufe 3 Auslaeufer mit Kindeln und winzigen weissen Sternbluete.
+const GRL = { hell: '#6fae6a', schatten: '#4f8a4c', streifen: '#f5f0dc', ader: '#3f7a40' };
+const GRL_HINTEN = { hell: '#5c9c58', schatten: '#3f7a40', streifen: '#e6e1c0', ader: '#2f5f32' };
+const GRL_WELK = { hell: '#c4c98f', schatten: '#a8a36a', streifen: '#e4e3b4', ader: '#8c8650', spitze: '#a6845a' };
 
-function grlBlatt(a, c1, c2, d, W, welk) {
-  const T = welk ? GRL_WELK : GRL;
+// Blatt als Band (Mittellinie a bis d, Breite W) mit cremefarbenem Mittelstreifen.
+// Die Kante mit dem kleineren x liegt im Licht (von links oben), die andere im Schatten.
+function grlBlatt(a, c1, c2, d, W, welk, hinten = false) {
+  const T = welk ? GRL_WELK : (hinten ? GRL_HINTEN : GRL);
   const b = blattBand(a, c1, c2, d, W, 12);
-  const sn = blattBand(a, c1, c2, d, W * 0.36, 12);
-  return pfad(glattGeschlossen([...b.L, ...b.R.slice().reverse()]), `fill="${T.gruen}"`) +
-    pfad(glattGeschlossen([...b.M, ...b.R.slice().reverse()]), `fill="${T.schatten}" opacity="0.4"`) +
-    pfad(glattGeschlossen([...sn.L, ...sn.R.slice().reverse()]), `fill="${T.streifen}"`) +
-    pfad(glattGeschlossen([...b.L, ...b.R.slice().reverse()]), `fill="none" ${kontur(welk)}`);
+  const sn = blattBand(a, c1, c2, d, W * 0.5, 12);
+  const mitteX = (pts) => pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const [licht, dunkel] = mitteX(b.L) <= mitteX(b.R) ? [b.L, b.R] : [b.R, b.L];
+  const form = glattGeschlossen([...b.L, ...b.R.slice().reverse()]);
+  const lichtFlaeche = glattGeschlossen([...b.M, ...licht.slice().reverse()]);
+  const streifen = glattGeschlossen([...sn.L, ...sn.R.slice().reverse()]);
+  // Feine Laengsadern auf beiden Seiten, parallel zur Mittellinie
+  let adern = '';
+  for (const kante of [licht, dunkel]) {
+    const pts = b.M.map((m, i) => [m[0] + (kante[i][0] - m[0]) * 0.55, m[1] + (kante[i][1] - m[1]) * 0.55]);
+    adern += pfad('M' + pts.slice(1, -1).map(p2).join('L'), `fill="none" stroke="${T.ader}" stroke-width="0.35" stroke-linecap="round" opacity="0.6"`);
+  }
+  let out = pfad(form, `fill="${T.schatten}"`) +
+    pfad(lichtFlaeche, `fill="${T.hell}"`) +
+    pfad(streifen, `fill="${T.streifen}"`) +
+    adern;
+  // Welk: braune Blattspitze
+  if (welk) out += pfad(glattGeschlossen([...b.L.slice(9), ...b.R.slice(9).reverse()]), `fill="${T.spitze}" opacity="0.8"`);
+  return out + pfad(form, `fill="none" stroke="${welk ? '#7d6a45' : '#2f5a30'}" stroke-width="1" stroke-linejoin="round"`);
 }
 
-// Blaetter: [Spitze x, Bogenhoehe, Spitze y, Breite]. Spitze y positiv = haengt unter den Topfrand.
+// Blaetter: [Spitze x, Bogenhoehe, Spitze y (positiv = haengt unter den Topfrand), Breite, Schicht]
+// Schicht 0 = hinten (steil, dunkler, zuerst gezeichnet), 1 = mitte, 2 = vorn (weit ueberhaengend)
 const GRL_BLAETTER = {
-  1: [[-12, 14, 5, 2.8], [13, 15, 6, 2.8], [1, 22, -10, 2.8]],
-  2: [[-18, 18, 9, 3], [-7, 25, -6, 3], [4, 27, -10, 3], [14, 22, 2, 3], [20, 15, 10, 2.8]],
-  3: [[-22, 20, 12, 3.2], [-13, 26, -2, 3.2], [-5, 29, -11, 3.2], [3, 28, -12, 3.2], [10, 27, -4, 3.2], [18, 23, 4, 3.2], [24, 18, 14, 3.2]],
-  4: [[-24, 21, 12, 3.4], [-17, 27, 0, 3.4], [-10, 30, -6, 3.4], [-3, 31, -12, 3.4], [4, 31, -10, 3.4], [11, 29, -4, 3.4], [18, 26, 2, 3.4], [24, 21, 11, 3.4]],
+  1: [[-15, 14, 6, 3.2, 0], [14, 15, 7, 3.2, 0], [-5, 17, 0, 3.4, 1], [5, 17, -1, 3.4, 2]],
+  2: [[-22, 17, 9, 3.4, 0], [20, 17, 10, 3.4, 0], [-12, 21, 2, 3.4, 1], [11, 21, 4, 3.4, 1], [-3, 23, -6, 3.6, 0], [4, 22, 6, 3.6, 2]],
+  3: [[-24, 19, 11, 3.2, 0], [23, 19, 12, 3.2, 0], [-17, 24, 3, 3.2, 0], [17, 24, 4, 3.2, 0], [-9, 27, -4, 3.2, 1], [9, 27, -3, 3.2, 1], [-3, 26, 8, 3.2, 2], [4, 25, -9, 3.2, 1]],
+  4: [
+    [-11, 15, -10, 2.6, 0], [-4, 17, -14, 2.6, 0], [4, 17, -13, 2.6, 0], [11, 15, -9, 2.6, 0],
+    [-18, 21, 2, 2.8, 1], [-6, 22, -2, 2.8, 1], [5, 22, 1, 2.8, 1], [16, 21, 5, 2.8, 1], [22, 20, 3, 2.8, 1],
+    [-26, 24, 13, 2.8, 2], [-14, 25, 16, 2.8, 2], [2, 25, 15, 2.8, 2], [18, 25, 17, 2.8, 2], [27, 24, 13, 2.8, 2],
+  ],
 };
-// Auslaeufer: [Richtung (+1 rechts, -1 links), Endpunkt x, Endpunkt y mit Kindel]
-const GRL_AUSLAEUFER = { 1: [], 2: [], 3: [[1, 22, 6]], 4: [[1, 22, 6], [-1, -21, 9]] };
 
-// Kindel: kleine Tochterpflanze mit drei schmalen Blaettern nach unten
-function kindel(E, welk) {
-  let out = '';
-  for (const [dx, dy, W] of [[-2, 6, 1.8], [0, 7, 2], [2, 5.5, 1.8]]) {
-    out += grlBlatt(E, [E[0] + dx * 0.2, E[1] + dy * 0.4], [E[0] + dx * 0.8, E[1] + dy * 0.8], [E[0] + dx, E[1] + dy], W, welk);
+// Auslaeufer: [Richtung (+1 rechts, -1 links), Endpunkt x, Endpunkt y, Kontrollpunkt x, Kontrollpunkt y]
+// Bogen ueber den Topfrand, dann nach unten haengend
+const GRL_AUSLAEUFER = {
+  1: [],
+  2: [],
+  3: [[1, 24, 14, 16, -18], [-1, -23, 16, -16, -18]],
+  4: [[1, 27, 16, 16, -18], [-1, -25, 17, -16, -18], [1, 12, 28, 15, 6]],
+};
+
+// Duenner gelblichgruener Stängel (keine Roehre), Strichstaerke 1.2
+function grlAusl(d, welk) {
+  return pfad(d, `fill="none" stroke="${welk ? '#a8a36a' : '#b9c76a'}" stroke-width="1.2" stroke-linecap="round"`);
+}
+
+// Winzige weisse Sternbluete
+function grlSternbluete(x, y, r) {
+  const pts = [];
+  for (let k = 0; k < 12; k++) {
+    const a = (k * 30 - 90) * RAD, rr = k % 2 ? r * 0.45 : r;
+    pts.push([x + rr * Math.cos(a), y + rr * Math.sin(a)]);
   }
+  return poly(pts, 'fill="#fffdf2" stroke="#b9c49a" stroke-width="0.3" stroke-linejoin="round"');
+}
+
+// Kindel: kleine Tochterrosette mit Wurzelansatz am Auslaeuferende und einer Sternbluete
+function kindel(E, welk) {
+  // Kindel: Rosette aus sechs kurzen, gestreiften Blaettchen, Wurzelansatz am Auslaeuferende
+  let out = linie(E, [E[0] - 0.8, E[1] + 2.5], `stroke="${welk ? '#a6845a' : '#c9b48a'}" stroke-width="0.5" stroke-linecap="round"`);
+  for (const [dx, dy, W] of [[-3.5, -2.5, 1.8], [-2, -5.5, 1.9], [0, -6.8, 1.9], [2, -5.5, 1.9], [3.8, -3, 1.8], [0.5, -4, 1.5]]) {
+    out += grlBlatt(E, [E[0] + dx * 0.2, E[1] - 1.5], [E[0] + dx * 0.8, E[1] + dy * 0.8], [E[0] + dx, E[1] + dy], W, welk);
+  }
+  if (!welk) out += grlSternbluete(E[0] + 0.5, E[1] - 9, 1.3);
   return out;
 }
 
 function gruenlilie(s, welk) {
-  const R = EF_R; // Topfradius klein
-  let ausl = '', blaetter = '', kindeln = '';
-  for (const [sg, x, y] of GRL_AUSLAEUFER[s]) {
+  let ausl = '', kindeln = '', bluete = '';
+  for (const [sg, x, y, cx, cy] of GRL_AUSLAEUFER[s]) {
     const E = [x, y];
-    ausl += stiel(`M${sp([sg * 4, -1])}Q${sp([sg * (R + 6), -16])} ${sp(E)}`, welk, 1.6);
+    ausl += grlAusl(`M${sp([sg * 4, -1])}Q${sp([cx, cy])} ${sp(E)}`, welk);
     kindeln += kindel(E, welk);
   }
-  for (const [xt, bogen, yt, W] of GRL_BLAETTER[s]) {
+  // Blaetter nach Schicht sortieren: hinten zuerst, vorn zuletzt
+  const schichten = [[], [], []];
+  for (const [xt, bogen, yt, W, schicht] of GRL_BLAETTER[s]) {
     const yE = welk ? yt + 8 : yt, hoehe = welk ? bogen * 0.7 : bogen;
-    blaetter += grlBlatt([0, 0], [xt * 0.15, -hoehe * 1.1], [xt * 0.9, -hoehe * 0.75], [xt, yE], W, welk);
+    schichten[schicht].push(grlBlatt([0, 0], [xt * 0.15, -hoehe * 1.1], [xt * 0.9, -hoehe * 0.75], [xt, yE], W, welk, schicht === 0));
   }
-  return ausl + blaetter + kindeln;
+  if (s === 4 && !welk) {
+    // Bluetenstiel aus der Rosette mit drei winzigen Sternbluete
+    ausl += grlAusl('M0,-1Q-1,-14 -5,-24', welk);
+    bluete = grlSternbluete(-5, -24, 1.8) + grlSternbluete(-8, -20, 1.5) + grlSternbluete(-2.5, -21, 1.5);
+  }
+  return ausl + schichten.flat().join('') + kindeln + bluete;
 }
 
 // ---------- Gluecksfeder (Zamioculcas) ----------

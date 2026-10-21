@@ -133,8 +133,12 @@ function endeAb(start, gt) {
 
 // ---------- Verfügbar ----------
 
-export function verfuegbar(daten, zr) {
+// stichtag (optional): Stand an diesem Tag. Einmalige Einnahmen und Fixkosten-Buchungen nach dem Stichtag
+// und nicht monatliche Vertragseinnahmen, die erst danach eingehen, zählen dann noch nicht. So ändert eine
+// spätere Einnahme kein Tages- oder Wochenbudget, das schon gegolten hat.
+export function verfuegbar(daten, zr, stichtag) {
   const posten = [];
+  const bisTag = stichtag && stichtag < zr.ende ? stichtag : zr.ende;
 
   for (const v of daten.vertraege || []) {
     if (v.ende && v.ende < zr.start) continue;
@@ -144,7 +148,7 @@ export function verfuegbar(daten, zr) {
     // (nächste) Fälligkeit schon im Folgemonat liegt.
 
     if (v.art === 'einnahme') {
-      const n = (v.intervall || 1) === 1 ? 1 : faelligkeiten(v, zr.start, zr.ende).length;
+      const n = (v.intervall || 1) === 1 ? 1 : faelligkeiten(v, zr.start, bisTag).length;
       if (n > 0) posten.push({ name: v.name, betrag: n * v.betrag, art: 'einnahme' });
     } else if (v.art === 'ausgabe') {
       posten.push({ name: v.name, betrag: -rundeCent(v.betrag / Math.max(1, v.intervall || 1)), art: 'fixkosten' });
@@ -152,7 +156,7 @@ export function verfuegbar(daten, zr) {
   }
 
   for (const b of daten.buchungen || []) {
-    if (b.datum < zr.start || b.datum > zr.ende) continue;
+    if (b.datum < zr.start || b.datum > bisTag) continue;
     if (b.art === 'einnahme') posten.push({ name: b.name, betrag: b.betrag, art: 'einnahme' });
     if (b.art === 'fixkosten') posten.push({ name: b.name, betrag: -b.betrag, art: 'fixkosten' });
   }
@@ -198,21 +202,22 @@ export function ausgabenZwischen(daten, von, bis) {
 
 // ---------- Tagesbudget, Heute, Woche ----------
 
-function budgetAm(daten, zr, v, d) {
+// Budget für Tag d: verfügbares Geld (Stand d) minus Ausgaben vor d, verteilt auf die restlichen Tage.
+function budgetAm(daten, zr, d) {
+  const v = verfuegbar(daten, zr, d).V;
   const vorher = ausgabenZwischen(daten, zr.start, datumPlusTage(d, -1));
   const tageRest = tageZwischen(d, zr.ende) + 1;
   return rundeCent((v - vorher) / tageRest);
 }
 
 export function tagesbudget(daten, d) {
-  const zr = zeitraum(daten, d);
-  return budgetAm(daten, zr, verfuegbar(daten, zr).V, d);
+  return budgetAm(daten, zeitraum(daten, d), d);
 }
 
 export function heute(daten, d) {
   const zr = zeitraum(daten, d);
   const V = verfuegbar(daten, zr).V;
-  const B = budgetAm(daten, zr, V, d);
+  const B = budgetAm(daten, zr, d);
   const ausgegeben = ausgabenAm(daten, d);
   return {
     zr,
@@ -224,7 +229,9 @@ export function heute(daten, d) {
   };
 }
 
-function wocheIm(daten, zr, v, wb) {
+// Das Wochenbudget wird am ersten Tag der Woche festgelegt (Stand dieses Tages).
+// Einnahmen, die später in der Woche kommen, wirken ab der nächsten Woche.
+function wocheIm(daten, zr, wb) {
   const so = datumPlusTage(wb, 6);
   // Woche beginnt frühestens am Zeitraumstart und am Starttag der App.
   const st = (daten.einstellungen && daten.einstellungen.startDatum) || '';
@@ -232,26 +239,57 @@ function wocheIm(daten, zr, v, wb) {
   if (st > von && st <= datumPlusTage(wb, 6)) von = st;
   const bis = so < zr.ende ? so : zr.ende;
   const tage = Math.max(0, tageZwischen(von, bis) + 1);
-  const W = budgetAm(daten, zr, v, von) * tage;
+  const W = budgetAm(daten, zr, von) * tage;
   const ausgegeben = ausgabenZwischen(daten, von, bis);
-  return { von, bis, W, ausgegeben, rest: W - ausgegeben };
+  return { von, bis, tage, W, ausgegeben, rest: W - ausgegeben };
 }
 
 export function woche(daten, d) {
+  return wocheIm(daten, zeitraum(daten, d), wochenbeginn(d));
+}
+
+// Prognose für ein Fenster von..bis am Tag d (von <= d <= bis): Tempo = Ausgaben bis gestern je Tag.
+// Heute zählt mit dem Tempo oder mit dem, was heute schon ausgegeben ist, falls das mehr ist.
+// Am ersten Tag des Fensters gibt es noch kein Tempo: prognoseAusgaben ist dann null.
+export function prognose(daten, von, bis, budget, d) {
+  const vergangen = Math.max(0, tageZwischen(von, d));
+  const nachHeute = Math.max(0, tageZwischen(d, bis));
+  const bisGestern = vergangen > 0 ? ausgabenZwischen(daten, von, datumPlusTage(d, -1)) : 0;
+  const heuteAus = ausgabenAm(daten, d);
+  const ausgegeben = bisGestern + heuteAus;
+  const rest = budget - ausgegeben;
+  const tageOffen = nachHeute + 1;
+  const proTag = rundeCent(rest / tageOffen);
+  if (vergangen === 0) return { ausgegeben, rest, proTag, tempo: null, prognoseAusgaben: null, prognoseRest: null };
+  const tempo = rundeCent(bisGestern / vergangen);
+  const prognoseAusgaben = bisGestern + Math.max(heuteAus, tempo) + tempo * nachHeute;
+  return { ausgegeben, rest, proTag, tempo, prognoseAusgaben, prognoseRest: budget - prognoseAusgaben };
+}
+
+// Woche mit Prognose und Betrag pro restlichem Tag (heute eingeschlossen)
+export function wochenStand(daten, d) {
+  const w = woche(daten, d);
+  return { ...w, ...prognose(daten, w.von, w.bis, w.W, d) };
+}
+
+// Laufender Zeitraum mit Prognose
+export function zeitraumStand(daten, d) {
   const zr = zeitraum(daten, d);
-  return wocheIm(daten, zr, verfuegbar(daten, zr).V, wochenbeginn(d));
+  const V = verfuegbar(daten, zr).V;
+  const st = (daten.einstellungen && daten.einstellungen.startDatum) || '';
+  const von = st > zr.start && st <= zr.ende ? st : zr.start;
+  return { zr, V, ...prognose(daten, von, zr.ende, V, d) };
 }
 
 // ---------- Ziele ----------
 
 export function tagErfuellt(daten, d) {
   const zr = zeitraum(daten, d);
-  const B = budgetAm(daten, zr, verfuegbar(daten, zr).V, d);
-  return ausgabenAm(daten, d) <= B;
+  return ausgabenAm(daten, d) <= budgetAm(daten, zr, d);
 }
 
 export function wocheErfuellt(daten, wochenbeginnDatum, zr) {
-  const w = wocheIm(daten, zr, verfuegbar(daten, zr).V, wochenbeginnDatum);
+  const w = wocheIm(daten, zr, wochenbeginnDatum);
   return w.ausgegeben <= w.W;
 }
 

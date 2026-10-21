@@ -1,11 +1,13 @@
 // Service Worker für den Budgetgarten: Offline-Cache und Erinnerungs-Push.
-const VERSION = 'v9';
+const VERSION = 'v10';
 const CACHE = `budgetgarten-${VERSION}`;
 
 // Alle App-Dateien, die beim Installieren vorab gespeichert werden (relativ zu dieser Datei).
 const DATEIEN = [
   './index.html',
   './styles.css',
+  './css/woche.css',
+  './css/ios.css',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-180.png',

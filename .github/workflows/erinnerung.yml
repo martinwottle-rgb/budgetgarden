@@ -1,10 +1,9 @@
 name: Erinnerung 22 Uhr
 
+# Zeitplan abgeschaltet (21.10.2026): GitHub startete die Abendläufe bis zu drei Stunden zu spät.
+# Die tägliche Erinnerung kommt jetzt über eine Kurzbefehle-Automation auf dem iPhone (ANLEITUNG-ERINNERUNG.md).
+# Manuell lässt sich eine Web-Push-Nachricht weiter senden.
 on:
-  schedule:
-    # UTC 19:50 = 21:50 Berlin im Sommer, 20:50 = 21:50 im Winter. tools/push.mjs prüft das Fenster und wartet bis 22:00.
-    - cron: '50 19 * * *'
-    - cron: '50 20 * * *'
   workflow_dispatch:
     inputs:
       erzwingen:

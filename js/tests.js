@@ -358,6 +358,40 @@ test('Vierteljaehrliche Einnahme: frueherer Termin im Zeitraum wird erkannt', ()
   gleich(L.verfuegbar(d, L.zeitraum(d, '2026-12-20')).V, 0, 'Dezember ohne Termin');
 });
 
+
+test('Spaetere Einnahme aendert vergangene Tage und die laufende Woche nicht', () => {
+  // Oktober 2026: 3100 EUR frei. Am 12.10. bleiben 20 Tage, also 155 EUR pro Tag. Woche Mo 12.10. bis So 18.10.
+  const d = basis(1, {
+    vertraege: [{ id: 'g', art: 'einnahme', name: 'Gehalt', betrag: 310000, intervall: 1, ersteFaelligkeit: '2026-10-01', kategorie: '', istGehalt: true, ende: null }],
+    buchungen: [
+      { id: 'a1', art: 'ausgabe', name: 'x', betrag: 16000, datum: '2026-10-12', kategorie: 'sonstiges' },
+      { id: 'e1', art: 'einnahme', name: 'Erstattung', betrag: 31000, datum: '2026-10-15', kategorie: 'sonstiges' },
+    ],
+  });
+  gleich(L.tagErfuellt(d, '2026-10-12'), false, '12.10. bleibt ueber Budget');
+  gleich(L.tagesbudget(d, '2026-10-12'), 15500, 'B(12.10.) ohne spaetere Einnahme');
+  const w = L.woche(d, '2026-10-16');
+  gleich(w.W, 108500, 'W am Montag festgelegt: 7 x 155 EUR');
+  // 15.10.: (3100 + 310 - 160) / 17 Resttage = 191,18 EUR
+  gleich(L.tagesbudget(d, '2026-10-15'), 19118, 'Einnahme wirkt ab ihrem Tag');
+});
+
+test('Prognose der Woche', () => {
+  const d = basis(1, {
+    vertraege: [{ id: 'g', art: 'einnahme', name: 'Gehalt', betrag: 310000, intervall: 1, ersteFaelligkeit: '2026-10-01', kategorie: '', istGehalt: true, ende: null }],
+    buchungen: [
+      { id: 'a1', art: 'ausgabe', name: 'x', betrag: 8000, datum: '2026-10-12', kategorie: 'sonstiges' },
+      { id: 'a2', art: 'ausgabe', name: 'y', betrag: 4000, datum: '2026-10-13', kategorie: 'sonstiges' },
+    ],
+  });
+  const s = L.wochenStand(d, '2026-10-14');
+  gleich(s.tempo, 6000, 'Tempo 120 EUR / 2 Tage');
+  gleich(s.prognoseAusgaben, 12000 + 6000 * 5, 'bisher 120 + heute 60 + 4 x 60');
+  gleich(s.prognoseRest, 108500 - 42000, 'Prognose Rest 665 EUR');
+  gleich(s.proTag, 19300, 'Rest 965 EUR auf 5 Tage');
+  gleich(L.wochenStand(d, '2026-10-12').prognoseAusgaben, null, 'Montag ohne Prognose');
+});
+
 // ---------- Ausgabe ----------
 
 const zeilen = document.getElementById('zeilen');

@@ -16,7 +16,7 @@ import { DEKO } from '../grafik/deko.js';
 import { DEKO2 } from '../grafik/deko2.js';
 import { SAAT } from '../grafik/saat.js';
 import { SAISON } from '../grafik/saison.js';
-import { el, euro, muenzSvg, svgBox, balken, vorzeichen, tage, kurzDatum, zahl } from './bausteine.js';
+import { el, euro, muenzSvg, svgBox, vorzeichen, tage, kurzDatum, zahl } from './bausteine.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -59,12 +59,81 @@ let gleitet = false;
 let konfettiNaechstes = false;
 let konfettiGold = false;
 
+// ---------- Budgetkarte (Woche und Monat, SPEC-3 Abschnitt 6) ----------
+
+const BUDGET_WEG = 'Budget aufgebraucht';
+const WOCHENTAG_LANG = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+
+// Chip rechts oben: Tagesbetrag oder Hinweis, wenn nichts mehr übrig ist
+export function tagesChip(proTag) {
+  return proTag > 0 ? '≈ ' + euro(proTag) + ' pro Tag' : BUDGET_WEG;
+}
+
+// Prognosezeile für die Woche (w aus L.wochenStand). Endet die Woche vor Sonntag, steht dort der Wochentag.
+export function wochenPrognoseText(w) {
+  if (w.prognoseAusgaben === null || w.prognoseAusgaben === undefined) return 'Ab morgen siehst du hier eine Prognose.';
+  const tag = L.wochentag(w.bis);
+  const zeitpunkt = tag === 6 ? 'Sonntag' : 'am ' + WOCHENTAG_LANG[tag];
+  if (w.prognoseRest >= 0) return `Bei deinem Tempo bleiben ${zeitpunkt} noch ${euro(w.prognoseRest)} übrig.`;
+  return `Bei deinem Tempo fehlen ${zeitpunkt} ${euro(-w.prognoseRest)}.`;
+}
+
+// Budgetkarte: Kopf mit Symbol, Titel und Chip, Fortschrittsbalken mit Prognosemarke, Beträge darunter.
+// Füllung grün bis 85 %, senf bis 100 %, darüber rot. Budget 0 oder weniger: leerer Balken mit roter Spur.
+export function budgetKarte({ symbol, titel, chip, ausgegeben, budget, prognoseAusgaben, rest, prognoseText, fusszeile, kopf }) {
+  const hat = budget > 0;
+  const anteil = hat ? ausgegeben / budget : 0;
+  const prozent = hat ? Math.max(0, Math.min(1, anteil)) * 100 : 0;
+  const farbe = anteil > 1 ? 'wk-rot' : anteil > 0.85 ? 'wk-senf' : 'wk-gruen';
+
+  const fuellung = el('span', { class: 'wk-fuellung ' + (hat ? farbe : 'wk-gruen'), style: 'width:0%' });
+  const markierungen = [fuellung];
+  if (hat && prognoseAusgaben !== null && prognoseAusgaben !== undefined) {
+    const pa = prognoseAusgaben / budget;
+    markierungen.push(el('span', {
+      class: 'wk-prognose' + (pa > 1 ? ' wk-ueber' : ''),
+      style: `left:${(Math.max(0, Math.min(1, pa)) * 100).toFixed(1)}%`
+    }));
+  }
+  const spur = el('div', {
+    class: 'wk-balken' + (hat ? '' : ' wk-spur-rot'), role: 'img',
+    'aria-label': hat ? `${Math.round(anteil * 100)} Prozent des Budgets ausgegeben` : 'Das Budget ist aufgebraucht'
+  }, markierungen);
+  // Füllung läuft beim Erscheinen von 0 auf den Stand
+  requestAnimationFrame(() => requestAnimationFrame(() => { fuellung.style.width = prozent.toFixed(1) + '%'; }));
+
+  const kopfZeile = el('div', { class: 'wk-kopf' },
+    el('span', { class: 'wk-symbol', 'aria-hidden': 'true', text: symbol }),
+    el('div', { class: 'wk-kopf-mitte' }, kopf || el('span', { class: 'wk-titel', text: titel })),
+    chip ? el('span', { class: 'wk-chip' + (chip === BUDGET_WEG ? ' wk-chip-rot' : ''), text: chip }) : null
+  );
+
+  const verplant = !hat;
+  return el('section', { class: 'karte wk-karte' },
+    kopfZeile,
+    spur,
+    el('div', { class: 'wk-zeile' },
+      el('div', { class: 'wk-links' },
+        el('div', { class: 'wk-klein' }, el('b', { text: euro(ausgegeben) }), ' ausgegeben'),
+        verplant
+          ? el('div', { class: 'wk-klein wk-verplant', text: 'Das Geld ist schon verplant' })
+          : el('div', { class: 'wk-klein' }, 'von ', el('b', { text: euro(budget) }))
+      ),
+      el('div', { class: 'wk-rechts' },
+        el('div', { class: 'wk-rest ' + (rest < 0 ? 'negativ' : 'positiv'), text: euro(rest) }),
+        el('div', { class: 'wk-klein', text: rest < 0 ? 'drüber' : 'noch übrig' })
+      )
+    ),
+    prognoseText ? el('p', { class: 'wk-hinweis', text: prognoseText }) : null,
+    fusszeile ? el('p', { class: 'wk-fuss' }, fusszeile) : null
+  );
+}
+
 export function zeige(container, ctx, param) {
   const d = ctx.daten;
   const hd = ctx.heute;
   const h = L.heute(d, hd);
-  const w = L.woche(d, hd);
-  const tagNr = h.zr.tage - h.tageUebrig + 1;
+  const w = L.wochenStand(d, hd);
   const wochenStart = L.wochenbeginn(hd);
   const wochenEnde = L.datumPlusTage(wochenStart, 6);
   const aktion = aktionAus(param);
@@ -74,23 +143,22 @@ export function zeige(container, ctx, param) {
   // Hinweisleiste oben bei Platzwahl
   if (aktion) container.append(hinweisLeiste(ctx));
 
-  // Rest heute groß, Rest Woche daneben klein
-  container.append(
-    el('section', { class: 'karte heute-karte' },
-      el('div', { class: 'spalte' },
-        el('div', { class: 'klein', text: 'Heute noch' }),
-        el('div', { class: 'betrag-gross ' + vorzeichen(h.rest), text: euro(h.rest) }),
-        el('div', { class: 'klein', text: `von ${euro(h.B)} · Tag ${tagNr} von ${h.zr.tage}` }),
-        balken(h.ausgegeben, h.B)
-      ),
-      el('div', { class: 'spalte' },
-        el('div', { class: 'klein', text: 'Diese Woche noch' }),
-        el('div', { class: 'betrag-mittel ' + vorzeichen(w.rest), text: euro(w.rest) }),
-        el('div', { class: 'klein', text: `von ${euro(w.W)}` }),
-        balken(w.ausgegeben, w.W)
-      )
-    )
-  );
+  // Wochenkarte: Budget der Woche mit Prognose, darunter der Stand von heute
+  container.append(budgetKarte({
+    symbol: '🗓️',
+    titel: 'Diese Woche',
+    chip: tagesChip(w.proTag),
+    ausgegeben: w.ausgegeben,
+    budget: w.W,
+    prognoseAusgaben: w.prognoseAusgaben,
+    rest: w.rest,
+    prognoseText: wochenPrognoseText(w),
+    fusszeile: [
+      `🌱 Tagesziel für den Garten: ${euro(h.B)}. Heute ausgegeben ${euro(h.ausgegeben)}, `,
+      el('span', { class: vorzeichen(h.rest), text: h.rest >= 0 ? `noch ${euro(h.rest)}` : `${euro(-h.rest)} drüber` }),
+      '.'
+    ]
+  }));
 
   // Einrichten-Knopf über der Szene (nicht während einer Platzwahl oder im Bewegungsmodus)
   if (!aktion && !bewegen) container.append(einrichtenLeiste(ctx));

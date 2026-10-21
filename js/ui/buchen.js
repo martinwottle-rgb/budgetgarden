@@ -3,7 +3,8 @@
 
 import * as L from '../logik.js';
 import { neueId } from '../speicher.js';
-import { el, euro, parseBetrag, betragText, kategorieVon, kurzDatum } from './bausteine.js';
+import { eintragBelohnen } from '../spiel.js';
+import { el, euro, parseBetrag, betragText, kategorieVon, kurzDatum, zahl } from './bausteine.js';
 
 const ARTEN = [['ausgabe', 'Ausgabe'], ['einnahme', 'Einnahme'], ['fixkosten', 'Fixkosten']];
 const ART_TEXT = { ausgabe: 'Ausgabe', einnahme: 'Einnahme', fixkosten: 'Fixkosten' };
@@ -156,9 +157,9 @@ export function zeige(container, ctx, param) {
       onpointerleave: () => clearTimeout(timer),
       onpointercancel: () => clearTimeout(timer),
       oncontextmenu: (e) => e.preventDefault(),
-      onclick: () => {
+      onclick: (e) => {
         if (lang) { lang = false; return; }
-        schnellBuchen(g);
+        schnellBuchen(g, e.currentTarget);
       }
     });
   }));
@@ -168,15 +169,24 @@ export function zeige(container, ctx, param) {
   );
 
   // Antippen bucht sofort für das Datum im Formular. Der Entwurf (Betrag, Notiz, Datum) bleibt erhalten.
-  function schnellBuchen(g) {
+  function schnellBuchen(g, von) {
     const kat = kategorieVon(ctx.daten, g.kategorie);
     const eintrag = {
       id: neueId('b'), art: 'ausgabe', name: g.notiz || kat.name, betrag: g.betrag,
       datum: z.datum || heute, kategorie: g.kategorie, notiz: g.notiz
     };
     merkeEntwurf = { ...z };
-    ctx.speichern({ ...ctx.daten, buchungen: [...ctx.daten.buchungen, eintrag] });
+    sofortSpeichern([...ctx.daten.buchungen, eintrag], eintrag.datum, von);
     undoZeigen(ctx, eintrag, `Gebucht: ${eintrag.name} ${euro(eintrag.betrag)}`);
+  }
+
+  // Speichert die Buchungsliste mit der Sofort-Belohnung (erster Eintrag des Tages: +2 Samen).
+  // Der Samenflug startet vom Knopf, deshalb wird er vor dem Speichern (und dem Neuzeichnen) gestartet.
+  function sofortSpeichern(buchungen, datum, von) {
+    const r = eintragBelohnen({ ...ctx.daten, buchungen }, heute, datum);
+    if (r.samen > 0 && von) ctx.samenFlug(von, r.samen);
+    ctx.speichern(r.daten);
+    if (r.samen > 0) ctx.toast(`+${zahl(r.samen)} Samen für deinen ersten Eintrag heute`);
   }
 
   // Langes Drücken: nur das Formular mit dieser Ausgabe füllen, nichts buchen
@@ -226,12 +236,12 @@ export function zeige(container, ctx, param) {
     const buchungen = z.id
       ? ctx.daten.buchungen.map(b => (b.id === z.id ? eintrag : b))
       : [...ctx.daten.buchungen, eintrag];
-    ctx.speichern({ ...ctx.daten, buchungen });
+    sofortSpeichern(buchungen, eintrag.datum, speichernKnopf);
     ctx.toast(`${ART_TEXT[z.art]} gespeichert: ${euro(cent)}`);
     ctx.navigiere('buchen');
   }
 
-  function nichtsAusgegeben() {
+  function nichtsAusgegeben(von) {
     const schon = ctx.daten.buchungen.some(b => b.datum === heute && b.art === 'ausgabe' && b.notiz === NICHTS);
     if (schon) {
       ctx.toast('Heute ist „Nichts ausgegeben“ schon eingetragen.');
@@ -241,7 +251,7 @@ export function zeige(container, ctx, param) {
       ? 'sonstiges'
       : (ctx.daten.kategorien[0] ? ctx.daten.kategorien[0].id : null);
     const eintrag = { id: neueId('b'), art: 'ausgabe', name: NICHTS, betrag: 0, datum: heute, kategorie, notiz: NICHTS };
-    ctx.speichern({ ...ctx.daten, buchungen: [...ctx.daten.buchungen, eintrag] });
+    sofortSpeichern([...ctx.daten.buchungen, eintrag], heute, von);
     ctx.toast('Heute als „Nichts ausgegeben“ eingetragen.');
   }
 
@@ -334,7 +344,7 @@ export function zeige(container, ctx, param) {
   const aktionen = el('div', { class: 'aktionen bu11-sticky' }, speichernKnopf,
     z.id
       ? el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Bearbeiten abbrechen', onclick: () => ctx.navigiere('buchen') })
-      : el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Heute nichts ausgegeben', onclick: nichtsAusgegeben })
+      : el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Heute nichts ausgegeben', onclick: (e) => nichtsAusgegeben(e.currentTarget) })
   );
 
   katZeichnen();

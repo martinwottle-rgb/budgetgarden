@@ -4,7 +4,7 @@
 // Lokal: u = Laenge entlang breite, v = Tiefe entlang tiefe. drehung 0: u auf gx, v auf gy.
 // drehung 90: u auf gy, v auf gx. Plaetze (dx, dy, z) liegen im lokalen System, z in px.
 
-import { iso, f, p2, poly, pfad, linie, oval, gruppe, tr, bodenschatten, gerundet } from './hilfen.js';
+import { iso, f, p2, poly, pfad, linie, oval, gruppe, tr, bodenschatten, gerundet, zufall } from './hilfen.js';
 
 const KON12 = 'stroke="#6b4a3a" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"';
 const MASER = 'stroke="#9c5f2e" stroke-width="0.7" stroke-linecap="round" opacity="0.8"';
@@ -80,7 +80,8 @@ function schatten(m, b, t) {
 }
 
 // Senkrechter Zylinder um (cx, cy) in Weltkoordinaten, Radius r (Felder), Hoehe z0 bis z1. Licht links, Schatten rechts.
-function zylinder(cx, cy, r, z0, z1, farben) {
+// ohneMaser: keine Holzmaserung (fuer Metall).
+function zylinder(cx, cy, r, z0, z1, farben, ohneMaser = false) {
   const [ox, oy] = iso(cx, cy, 0);
   const rx = 48 * Math.SQRT2 * r, ry = 24 * Math.SQRT2 * r;
   const yT = oy - z1, yB = oy - z0;
@@ -88,9 +89,11 @@ function zylinder(cx, cy, r, z0, z1, farben) {
   const schattenseite = `M${p2([ox, yT - ry])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox, yT + ry])}L${p2([ox, yB + ry])}A${f(rx)},${f(ry)} 0 0 0 ${p2([ox, yB - ry])}Z`;
   let s = pfad(seite, `fill="${farben.links}"`) + pfad(schattenseite, `fill="${farben.rechts}"`) + pfad(seite, `fill="none" ${KON12}`);
   s += oval(ox, yT, rx, ry, `fill="${farben.oben}" ${KON12}`);
-  for (const k of [-0.4, 0.4]) {
-    const hw = 0.8 * rx * Math.sqrt(1 - k * k);
-    s += linie([ox - hw, yT + ry * k], [ox + hw, yT + ry * k], MASER);
+  if (!ohneMaser) {
+    for (const k of [-0.4, 0.4]) {
+      const hw = 0.8 * rx * Math.sqrt(1 - k * k);
+      s += linie([ox - hw, yT + ry * k], [ox + hw, yT + ry * k], MASER);
+    }
   }
   return s;
 }
@@ -311,6 +314,109 @@ function hochregalTeile(gx, gy, drehung) {
   return { teile: T, zs: [44, 60, 88, 104, 120, 144, 174] };
 }
 
+// ---------- Metallregale (verzinkter Stahl wie IKEA HYLLIS): L-Winkel-Pfosten, Bleche mit umgekanteter Vorderkante ----------
+const ZINK = { oben: '#e6e9ec', links: '#c3c8cd', rechts: '#8f969d' };
+const KUNST = { oben: '#3d3d3d', links: '#2b2b2b', rechts: '#1f1f1f' };
+const HOLZ_KISTE = { oben: '#e2b07c', links: '#c98f5a', rechts: '#a86b43' };
+const BLECH_RAND = 0.03; // Abstand der Bleche zu den Feldkanten (u)
+const PFOSTEN_HINTEN = 0.27, PFOSTEN_VORNE = 0.73; // Pfostenreihen (v), Regaltiefe ca. 27 cm bei 60 cm Feld
+
+// Verzinkte Oberflaeche: feine helle und dunkle Sprenkel, waagerecht auf Hoehe z, fester Seed
+function sprenkelZink(m, u0, u1, v0, v1, z, seed, n) {
+  const r = zufall(seed);
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pkt(m, u0 + (u1 - u0) * r(), v0 + (v1 - v0) * r(), z);
+    const rx = 0.8 + r() * 0.6, ry = 0.45 + r() * 0.3;
+    s += i % 2 ? oval(x, y, rx, ry, 'fill="#8f969d" opacity="0.5"') : oval(x, y, rx, ry, 'fill="#ffffff" opacity="0.7"');
+  }
+  return s;
+}
+
+// L-Winkel-Pfosten an der Ecke (uc, vc). sx, sy: Richtung der Schenkel ins Innere (+1 oder -1).
+// Schenkel 0.07 Felder lang, 0.025 dick. Sichtbar: Licht oben, Grund links, Schatten rechts.
+function winkelPfosten(m, uc, vc, sx, sy, z0, z1) {
+  return quader(m, uc, uc + sx * 0.07, vc, vc + sy * 0.025, z0, z1, ZINK) +
+    quader(m, uc, uc + sx * 0.025, vc, vc + sy * 0.07, z0, z1, ZINK);
+}
+
+// Schwarzer Kunststofffuss unter einem Pfosten
+function fuss(m, uc, vc) {
+  return quader(m, uc - 0.035, uc + 0.035, vc - 0.035, vc + 0.035, 0, 5, KUNST);
+}
+
+// Schraubpunkt auf der Vorderflaeche eines Pfostens (u, v), Hoehe z
+function schraube(m, u, v, z) {
+  const [x, y] = pkt(m, u, v, z);
+  return oval(x, y, 1.6, 1.6, 'fill="#8f969d" stroke="#6b4a3a" stroke-width="0.6"') +
+    oval(x - 0.5, y - 0.5, 0.6, 0.6, 'fill="#ffffff" opacity="0.8"');
+}
+
+// Blech mit umgekanteter Vorderkante: Platte 2 px auf Hoehe zt (Oberflaeche = Platzhoehe), Kante 4 px nach unten.
+// Die Kante wird zuerst gezeichnet, damit die Platte ihre Oberkante verdeckt.
+function blech(m, U, zt, seed) {
+  const u0 = BLECH_RAND, u1 = U - BLECH_RAND;
+  return quader(m, u0, u1, PFOSTEN_VORNE - 0.03, PFOSTEN_VORNE, zt - 6, zt - 2, ZINK) +
+    quader(m, u0, u1, PFOSTEN_HINTEN, PFOSTEN_VORNE, zt - 2, zt, ZINK) +
+    sprenkelZink(m, u0 + 0.05, u1 - 0.05, PFOSTEN_HINTEN + 0.05, PFOSTEN_VORNE - 0.05, zt, seed, 4);
+}
+
+// Regal-Geruest: Fuesse, Pfosten und Bleche je Ebene (zs = Oberflaeche je Ebene). Hintere Pfosten zuerst (Ebene 0),
+// vordere Pfosten zuletzt in der obersten Ebene, damit sie Bleche und Pflanzen der unteren Ebenen verdecken.
+// mitte: zusaetzliche Pfostenreihe in der Mitte (breite Regale).
+function regalTeile(m, U, zs, mitte) {
+  const top = zs.length - 1;
+  const spalten = [[BLECH_RAND, 1], [U - BLECH_RAND, -1]];
+  if (mitte) spalten.push([U / 2, 1]);
+  const T = [[0, schatten(m, U, 1)]];
+  for (const [uc, sx] of spalten) {
+    T.push([0, fuss(m, uc, PFOSTEN_HINTEN) + fuss(m, uc, PFOSTEN_VORNE) + winkelPfosten(m, uc, PFOSTEN_HINTEN, sx, 1, 5, zs[top])]);
+  }
+  zs.forEach((zt, k) => T.push([k, blech(m, U, zt, 5 + k * 13 + U * 7)]));
+  for (const [uc, sx] of spalten) {
+    let s = winkelPfosten(m, uc, PFOSTEN_VORNE, sx, -1, 5, zs[top]);
+    for (const zt of zs) s += schraube(m, uc + sx * 0.035, PFOSTEN_VORNE, zt - 4);
+    T.push([top, s]);
+  }
+  return { teile: T, zs };
+}
+
+// Kleine Zinkgiesskanne auf der Ablage z0, Mitte bei (u, v): Korpus, Henkel hinten, Tuelle vorn rechts, Brause
+function giesskanne(m, u, v, z0) {
+  const [wx, wy] = feldPunkt(m.gx, m.gy, m.drehung, u, v);
+  const zk = z0 + 15;
+  const [ox, oy] = iso(wx, wy, zk);
+  const henkel = `M${p2([ox - 7, oy])}Q${p2([ox, oy - 22])} ${p2([ox + 7, oy])}`;
+  const tA = pkt(m, u + 0.12, v, z0 + 4), tB = pkt(m, u + 0.26, v, z0 + 24);
+  return zylinder(wx, wy, 0.12, z0, zk, ZINK, true) +
+    pfad(henkel, 'fill="none" stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"') +
+    pfad(henkel, `fill="none" stroke="${ZINK.links}" stroke-width="1.1" stroke-linecap="round"`) +
+    linie(tA, tB, 'stroke="#6b4a3a" stroke-width="3.2" stroke-linecap="round"') +
+    linie(tA, tB, `stroke="${ZINK.links}" stroke-width="1.5" stroke-linecap="round"`) +
+    oval(tB[0], tB[1], 2.4, 1.5, `fill="${ZINK.rechts}" ${KON12}`);
+}
+
+// Kleine Holzkiste auf der Ablage: Latten als feine Linien auf Vorder- und Seitenflaeche
+function holzkiste(m, u0, u1, v0, v1, z0, z1) {
+  const zm = (z0 + z1) / 2;
+  return quader(m, u0, u1, v0, v1, z0, z1, HOLZ_KISTE) +
+    linie(pkt(m, u0 + 0.03, v1, zm), pkt(m, u1 - 0.03, v1, zm), MASER) +
+    linie(pkt(m, u1, v0 + 0.03, zm), pkt(m, u1, v1 - 0.03, zm), MASER);
+}
+
+// Zinkregal 1x1: drei gleichmaessige Ebenen (Oberflaechen 14, 43, 72)
+function metallregalTeile(gx, gy, drehung) {
+  return regalTeile({ gx, gy, drehung }, 1, [14, 43, 72], false);
+}
+
+// Hohes Metallregal 2x1: vier Ebenen (Oberflaechen 22, 60, 98, 136). Unten fest Giesskanne und Kiste, keine Plaetze
+function metallregalHochTeile(gx, gy, drehung) {
+  const m = { gx, gy, drehung };
+  const r = regalTeile(m, 2, [22, 60, 98, 136], true);
+  r.teile.push([0, giesskanne(m, 0.45, 0.5, 22) + holzkiste(m, 1.2, 1.7, 0.3, 0.7, 22, 40)]);
+  return r;
+}
+
 export const MOEBEL2 = {
   kraeuterbeet: {
     name: 'Kräuterbeet',
@@ -379,5 +485,27 @@ export const MOEBEL2 = {
     ],
     zeichne: (gx, gy, drehung = 0) => gesamtSvg(hochregalTeile(gx, gy, drehung)),
     schichten: (gx, gy, drehung = 0) => schichtenSvg(hochregalTeile(gx, gy, drehung)),
+  },
+  zinkregal: {
+    name: 'Zinkregal',
+    breite: 1,
+    tiefe: 1,
+    plaetze: [
+      { dx: 0.5, dy: 0.5, z: 14, hoehe: 27 }, { dx: 0.5, dy: 0.5, z: 43, hoehe: 27 }, { dx: 0.5, dy: 0.5, z: 72 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(metallregalTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(metallregalTeile(gx, gy, drehung)),
+  },
+  zinkregal_hoch: {
+    name: 'Hohes Zinkregal',
+    breite: 2,
+    tiefe: 1,
+    plaetze: [
+      { dx: 0.5, dy: 0.5, z: 60, hoehe: 36 }, { dx: 1.5, dy: 0.5, z: 60, hoehe: 36 },
+      { dx: 0.5, dy: 0.5, z: 98, hoehe: 36 }, { dx: 1.5, dy: 0.5, z: 98, hoehe: 36 },
+      { dx: 0.5, dy: 0.5, z: 136 }, { dx: 1.5, dy: 0.5, z: 136 },
+    ],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(metallregalHochTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(metallregalHochTeile(gx, gy, drehung)),
   },
 };

@@ -737,6 +737,338 @@ function skulptur() {
   return s;
 }
 
+// ---------- Meilenstein-Belohnungen (exklusiv, Tag 30 bis 365) ----------
+const TERRA = { dunkel: '#cdb692', hell: '#f7efe0' };
+const SPRENKEL = ['#d9a441', '#2f6f73', '#d9693b', '#9fb79a'];
+const WASSER_HELL = '#8fd9ef';
+const STEIN = { dunkel: '#c9c3b8', hell: '#f2efe9' };
+
+// Bunte Sprenkel auf der sichtbaren Vorderseite eines Koerpers; rFn liefert den Radius in der Hoehe z
+function sprenkel(seed, n, rFn, z0, z1) {
+  const rnd = zufall(seed);
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 4 + rnd() * Math.PI;
+    const z = z0 + rnd() * (z1 - z0);
+    const r = rFn(z);
+    s += kreis(...P(r * Math.cos(a), r * Math.sin(a), z), 0.4 + rnd() * 0.4,
+      `fill="${SPRENKEL[i % SPRENKEL.length]}" opacity="0.85"`);
+  }
+  return s;
+}
+
+// Wellenring auf der Wasserflaeche in der Hoehe z, waechst und verblasst (Beginn versetzt)
+function welle(z, begin) {
+  const [cx, cy] = P(0, 0, z);
+  return `<ellipse cx="${f(cx)}" cy="${f(cy)}" rx="2.5" ry="1.3" fill="none" stroke="#ffffff" stroke-width="0.6">` +
+    `<animate attributeName="rx" values="2.5;10" dur="3.6s" begin="${begin}s" repeatCount="indefinite"/>` +
+    `<animate attributeName="ry" values="1.3;5" dur="3.6s" begin="${begin}s" repeatCount="indefinite"/>` +
+    `<animate attributeName="opacity" values="0.9;0" dur="3.6s" begin="${begin}s" repeatCount="indefinite"/></ellipse>`;
+}
+
+// ---------- Goldene Giesskanne (30 Tage) ----------
+// Vektorhelfer fuer die Rohr- und Trichtergeometrie der Giesskanne
+const v3 = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; },
+};
+
+// Zwei Achsen quer zur Richtung d (waagerecht und senkrecht dazu)
+function rahmen(d) {
+  const uu = v3.norm(v3.cross(d, [0, 0, 1]));
+  return [uu, v3.cross(d, uu)];
+}
+
+// Kegelstumpf bzw. Rohr von P0 (Radius r0) nach P1 (Radius r1) aus Segmenten; Licht von links oben
+function rohrFlaechen(P0, r0, P1, r1, seg, dunkel, hell) {
+  const LICHT = v3.norm([-1, 1, 1.5]), BLICK = v3.norm([1, 1, 1]);
+  const d = v3.norm(v3.sub(P1, P0));
+  const [uu, vv] = rahmen(d);
+  const ring = (C, r, t) => v3.add(C, v3.add(v3.mul(uu, r * Math.cos(t)), v3.mul(vv, r * Math.sin(t))));
+  let s = '';
+  for (let i = 0; i < seg; i++) {
+    const ta = i / seg, tb = (i + 1) / seg;
+    const Ca = v3.add(P0, v3.mul(v3.sub(P1, P0), ta)), Cb = v3.add(P0, v3.mul(v3.sub(P1, P0), tb));
+    const ra = r0 + (r1 - r0) * ta, rb = r0 + (r1 - r0) * tb;
+    for (let j = 0; j < 16; j++) {
+      const t1 = (2 * Math.PI * j) / 16, t2 = (2 * Math.PI * (j + 1)) / 16, tm = (t1 + t2) / 2;
+      const n = v3.add(v3.mul(uu, Math.cos(tm)), v3.mul(vv, Math.sin(tm)));
+      if (v3.dot(n, BLICK) <= 0) continue;
+      const c = mischen(dunkel, hell, (v3.dot(n, LICHT) + 1) / 2);
+      s += pk([ring(Ca, ra, t1), ring(Ca, ra, t2), ring(Cb, rb, t2), ring(Cb, rb, t1)],
+        `fill="${c}" stroke="${c}" stroke-width="0.6" stroke-linejoin="round"`);
+    }
+  }
+  return s;
+}
+
+function giesskanne() {
+  const DUNKEL = '#b8871f', HELL = '#f7da7a', GRUND = '#e8b83a', MESS = '#c9a14a';
+  // Teak-Sockel
+  let s = kontakt(8) + mantel(0, 0, 7.4, 0, 7.4, 1.6, TEAK.rechts, TEAK.links) +
+    scheibe(0, 0, 7.4, 1.6, `fill="${TEAK.oben}" ${KB}`);
+  // Tuelle: schlankes, leicht verjuengtes Goldrohr, unten vorne am Koerper angesetzt
+  const ex = 0.8, ey = -0.6;
+  const A = [ex * 4.0, ey * 4.0, 2.4], B = [ex * 11.0, ey * 11.0, 11.2];
+  const d = v3.norm(v3.sub(B, A));
+  const F = v3.add(B, v3.mul(d, 1.8));   // Stirnflaeche des Trichters
+  s += rohrFlaechen(A, 1.0, B, 0.8, 6, DUNKEL, HELL);
+  // Trichter: kurzer Kegelstumpf, weitet sich nach vorn
+  s += rohrFlaechen(B, 0.8, F, 1.7, 3, DUNKEL, HELL);
+  // Geschlossener, hoher Koerper (Zylinder mit leicht gewoelbter Flanke)
+  const profil = [[1.6, 4.6], [4.0, 5.9], [8.0, 6.3], [11.0, 6.0], [12.6, 5.4]];
+  for (let i = 0; i < profil.length - 1; i++) {
+    s += mantel(0, 0, profil[i][1], profil[i][0], profil[i + 1][1], profil[i + 1][0], DUNKEL, HELL);
+  }
+  // Deckel mit kleiner ovaler Einfuellöffnung hinten
+  s += scheibe(0, 0, 5.4, 12.6, `fill="${GRUND}" ${KB}`);
+  const loch = [];
+  for (let k = 0; k < 20; k++) {
+    const th = (2 * Math.PI * k) / 20;
+    loch.push([-2.2 + 1.7 * Math.cos(th), -2.2 + 1.2 * Math.sin(th), 12.65]);
+  }
+  s += pk(loch, `fill="${DUNKEL}" stroke="#6b4a3a" stroke-width="0.8" stroke-linejoin="round"`);
+  // Glanzstreifen links oben am Koerper
+  const gl = (r, z) => [Math.cos((3 * Math.PI) / 4) * r * 0.92, Math.sin((3 * Math.PI) / 4) * r * 0.92, z];
+  s += zug3([gl(5.0, 4.0), gl(6.0, 7.0), gl(5.5, 10.0)], 'stroke="#fff8dc" stroke-width="1.1" stroke-linecap="round" opacity="0.9"');
+  // Buegel: grosser Bogen von der Vorderkante oben ueber den Deckel zur Rueckwand
+  const buegel = [];
+  for (let k = 0; k <= 24; k++) {
+    const t = k / 24;
+    // Bügel quer zur Tülle, vom Betrachter nach hinten (wirkt in der Ansicht wie ein senkrechter Griff)
+    const sv = 4.8 * (1 - 2 * t);
+    buegel.push([Math.SQRT1_2 * sv, Math.SQRT1_2 * sv, 12.4 + 6.4 * Math.sin(Math.PI * t)]);
+  }
+  s += zug3(buegel, 'stroke="#6b4a3a" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"') +
+    zug3(buegel, `stroke="${GRUND}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"`) +
+    zug3(buegel, `stroke="${HELL}" stroke-width="0.7" stroke-linecap="round" opacity="0.8"`);
+  // Brausekopf: Stirnflaeche des Trichters als Ellipse quer zur Spritzrichtung, Messing, dunkler Rand
+  const [uu, vv] = rahmen(d);
+  const aufKreis = (C, r, th) => v3.add(C, v3.add(v3.mul(uu, r * Math.cos(th)), v3.mul(vv, r * Math.sin(th))));
+  const rand = [];
+  for (let k = 0; k < 28; k++) rand.push(aufKreis(F, 1.7, (2 * Math.PI * k) / 28));
+  s += pk(rand, `fill="${MESS}" stroke="#6b4a3a" stroke-width="1.0" stroke-linejoin="round"`);
+  // Sechs Loecher im Kreis plus eines in der Mitte
+  const loecher = [[0, 0]];
+  for (let k = 0; k < 6; k++) {
+    loecher.push([Math.cos((2 * Math.PI * k) / 6) * 1.0, Math.sin((2 * Math.PI * k) / 6) * 1.0]);
+  }
+  for (const [x, y] of loecher) {
+    const p = v3.add(F, v3.add(v3.mul(uu, x), v3.mul(vv, y)));
+    s += kreis(...P(...p), 0.25, 'fill="#6b4a3a"');
+  }
+  return s;
+}
+
+// ---------- Terrazzo-Vogeltraenke (50 Tage) ----------
+function vogeltraenke() {
+  // Sockel und dicke Saeule aus Terrazzo, oben in den Schalenfuss uebergehend
+  let s = kontakt(9) + mantel(0, 0, 5.4, 0, 5.4, 1.2, TERRA.dunkel, TERRA.hell) +
+    scheibe(0, 0, 5.4, 1.2, `fill="${TERRA.hell}" ${KB}`);
+  const saeule = (z) => 2.5 - (0.3 * (z - 1.2)) / 8.6;
+  s += mantel(0, 0, saeule(1.2), 1.2, saeule(9.4), 9.4, TERRA.dunkel, TERRA.hell) +
+    sprenkel(41, 30, saeule, 1.6, 9.0);
+  // Schalenfuss: weicher Uebergang von der Saeule zur Schale
+  s += mantel(0, 0, 2.2, 9.4, 3.4, 10.0, TERRA.dunkel, TERRA.hell);
+  // Schale mit geschwungener Wand, Rand und Wasser
+  const wand = [[3.4, 10.0], [4.1, 10.4], [5.0, 11.2], [5.7, 12.4], [6.0, 13.4]];
+  for (let i = 0; i < wand.length - 1; i++) {
+    s += mantel(0, 0, wand[i][0], wand[i][1], wand[i + 1][0], wand[i + 1][1], TERRA.dunkel, TERRA.hell);
+  }
+  s += sprenkel(42, 34, (z) => 3.4 + ((z - 10.0) * 2.6) / 3.4, 10.3, 12.9) +
+    scheibe(0, 0, 6.0, 13.4, `fill="${TERRA.hell}" ${KON}`) +
+    scheibe(0, 0, 5.1, 13.45, `fill="${WASSER_HELL}"`);
+  // Glanz auf dem Wasser
+  const glanz = [];
+  for (let k = 0; k <= 10; k++) {
+    const a = 2.0 + (0.7 * k) / 10;
+    glanz.push([3.4 * Math.cos(a), 3.4 * Math.sin(a), 13.5]);
+  }
+  s += zug3(glanz, 'stroke="#ffffff" stroke-width="0.9" stroke-linecap="round" opacity="0.8"');
+  // Rotkehlchen am Rand, 30 Prozent kleiner, Blick nach rechts (Koordinaten relativ zum Fusspunkt)
+  const [bx, by] = P(5.5, -1.7, 13.4);
+  const vogel = zug([[-0.6, -0.6], [-0.9, 0.9]], 'stroke="#c9a14a" stroke-width="0.7" stroke-linecap="round"') +
+    zug([[0.6, -0.6], [0.7, 0.9]], 'stroke="#c9a14a" stroke-width="0.7" stroke-linecap="round"') +
+    poly([[-2.6, -3.2], [-5.4, -2.2], [-4.8, -0.9], [-2.0, -1.8]], `fill="#6e5238" ${KF}`) +
+    oval(0, -3.4, 3.2, 2.4, `fill="#8a6a4f" ${KF}`) +
+    oval(1.2, -2.6, 2.1, 1.9, `fill="#d9693b" ${KF}`) +
+    oval(-0.4, -3.6, 2.0, 1.1, `fill="#6e5238" ${KF}`) +
+    kreis(2.6, -6.2, 1.8, `fill="#8a6a4f" ${KF}`) +
+    kreis(3.0, -5.2, 1.0, `fill="#e8803e" ${KF}`) +
+    poly([[4.2, -6.4], [5.8, -5.9], [4.2, -5.5]], `fill="#c9a14a" ${KF}`) +
+    kreis(3.0, -6.6, 0.4, 'fill="#2b2b2b"');
+  s += oval(bx + 0.4, by + 0.3, 2.1, 0.6, SCHATTEN) +
+    `<g transform="translate(${f(bx)},${f(by)}) scale(0.7)">${vogel}</g>`;
+  return s;
+}
+
+// ---------- Messing-Sonnenuhr (100 Tage) ----------
+function sonnenuhr() {
+  let s = kontakt(8) + mantel(0, 0, 6.2, 0, 6.2, 1.8, STEIN.dunkel, STEIN.hell) +
+    scheibe(0, 0, 6.2, 1.8, `fill="${STEIN.hell}" ${KB}`);
+  // Steinsaeule, nach oben leicht schmaler, mit feinen Adern
+  s += mantel(0, 0, 4.2, 1.8, 3.6, 12.6, STEIN.dunkel, STEIN.hell);
+  for (const a0 of [0.4, 1.9]) {
+    const ader = [];
+    for (let k = 0; k <= 12; k++) {
+      const z = 2.6 + k * 0.8;
+      const r = 4.2 - (0.6 * (z - 1.8)) / 10.8;
+      const a = a0 + 0.15 * Math.sin(k * 0.9);
+      ader.push([r * Math.cos(a), r * Math.sin(a), z]);
+    }
+    s += zug3(ader, 'stroke="#9d9990" stroke-width="0.5" stroke-linecap="round" opacity="0.7"');
+  }
+  // Kapitell und Messingscheibe
+  s += mantel(0, 0, 4.7, 12.6, 4.7, 13.4, STEIN.dunkel, STEIN.hell) +
+    scheibe(0, 0, 4.7, 13.4, `fill="${STEIN.hell}" ${KB}`) +
+    mantel(0, 0, 6.6, 13.4, 6.6, 14.0, MESSING.rechts, MESSING.links) +
+    scheibe(0, 0, 6.6, 14.0, `fill="${MESSING.oben}" ${KON}`);
+  // Stundenmarken: Doppelstriche bei XII, III, VI, IX (roemisch angedeutet), sonst einfache Striche
+  for (let k = 0; k < 12; k++) {
+    const th = (2 * Math.PI * k) / 12;
+    const ri = k % 3 === 0 ? 4.5 : 5.3, ro = 5.9;
+    const tx = -Math.sin(th), ty = Math.cos(th);
+    const offs = k % 3 === 0 ? [-0.25, 0.25] : [0];
+    for (const o of offs) {
+      s += zug3([[ri * Math.cos(th) + o * tx, ri * Math.sin(th) + o * ty, 14.02],
+        [ro * Math.cos(th) + o * tx, ro * Math.sin(th) + o * ty, 14.02]],
+        'stroke="#6b4a3a" stroke-width="0.7" stroke-linecap="round"');
+    }
+  }
+  const ring = [];
+  for (let k = 0; k <= 32; k++) {
+    const th = (2 * Math.PI * k) / 32;
+    ring.push([3.4 * Math.cos(th), 3.4 * Math.sin(th), 14.02]);
+  }
+  s += zug3(ring, 'stroke="#9c7a33" stroke-width="0.5" stroke-linecap="round" opacity="0.7"');
+  // Gnomon: flaches dreieckiges Messingblech. Grundlinie auf der Scheibe nach hinten (Richtung (-1,-1)),
+  // Senkrechte hinten, Hypotenuse steigt von vorne nach hinten oben an. Dicke quer dazu.
+  // Grundlinie quer zur Blickrichtung (in der Ansicht nach links), sonst sieht man das Blech nur als Strich
+  const bk = [-Math.SQRT1_2, Math.SQRT1_2], qd = [-Math.SQRT1_2, -Math.SQRT1_2], dk = 0.35;
+  const gp = (sv, dz, t) => [bk[0] * sv + qd[0] * t, bk[1] * sv + qd[1] * t, 14.0 + dz];
+  // Schattenkeil auf der Scheibe, faellt nach rechts unten
+  const s0 = gp(0, 0, 0), s3 = gp(3.6, 0, 0);
+  s += pk([gp(0, 0, dk), gp(3.6, 0, dk), [s3[0] + 4.0, s3[1] + 0.2, 14.0], [s0[0] + 3.0, s0[1] + 0.2, 14.0]],
+    'fill="#6b4a3a" opacity="0.3"');
+  // Hypotenuse (Lichtseite) und Senkrechte hinten (Schattenseite)
+  s += pk([gp(0, 0, dk), gp(0, 0, -dk), gp(3.6, 4.6, -dk), gp(3.6, 4.6, dk)], `fill="${MESSING.oben}" ${KF}`) +
+    pk([gp(3.6, 0, dk), gp(3.6, 0, -dk), gp(3.6, 4.6, -dk), gp(3.6, 4.6, dk)], `fill="${MESSING.rechts}" ${KF}`) +
+    // Vordere Dreiecksflaeche des Blechs (zum Betrachter), mit Glanz entlang der Hypotenuse
+    pk([gp(0, 0, -dk), gp(3.6, 0, -dk), gp(3.6, 4.6, -dk)], `fill="${MESSING.links}" ${KB}`) +
+    zug3([gp(0.7, 0.35, -dk), gp(3.2, 3.6, -dk)], 'stroke="#fff8dc" stroke-width="0.6" stroke-linecap="round" opacity="0.9"');
+  return s;
+}
+
+// ---------- Keramik-Pfau (200 Tage) ----------
+function keramikpfau() {
+  const PF = '#2f6f73', PFH = '#5fb0b4', PFD = '#1f4f52', SENF_H = '#d9a441';
+  // Glasierter Sockel; alles Weitere sitzt auf seiner Oberkante (y -1.8)
+  let s = kontakt(7) + mantel(0, 0, 5.6, 0, 5.6, 1.8, PFD, PFH) +
+    scheibe(0, 0, 5.6, 1.8, `fill="#4a8f93" ${KB}`);
+  // Aufgefaechertes Rad hinter dem Koerper, mit Augenflecken an den Federspitzen
+  const F = [-2.6, -7.5];
+  const FED = [PF, '#4a8f93', PFD];
+  let federn = '', augen = '';
+  for (let i = 0; i < 9; i++) {
+    const phi = ((-75 + (150 * i) / 8) * Math.PI) / 180;
+    const L = 12.5 - (1.2 * Math.abs(i - 4)) / 4;
+    const dx = Math.sin(phi), dy = -Math.cos(phi);
+    const cx = F[0] + (L / 2) * dx, cy = F[1] + (L / 2) * dy;
+    const deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    federn += oval(cx, cy, L / 2, 2.5, `fill="${FED[i % 3]}" transform="rotate(${f(deg)} ${f(cx)} ${f(cy)})" ${KF}`);
+    const ax = F[0] + 0.74 * L * dx, ay = F[1] + 0.74 * L * dy;
+    augen += kreis(ax, ay, 1.9, `fill="${SENF_H}" ${KF}`) +
+      kreis(ax, ay, 1.1, `fill="${PF}"`) +
+      kreis(ax, ay, 0.4, 'fill="#f7ecd9"');
+  }
+  const fac = `<g><animateTransform attributeName="transform" type="rotate" values="-2 ${f(F[0])} ${f(F[1])};2 ${f(F[0])} ${f(F[1])};-2 ${f(F[0])} ${f(F[1])}" dur="6s" repeatCount="indefinite"/>${federn}${augen}</g>`;
+  // Koerper mit Glasur-Glanz und Fluegel-Andeutung
+  const koerper = [[-5.4, -1.0], [-6.2, -4.6], [-4.2, -8.2], [-0.2, -9.2], [3.6, -7.6], [5.6, -4.2], [5.2, -1.2], [2.0, 0.2], [-2.6, 0.0]];
+  const hals = kurve([[3.6, -7.4], [5.2, -11.0], [5.6, -13.8], [7.0, -16.0]]);
+  const koerperTeil = pfad(glattZu(koerper), `fill="${PF}" ${KON}`) +
+    pfad(glattZu([[1.4, -1.2], [4.6, -3.0], [5.0, -1.4], [2.4, -0.4]]), `fill="${PFD}" opacity="0.6"`) +
+    pfad(glattZu([[-3.8, -4.6], [-0.8, -6.0], [1.8, -4.4], [-0.6, -2.6]]), `fill="${PFD}" opacity="0.5" ${KF}`) +
+    oval(-2.4, -6.4, 2.2, 1.2, `fill="${PFH}" opacity="0.9"`) +
+    oval(-2.8, -7.4, 1.0, 0.5, 'fill="#ffffff" opacity="0.55"');
+  const halsTeil = pfad(hals, 'fill="none" stroke="#6b4a3a" stroke-width="4.4" stroke-linecap="round"') +
+    pfad(hals, `fill="none" stroke="${PF}" stroke-width="3.2" stroke-linecap="round"`) +
+    pfad(hals, `fill="none" stroke="${PFH}" stroke-width="0.9" stroke-linecap="round" opacity="0.8" transform="translate(-0.9,0)"`);
+  // Kopf mit Haube aus drei Federn, Schnabel und Auge
+  const kopfTeil = oval(7.4, -16.6, 2.2, 2.0, `fill="${PF}" ${KB}`) +
+    zug([[6.6, -18.4], [5.6, -21.0]], `stroke="${PF}" stroke-width="1" stroke-linecap="round"`) +
+    zug([[7.4, -18.6], [7.4, -21.4]], `stroke="${PF}" stroke-width="1" stroke-linecap="round"`) +
+    zug([[8.2, -18.4], [9.2, -20.8]], `stroke="${PF}" stroke-width="1" stroke-linecap="round"`) +
+    kreis(5.6, -21.2, 0.7, `fill="${SENF_H}" ${KF}`) +
+    kreis(7.4, -21.6, 0.7, `fill="${SENF_H}" ${KF}`) +
+    kreis(9.2, -21.0, 0.7, `fill="${SENF_H}" ${KF}`) +
+    poly([[9.2, -16.8], [11.6, -16.0], [9.2, -15.4]], `fill="${SENF_H}" ${KF}`) +
+    kreis(8.3, -17.0, 0.5, 'fill="#2b2b2b"') +
+    kreis(8.2, -17.2, 0.18, 'fill="#ffffff"');
+  s += `<g transform="translate(0,-1.8)">${fac}${koerperTeil}${halsTeil}${kopfTeil}</g>`;
+  return s;
+}
+
+// ---------- Jubilaeums-Brunnen (365 Tage) ----------
+function jubilaeumsbrunnen() {
+  const SR = 2.6;
+  // Untere Schale aus Terrazzo mit Wasser und Wellen
+  let s = kontakt(12) +
+    mantel(0, 0, 10.6, 0, 10.6, 2.6, TERRA.dunkel, TERRA.hell) +
+    sprenkel(51, 36, () => 10.6, 0.4, 2.2) +
+    scheibe(0, 0, 10.6, 2.6, `fill="${TERRA.hell}" ${KON}`) +
+    scheibe(0, 0, 9.5, 2.62, `fill="${WASSER_HELL}"`) +
+    welle(2.62, 0) + welle(2.62, 1.8);
+  // Saeule zwischen den Schalen, mit Messingringen unten und unter der oberen Schale
+  s += mantel(0, 0, SR + 0.3, 2.62, SR + 0.3, 3.3, MESSING.rechts, MESSING.oben) +
+    mantel(0, 0, SR, 3.3, SR, 14.0, TERRA.dunkel, TERRA.hell) +
+    sprenkel(52, 40, () => SR, 3.6, 13.8) +
+    mantel(0, 0, SR + 0.2, 14.0, SR + 0.2, 14.4, MESSING.rechts, MESSING.oben);
+  // Obere Schale: etwa 55 Prozent der unteren, hoeher, mit Fuss
+  s += mantel(0, 0, SR + 0.2, 14.4, 3.6, 14.7, TERRA.dunkel, TERRA.hell);
+  const schale = [[3.6, 14.7], [4.6, 15.0], [5.5, 15.4], [5.8, 15.8]];
+  for (let i = 0; i < schale.length - 1; i++) {
+    s += mantel(0, 0, schale[i][0], schale[i][1], schale[i + 1][0], schale[i + 1][1], TERRA.dunkel, TERRA.hell);
+  }
+  s += sprenkel(53, 30, (z) => 4.6 + (z - 15.0) * 2.25, 15.1, 15.5) +
+    scheibe(0, 0, 5.8, 15.8, `fill="${TERRA.hell}" ${KON}`) +
+    scheibe(0, 0, 4.9, 15.85, `fill="${WASSER_HELL}"`) +
+    welle(15.85, 0.6) + welle(15.85, 2.4);
+  // Messingstab mit Kugel, traegt die Fontaene
+  s += mantel(0, 0, 0.8, 15.85, 0.7, 17.6, MESSING.rechts, MESSING.oben) +
+    kreis(...P(0, 0, 17.9), 0.8, `fill="${MESSING.oben}" ${KF}`);
+  // Wasserstrahl: vier Baegen vom Kopf in die obere Schale
+  for (const th of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
+    const bogen = [];
+    for (let k = 0; k <= 6; k++) {
+      const t = k / 6;
+      bogen.push([2.6 * t * Math.cos(th), 2.6 * t * Math.sin(th), 18.0 - 2.1 * t * t]);
+    }
+    s += zug3(bogen, 'stroke="#5fc8dc" stroke-width="1" stroke-linecap="round" opacity="0.9"') +
+      zug3(bogen, 'stroke="#ffffff" stroke-width="0.4" stroke-linecap="round" opacity="0.9"');
+  }
+  // Wasserfall von der oberen in die untere Schale: unterlegte Bahn mit animierten Tropfen
+  for (const th of [-0.55, 2.12]) {
+    const x = 5.2 * Math.cos(th), y = 5.2 * Math.sin(th);
+    const [a1, b1] = P(x, y, 15.6), [a2, b2] = P(x, y, 2.8);
+    s += `<path d="M${f(a1)},${f(b1)}L${f(a2)},${f(b2)}" fill="none" stroke="#5fc8dc" stroke-width="2.2" stroke-linecap="round" opacity="0.6"/>` +
+      `<path d="M${f(a1)},${f(b1)}L${f(a2)},${f(b2)}" fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-dasharray="1.2 1.6" opacity="0.9">` +
+      `<animate attributeName="stroke-dashoffset" values="0;-5.6" dur="1.4s" repeatCount="indefinite"/></path>`;
+  }
+  // Messing-Plakette mit „365“ vorne auf der Saeule, gross und lesbar
+  const a = Math.PI / 4, rp = SR + 0.12;
+  const pt = (th, z) => [rp * Math.cos(th), rp * Math.sin(th), z];
+  s += pk([pt(a - 0.75, 7.0), pt(a + 0.75, 7.0), pt(a + 0.75, 10.6), pt(a - 0.75, 10.6)],
+    `fill="${MESSING.rechts}" stroke="#6b4a3a" stroke-width="0.8" stroke-linejoin="round"`) +
+    pk([pt(a - 0.62, 7.2), pt(a + 0.62, 7.2), pt(a + 0.62, 10.4), pt(a - 0.62, 10.4)], `fill="${MESSING.oben}" ${KF}`);
+  const [tx, ty] = P(SR * Math.cos(a), SR * Math.sin(a), 8.8);
+  s += `<text x="${f(tx)}" y="${f(ty + 0.7)}" text-anchor="middle" font-family="Georgia, serif" font-size="1.9" font-weight="bold" fill="#6b4a3a">365</text>`;
+  return s;
+}
+
 // ---------- Export ----------
 export const DEKO2 = {
   katzenkorb: { name: 'Katzenkorb', zeichne: () => katzenkorb() },
@@ -750,4 +1082,9 @@ export const DEKO2 = {
   aquarium: { name: 'Aquarium', zeichne: () => aquarium() },
   teewagen: { name: 'Teewagen', zeichne: () => teewagen() },
   skulptur: { name: 'Messing-Skulptur', zeichne: () => skulptur() },
+  goldene_giesskanne: { name: 'Goldene Gießkanne', zeichne: () => giesskanne() },
+  vogeltraenke: { name: 'Terrazzo-Vogeltränke', zeichne: () => vogeltraenke() },
+  sonnenuhr: { name: 'Messing-Sonnenuhr', zeichne: () => sonnenuhr() },
+  keramikpfau: { name: 'Keramik-Pfau', zeichne: () => keramikpfau() },
+  jubilaeumsbrunnen: { name: 'Jubiläums-Brunnen', zeichne: () => jubilaeumsbrunnen() },
 };
