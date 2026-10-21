@@ -1058,14 +1058,11 @@ function jubilaeumsbrunnen() {
       `<path d="M${f(a1)},${f(b1)}L${f(a2)},${f(b2)}" fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-dasharray="1.2 1.6" opacity="0.9">` +
       `<animate attributeName="stroke-dashoffset" values="0;-5.6" dur="1.4s" repeatCount="indefinite"/></path>`;
   }
-  // Messing-Plakette mit „365“ vorne auf der Saeule, gross und lesbar
-  const a = Math.PI / 4, rp = SR + 0.12;
-  const pt = (th, z) => [rp * Math.cos(th), rp * Math.sin(th), z];
-  s += pk([pt(a - 0.75, 7.0), pt(a + 0.75, 7.0), pt(a + 0.75, 10.6), pt(a - 0.75, 10.6)],
-    `fill="${MESSING.rechts}" stroke="#6b4a3a" stroke-width="0.8" stroke-linejoin="round"`) +
-    pk([pt(a - 0.62, 7.2), pt(a + 0.62, 7.2), pt(a + 0.62, 10.4), pt(a - 0.62, 10.4)], `fill="${MESSING.oben}" ${KF}`);
-  const [tx, ty] = P(SR * Math.cos(a), SR * Math.sin(a), 8.8);
-  s += `<text x="${f(tx)}" y="${f(ty + 0.7)}" text-anchor="middle" font-family="Georgia, serif" font-size="1.9" font-weight="bold" fill="#6b4a3a">365</text>`;
+  // Messing-Plakette mit „365“ vorne auf der Säule: zur Ansicht gedrehtes Schild, breit genug für die Zahl
+  const [px, py] = P(SR * Math.cos(Math.PI / 4), SR * Math.sin(Math.PI / 4), 8.8);
+  s += `<rect x="${f(px - 3.6)}" y="${f(py - 1.9)}" width="7.2" height="3.8" rx="0.8" fill="${MESSING.rechts}" stroke="#6b4a3a" stroke-width="0.7"/>` +
+    `<rect x="${f(px - 3.1)}" y="${f(py - 1.45)}" width="6.2" height="2.9" rx="0.5" fill="${MESSING.oben}"/>` +
+    `<text x="${f(px)}" y="${f(py + 0.95)}" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="2.7" font-weight="bold" fill="#6b4a3a" textLength="5" lengthAdjust="spacingAndGlyphs">365</text>`;
   return s;
 }
 
