@@ -31,29 +31,29 @@ const hat = (objekt, schluessel) => Object.prototype.hasOwnProperty.call(objekt,
 export const PREISE_PFLANZEN = {
   efeutute: { name: 'Efeutute', preis: 50, level: 1 },
   kaktus: { name: 'Goldkugelkaktus', preis: 40, level: 1 },
-  monstera: { name: 'Monstera deliciosa', preis: 200, level: 1 },
-  sonnenblume: { name: 'Sonnenblume', preis: 160, level: 1 },
+  monstera: { name: 'Monstera deliciosa', preis: 200, level: 7 },
+  sonnenblume: { name: 'Sonnenblume', preis: 160, level: 8 },
   bogenhanf: { name: 'Bogenhanf', preis: 50, level: 2 },
-  gruenlilie: { name: 'Grünlilie', preis: 50, level: 2 },
-  aloe: { name: 'Aloe vera', preis: 45, level: 3 },
-  gluecksfeder: { name: 'Glücksfeder', preis: 55, level: 3 },
-  lavendel: { name: 'Lavendel', preis: 50, level: 4 },
-  echeverie: { name: 'Echeverie', preis: 45, level: 4 },
-  geigenfeige: { name: 'Geigenfeige', preis: 220, level: 5 },
-  zitrone: { name: 'Zitronenbäumchen', preis: 230, level: 5 },
-  bonsai: { name: 'Ficus-Bonsai', preis: 60, level: 6 },
-  kletterrose: { name: 'Kletterrose', preis: 190, level: 6 },
-  orchidee: { name: 'Phalaenopsis-Orchidee', preis: 60, level: 7 },
-  calathea: { name: 'Calathea', preis: 55, level: 7 },
-  bostonfarn: { name: 'Bostonfarn', preis: 50, level: 8 },
-  strelitzie: { name: 'Strelitzie', preis: 300, level: 6 },
-  alocasia: { name: 'Alocasia', preis: 320, level: 7 },
-  olivenbaum: { name: 'Olivenbaum', preis: 400, level: 9 },
-  kentia: { name: 'Kentia-Palme', preis: 450, level: 11 },
-  feigenbaum: { name: 'Feigenbaum', preis: 480, level: 12 },
-  kannenpflanze: { name: 'Kannenpflanze', preis: 260, level: 13 },
-  bananenstaude: { name: 'Bananenstaude', preis: 600, level: 14 },
-  hoya: { name: 'Wachsblume (Hoya)', preis: 300, level: 16 }
+  gruenlilie: { name: 'Grünlilie', preis: 50, level: 3 },
+  aloe: { name: 'Aloe vera', preis: 45, level: 4 },
+  gluecksfeder: { name: 'Glücksfeder', preis: 55, level: 5 },
+  lavendel: { name: 'Lavendel', preis: 50, level: 7 },
+  echeverie: { name: 'Echeverie', preis: 45, level: 6 },
+  geigenfeige: { name: 'Geigenfeige', preis: 220, level: 11 },
+  zitrone: { name: 'Zitronenbäumchen', preis: 230, level: 12 },
+  bonsai: { name: 'Ficus-Bonsai', preis: 60, level: 9 },
+  kletterrose: { name: 'Kletterrose', preis: 190, level: 13 },
+  orchidee: { name: 'Phalaenopsis-Orchidee', preis: 60, level: 11 },
+  calathea: { name: 'Calathea', preis: 55, level: 10 },
+  bostonfarn: { name: 'Bostonfarn', preis: 50, level: 12 },
+  strelitzie: { name: 'Strelitzie', preis: 300, level: 15 },
+  alocasia: { name: 'Alocasia', preis: 320, level: 16 },
+  olivenbaum: { name: 'Olivenbaum', preis: 400, level: 18 },
+  kentia: { name: 'Kentia-Palme', preis: 450, level: 19 },
+  feigenbaum: { name: 'Feigenbaum', preis: 480, level: 20 },
+  kannenpflanze: { name: 'Kannenpflanze', preis: 260, level: 14 },
+  bananenstaude: { name: 'Bananenstaude', preis: 600, level: 22 },
+  hoya: { name: 'Wachsblume (Hoya)', preis: 300, level: 17 }
 };
 
 // Nicht mehr im Shop (SPEC-2). Vorhandene Pflanzen im Garten lassen sich verkaufen und leveln.
@@ -66,51 +66,51 @@ const PREISE_AUSLAUF = {
 export const PREISE_MOEBEL = {
   ziegelbrett: { name: 'Brett auf Betonsteinen', preis: 60, level: 1 },
   tisch_natur: { name: 'Pflanzentisch Teak', preis: 150, level: 1 },
-  regal_holz: { name: 'Teakregal', preis: 150, level: 1 },
-  holzkiste: { name: 'Teakkiste', preis: 150, level: 1 },
-  tisch_weiss: { name: 'Pflanzentisch Creme', preis: 180, level: 2 },
-  gaertnertisch_guss: { name: 'Gärtnertisch Haarnadel', preis: 250, level: 2 },
-  leiterregal: { name: 'Leiterregal', preis: 220, level: 3 },
-  wandregal: { name: 'Wandboard', preis: 170, level: 3 },
-  metallregal: { name: 'Haarnadel-Regal', preis: 260, level: 4 },
+  regal_holz: { name: 'Teakregal', preis: 150, level: 3 },
+  holzkiste: { name: 'Teakkiste', preis: 150, level: 4 },
+  tisch_weiss: { name: 'Pflanzentisch Creme', preis: 180, level: 6 },
+  gaertnertisch_guss: { name: 'Gärtnertisch Haarnadel', preis: 250, level: 9 },
+  leiterregal: { name: 'Leiterregal', preis: 220, level: 7 },
+  wandregal: { name: 'Wandboard', preis: 170, level: 5 },
+  metallregal: { name: 'Haarnadel-Regal', preis: 260, level: 13 },
   zinkregal: { name: 'Zinkregal', preis: 120, level: 2 },
-  zinkregal_hoch: { name: 'Hohes Zinkregal', preis: 340, level: 6 },
-  rattan_etagere: { name: 'Rattan-Etagere', preis: 240, level: 4 },
-  blumenhocker: { name: 'Blumenhocker', preis: 200, level: 5 },
-  steinsockel: { name: 'Terrazzo-Sockel', preis: 300, level: 5 },
+  zinkregal_hoch: { name: 'Hohes Zinkregal', preis: 340, level: 14 },
+  rattan_etagere: { name: 'Rattan-Etagere', preis: 240, level: 11 },
+  blumenhocker: { name: 'Blumenhocker', preis: 200, level: 12 },
+  steinsockel: { name: 'Terrazzo-Sockel', preis: 300, level: 16 },
   kraeuterbeet: { name: 'Kräuterbeet', preis: 500, level: 8 },
-  sideboard: { name: 'Sideboard', preis: 380, level: 6 },
-  pflanzentreppe: { name: 'Pflanzentreppe', preis: 300, level: 7 },
-  vitrine: { name: 'Glasvitrine mit Terrarium', preis: 550, level: 9 },
+  sideboard: { name: 'Sideboard', preis: 380, level: 17 },
+  pflanzentreppe: { name: 'Pflanzentreppe', preis: 300, level: 15 },
+  vitrine: { name: 'Glasvitrine mit Terrarium', preis: 550, level: 19 },
   hochbeet: { name: 'Hochbeet', preis: 900, level: 10 },
-  sputnik: { name: 'Sputnik-Pflanzenständer', preis: 650, level: 12 },
-  hochregal: { name: 'Raumteiler-Regal', preis: 900, level: 15 }
+  sputnik: { name: 'Sputnik-Pflanzenständer', preis: 650, level: 21 },
+  hochregal: { name: 'Raumteiler-Regal', preis: 900, level: 24 }
 };
 
 // Deko: die elf Namen aus SPEC.md. Lichterkette und Haengeampel stehen in SPEC, aber nicht in der Auftragsliste.
 export const PREISE_DEKO = {
   laterne: { name: 'Laterne', preis: 60, level: 1 },
-  bank: { name: 'Bank', preis: 80, level: 1 },
+  bank: { name: 'Bank', preis: 80, level: 5 },
   giesskanne: { name: 'Gießkanne', preis: 40, level: 1 },
-  katze: { name: 'Katze', preis: 250, level: 3 },
-  teppich: { name: 'Teppich', preis: 60, level: 2 },
-  vogelhaus: { name: 'Vogelhaus', preis: 70, level: 2 },
-  gartenzwerg: { name: 'Gartenzwerg', preis: 40, level: 3 },
-  windspiel: { name: 'Windspiel', preis: 30, level: 3 },
-  lichterkette: { name: 'Lichterglas', preis: 50, level: 4 },
-  haengeampel: { name: 'Hängeampel', preis: 60, level: 4 },
-  springbrunnen: { name: 'Springbrunnen', preis: 500, level: 5 },
-  katzenkorb: { name: 'Katzenkorb', preis: 180, level: 5 },
-  leseecke: { name: 'Leseplatz', preis: 220, level: 6 },
-  loungesessel: { name: 'Lounge-Sessel', preis: 350, level: 7 },
-  haengesessel: { name: 'Rattan-Hängesessel', preis: 420, level: 8 },
-  bogenlampe: { name: 'Bogenlampe', preis: 300, level: 9 },
-  schaukelstuhl: { name: 'Schaukelstuhl', preis: 380, level: 10 },
+  katze: { name: 'Katze', preis: 250, level: 9 },
+  teppich: { name: 'Teppich', preis: 60, level: 3 },
+  vogelhaus: { name: 'Vogelhaus', preis: 70, level: 6 },
+  gartenzwerg: { name: 'Gartenzwerg', preis: 40, level: 4 },
+  windspiel: { name: 'Windspiel', preis: 30, level: 2 },
+  lichterkette: { name: 'Lichterglas', preis: 50, level: 7 },
+  haengeampel: { name: 'Hängeampel', preis: 60, level: 8 },
+  springbrunnen: { name: 'Springbrunnen', preis: 500, level: 15 },
+  katzenkorb: { name: 'Katzenkorb', preis: 180, level: 10 },
+  leseecke: { name: 'Leseplatz', preis: 220, level: 11 },
+  loungesessel: { name: 'Lounge-Sessel', preis: 350, level: 13 },
+  haengesessel: { name: 'Rattan-Hängesessel', preis: 420, level: 16 },
+  bogenlampe: { name: 'Bogenlampe', preis: 300, level: 12 },
+  schaukelstuhl: { name: 'Schaukelstuhl', preis: 380, level: 14 },
   plattenspieler: { name: 'Plattenspieler-Möbel', preis: 450, level: 25 },
-  lichterlaube: { name: 'Lichterbogen', preis: 500, level: 12 },
+  lichterlaube: { name: 'Lichterbogen', preis: 500, level: 18 },
   aquarium: { name: 'Aquarium', preis: 700, level: 23 },
   teewagen: { name: 'Teewagen', preis: 400, level: 17 },
-  skulptur: { name: 'Messing-Skulptur', preis: 800, level: 18 }
+  skulptur: { name: 'Messing-Skulptur', preis: 800, level: 20 }
 };
 
 export const ERWEITERUNGEN = [
@@ -1265,8 +1265,10 @@ export function kaufen(daten, kategorie, typ, ort, heute = heuteIso()) {
     return fehler('Unbekannte Kategorie.');
   }
   if (eintrag.gutschein) {
-    const i = (d.spiel.gutscheine || []).findIndex(g => g.kategorie === kategorie && g.typ === typ);
-    d.spiel.gutscheine.splice(i, 1);
+    // Passender Einzel-Gutschein zuerst, sonst der Gutschein nach Wahl
+    const g = gutscheinFuer(d, kategorie, typ);
+    const i = d.spiel.gutscheine.indexOf(g);
+    if (i >= 0) d.spiel.gutscheine.splice(i, 1);
   }
   if (kategorie === 'pflanze') entdecke(d, typ);
   d.spiel.samen -= preis;
@@ -1467,8 +1469,17 @@ function gutscheinAusDatum(liste, heute, salz) {
 }
 
 // Gutschein eines Artikels (kategorie + typ) oder null
+// Ein Gutschein mit typ '*' gilt für ein Teil nach Wahl dieser Kategorie bis Level bisLevel (Start-Gutschein).
 export function gutscheinFuer(daten, kategorie, typ) {
-  return (daten.spiel.gutscheine || []).find(g => g.kategorie === kategorie && g.typ === typ) || null;
+  const liste = daten.spiel.gutscheine || [];
+  return liste.find(g => g.kategorie === kategorie && g.typ === typ) ||
+    liste.find(g => g.kategorie === kategorie && g.typ === '*' && levelVonArtikel(kategorie, typ) <= (g.bisLevel || 1)) ||
+    null;
+}
+
+function levelVonArtikel(kategorie, typ) {
+  const tabelle = kategorie === 'pflanze' ? PREISE_PFLANZEN : kategorie === 'moebel' ? PREISE_MOEBEL : kategorie === 'deko' ? PREISE_DEKO : {};
+  return hat(tabelle, typ) ? tabelle[typ].level : Infinity;
 }
 
 // Tagesgeschenk für heute. verfuegbar: noch nicht abgeholt. tag: Nummer des Geschenks (zählt nie zurück).

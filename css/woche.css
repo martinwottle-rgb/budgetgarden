@@ -237,3 +237,8 @@
   .wk-fuellung { transition: none; }
   .wk-pfeil:active { transform: none; }
 }
+
+/* Hinweis im leeren Gewächshaus beim Start */
+.wk-start { display: grid; gap: 10px; }
+.wk-start-titel { font-weight: 700; font-size: 17px; }
+.wk-start p { margin: 0; }

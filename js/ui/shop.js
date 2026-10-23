@@ -80,7 +80,10 @@ function inhaltDesReiters(ctx, saison) {
   if (reiterWahl === 'tuete') return tuetenBereich(ctx);
   if (reiterWahl === 'saison') return saisonBereich(ctx, saison);
   if (reiterWahl === 'design') return designBereich(ctx);
+  // Reihenfolge: Gutscheine, dann kaufbar (freigeschaltet), dann gesperrt; jeweils nach Level und Preis
+  const rang = (a) => (a.gutschein ? 0 : a.freigeschaltet ? 1 : 2);
   const karten = katalog(ctx.daten).filter(a => a.kategorie === reiterWahl)
+    .sort((x, y) => rang(x) - rang(y) || x.level - y.level || x.preis - y.preis)
     .map(a => (a.kategorie === 'erweiterung' ? erweiterungKarte(ctx, a) : artikelKarte(ctx, a)));
   return el('div', { class: 'raster' }, karten);
 }
@@ -309,7 +312,7 @@ function kaufBlatt(ctx, a) {
           ctx.navigiere('garten', { platzieren: { kategorie: a.kategorie, typ: a.typ } });
         }
       }),
-      gratis ? el('p', { class: 'klein sh-grund', text: 'Dein Gutschein aus dem Tagesgeschenk' }) : null,
+      gratis ? el('p', { class: 'klein sh-grund', text: 'Dafür wird ein Gutschein eingelöst.' }) : null,
       grund ? el('p', { class: 'sh-grund', text: grund }) : null,
       el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Abbrechen', onclick: () => blatt.schliessen() })
     )

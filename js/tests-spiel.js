@@ -57,10 +57,17 @@ function wirft(fn) {
 
 const EUR = (x) => x * 100;
 
-// Startstand mit genug Samen, Level 1
+// Startstand mit genug Samen, Level 1. Für die Mechanik-Tests mit dem früheren Startgarten
+// (Teakregal, Pflanzentisch, eine Efeutute) und ohne Start-Gutscheine.
 function basis(samen = 500, xp = 0) {
   const d = P.standardDaten('2026-10-01');
   d.einstellungen.ersteinrichtungFertig = true;
+  d.spiel.gutscheine = [];
+  d.spiel.gewaechshaus.moebel = [
+    { id: 'm1', typ: 'regal_holz', gx: 0, gy: 1.6, drehung: 90 },
+    { id: 'm2', typ: 'tisch_natur', gx: 1.2, gy: 0, drehung: 0 }
+  ];
+  d.spiel.gewaechshaus.pflanzen = [{ id: 'p1', typ: 'efeutute', stufe: 1, ort: { moebel: 'm2', platz: 0 } }];
   d.spiel.samen = samen;
   d.spiel.xp = xp;
   return d;
@@ -95,10 +102,11 @@ test('levelAus', () => {
 
 test('Freischaltung Level 1 und Staffelung', () => {
   const k = S.katalog(P.standardDaten('2026-10-01'));
-  gleich(k.filter(x => x.kategorie === 'pflanze' && x.level === 1).length, 4, 'Level 1: 4 Pflanzen (Basilikum und Tomate nicht mehr im Shop)');
-  // Auftrag 1.1: Brett auf Ziegeln (Möbel) ist Level 1, Katze wird erst ab Level 3 freigeschaltet
-  gleich(k.filter(x => x.kategorie === 'moebel' && x.level === 1).length, 4, 'Level 1: 4 Möbel (mit Brett auf Ziegeln)');
-  gleich(k.filter(x => x.kategorie === 'deko' && x.level === 1).length, 3, 'Level 1: 3 Deko (Katze ab Level 3)');
+  gleich(k.filter(x => x.kategorie === 'pflanze' && x.level === 1).length, 2, 'Level 1: 2 Pflanzen');
+  // Neu verteilt (23.10.): Start mit je zwei Artikeln, danach meist je ein Artikel pro Kategorie und Level
+  gleich(k.filter(x => x.kategorie === 'moebel' && x.level === 1).length, 2, 'Level 1: 2 Möbel');
+  gleich(k.filter(x => x.kategorie === 'deko' && x.level === 1).length, 2, 'Level 1: 2 Deko');
+  gleich(k.filter(x => ['pflanze', 'moebel', 'deko'].includes(x.kategorie) && x.level <= 3).length, 12, 'bis Level 3 insgesamt 12 Artikel');
   gleich(['pflanze', 'moebel', 'deko'].every(kat => gestaffelt(kat, 3)), true, 'je Kategorie höchstens 3 Artikel je Stufe (Stufe 1 ausgenommen)');
 });
 
@@ -214,8 +222,8 @@ test('bewerte: Abschluss mit Überzug zahlt nichts aus', () => {
 
 test('kaufen: zu wenig Samen', () => {
   const d = basis(50);
-  const r = S.kaufen(d, 'pflanze', 'monstera', { moebel: 'm2', platz: 1 });
-  scheitert(r, 'Monstera mit 50 Samen');
+  const r = S.kaufen(d, 'moebel', 'tisch_natur', { gx: 3, gy: 3, drehung: 0 });
+  scheitert(r, 'Pflanzentisch (150) mit 50 Samen');
   gleich(String(r.fehler).includes('Samen'), true, 'Meldung nennt Samen');
 });
 
@@ -251,7 +259,7 @@ test('kaufen: Level-Sperre und noch nicht gezeichnet', () => {
 });
 
 test('kaufen: Möbel mit Position und Überschneidung', () => {
-  const d = basis(500);
+  const d = basis(500, 300);
   const r = S.kaufen(d, 'moebel', 'regal_holz', { gx: 3, gy: 3, drehung: 0 });
   klappt(r, 'Holzregal frei');
   gleich(r.daten.spiel.samen, 350, 'Samen abgezogen');
@@ -323,7 +331,7 @@ test('welk', () => {
 
 // Level 6 (Haengeampel und Metallregal ab Level 4), Samen reichen fuer alle Versuche
 function reich() {
-  return basis(2000, 1500);
+  return basis(2000, 7800); // Level 13: Hängeampel (8) und Haarnadel-Regal (13) freigeschaltet
 }
 
 test('Haengeampel: freie Haken im Standardgarten', () => {
@@ -676,9 +684,27 @@ function ausgabe(datum, betrag) {
   return { id: 'a' + datum, art: 'ausgabe', name: 'Einkauf', betrag, datum, kategorie: 'lebensmittel', notiz: '' };
 }
 
-test('Katze kostet 250 und ist ab Level 3', () => {
+
+test('Start: leeres Gewächshaus, 50 Samen, Möbel-Gutschein nach Wahl und Efeutute', () => {
+  const d = P.standardDaten('2026-10-01');
+  d.einstellungen.ersteinrichtungFertig = true;
+  gleich([d.spiel.samen, d.spiel.gewaechshaus.moebel.length, d.spiel.gewaechshaus.pflanzen.length], [50, 0, 0], '50 Samen, leer');
+  const k = S.katalog(d);
+  gleich(k.filter(x => x.kategorie === 'moebel' && x.gutschein).map(x => x.typ).sort(), ['tisch_natur', 'ziegelbrett'], 'Gutschein gilt für die Level-1-Möbel');
+  gleich(k.find(x => x.typ === 'regal_holz').gutschein, false, 'nicht für Level-3-Möbel');
+  const r = S.kaufen(d, 'moebel', 'tisch_natur', { gx: 2, gy: 2, drehung: 0 });
+  klappt(r, 'Tisch mit Gutschein');
+  gleich([r.daten.spiel.samen, r.daten.spiel.gutscheine.length], [50, 1], 'gratis, ein Gutschein übrig');
+  gleich(S.katalog(r.daten).some(x => x.kategorie === 'moebel' && x.gutschein), false, 'Möbel-Gutschein verbraucht');
+  const tisch = r.daten.spiel.gewaechshaus.moebel[0];
+  const r2 = S.kaufen(r.daten, 'pflanze', 'efeutute', { moebel: tisch.id, platz: 0 });
+  klappt(r2, 'Efeutute mit Gutschein auf den Tisch');
+  gleich([r2.daten.spiel.samen, r2.daten.spiel.gutscheine.length], [50, 0], 'gratis, keine Gutscheine mehr');
+});
+
+test('Katze kostet 250 und ist ab Level 9', () => {
   gleich(S.PREISE_DEKO.katze.preis, 250, 'Preis');
-  gleich(S.PREISE_DEKO.katze.level, 3, 'Level');
+  gleich(S.PREISE_DEKO.katze.level, 9, 'Level');
   gleich(S.katalog(basis()).find(k => k.typ === 'katze').freigeschaltet, false, 'auf Level 1 gesperrt');
 });
 
@@ -734,7 +760,7 @@ test('naechsterMeilenstein: Tag 18 nennt Tag 30 in 12 Tagen, nach Tag 365 keiner
 
 test('Zinkregal und Hohes Zinkregal: Preise und Level', () => {
   gleich([S.PREISE_MOEBEL.zinkregal.preis, S.PREISE_MOEBEL.zinkregal.level], [120, 2], 'Zinkregal 120, Level 2');
-  gleich([S.PREISE_MOEBEL.zinkregal_hoch.preis, S.PREISE_MOEBEL.zinkregal_hoch.level], [340, 6], 'Hohes Zinkregal 340, Level 6');
+  gleich([S.PREISE_MOEBEL.zinkregal_hoch.preis, S.PREISE_MOEBEL.zinkregal_hoch.level], [340, 14], 'Hohes Zinkregal 340, Level 14');
   gleich(S.PREISE_MOEBEL.metallregal.name, 'Haarnadel-Regal', 'Haarnadel-Regal unverändert');
 });
 
@@ -1139,12 +1165,12 @@ test('Basilikum: nicht mehr im Shop, vorhandenes bleibt', () => {
 test('SPEC-2-Tabellen: Pflanzen, Möbel, Deko mit Level und Preis', () => {
   const k = S.katalog(basis());
   const f = (kat, typ) => k.find(x => x.kategorie === kat && x.typ === typ);
-  gleich([f('pflanze', 'strelitzie').preis, f('pflanze', 'strelitzie').level], [300, 6], 'Strelitzie');
-  gleich([f('pflanze', 'hoya').preis, f('pflanze', 'hoya').level], [300, 16], 'Hoya');
+  gleich([f('pflanze', 'strelitzie').preis, f('pflanze', 'strelitzie').level], [300, 15], 'Strelitzie');
+  gleich([f('pflanze', 'hoya').preis, f('pflanze', 'hoya').level], [300, 17], 'Hoya');
   gleich([f('moebel', 'kraeuterbeet').preis, f('moebel', 'kraeuterbeet').level], [500, 8], 'Kräuterbeet');
   gleich([f('moebel', 'hochbeet').preis, f('moebel', 'hochbeet').level], [900, 10], 'Hochbeet');
-  gleich([f('moebel', 'hochregal').preis, f('moebel', 'hochregal').level], [900, 15], 'Hochregal');
-  gleich([f('deko', 'skulptur').preis, f('deko', 'skulptur').level], [800, 18], 'Skulptur');
+  gleich([f('moebel', 'hochregal').preis, f('moebel', 'hochregal').level], [900, 24], 'Hochregal');
+  gleich([f('deko', 'skulptur').preis, f('deko', 'skulptur').level], [800, 20], 'Skulptur');
   gleich([f('deko', 'teewagen').level, f('deko', 'aquarium').level, f('deko', 'plattenspieler').level], [17, 23, 25], 'verschobene Deko-Level');
   gleich(f('deko', 'katzenkorb').preis, 180, 'Katzenkorb');
   gleich(f('moebel', 'ziegelbrett').name, 'Brett auf Betonsteinen', 'Möbelname angeglichen');
@@ -1219,11 +1245,11 @@ test('Level 1 bis 25: Topfpflanzen für Sparziele, nur kaufbar und ohne Saatgut'
 
 test('Sparziel-Pflanzen: Level 1 und 3, sortiert, mit Hinweis auf höhere Level', () => {
   const l1 = S.sparzielPflanzen(basis());
-  gleich(l1.pflanzen.map(p => p.typ).sort(), ['efeutute', 'kaktus', 'monstera', 'sonnenblume'], 'Level 1: Auswahl');
+  gleich(l1.pflanzen.map(p => p.typ).sort(), ['efeutute', 'kaktus'], 'Level 1: Auswahl');
   gleich(l1.weitere, true, 'Hinweis: weitere ab höherem Level');
   const l3 = S.sparzielPflanzen(basis(0, 300));
   const typen = l3.pflanzen.map(p => p.typ);
-  gleich(typen.includes('aloe') && typen.includes('gluecksfeder'), true, 'Level 3: Level-3-Pflanzen dabei');
+  gleich(typen.includes('bogenhanf') && typen.includes('gruenlilie'), true, 'Level 3: Level-2- und Level-3-Pflanzen dabei');
   gleich(typen.includes('erdbeere'), false, 'Level 3: keine Erdbeere');
   gleich(l3.pflanzen.every(p => p.level <= 3), true, 'Level 3: nur freigeschaltete');
   const lvl = l3.pflanzen.map(p => p.level);

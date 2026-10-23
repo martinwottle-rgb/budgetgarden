@@ -163,6 +163,19 @@ export function zeige(container, ctx, param) {
   // Einrichten-Knopf über der Szene (nicht während einer Platzwahl oder im Bewegungsmodus)
   if (!aktion && !bewegen) container.append(einrichtenLeiste(ctx));
 
+  // Leeres Gewächshaus beim Start: erklären, wie es mit den Start-Gutscheinen losgeht
+  const ghStart = d.spiel.gewaechshaus;
+  if (!aktion && !ghStart.moebel.length && !ghStart.pflanzen.length) {
+    const hatGutschein = (d.spiel.gutscheine || []).length > 0;
+    container.append(el('section', { class: 'karte wk-start' },
+      el('div', { class: 'wk-start-titel', text: '🌱 Dein Gewächshaus ist noch leer' }),
+      el('p', { class: 'klein', text: hatGutschein
+        ? 'Zum Start hast du einen Gutschein für ein Möbel nach Wahl und eine Efeutute. Stell zuerst das Möbel auf, dann pflanzt du die Efeutute darauf. Samen verdienst du mit jedem Tag im Budget.'
+        : 'Im Shop findest du Möbel und Pflanzen. Samen verdienst du mit jedem Tag im Budget.' }),
+      el('button', { type: 'button', class: 'knopf knopf-primaer knopf-voll', text: 'Zum Shop', onclick: () => ctx.navigiere('shop') })
+    ));
+  }
+
   // Szene: mobile Ansicht mit ausschnitt, Größe aus dem Gewächshaus
   const gh = d.spiel.gewaechshaus;
   const platz = el('div', { class: 'szene-platz zi12-platz' });

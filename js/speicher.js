@@ -35,7 +35,11 @@ export function standardDaten(heute) {
       bewertet: { tage: [], wochen: [], zeitraeume: [] },
       offeneAbschluesse: [],
       besuch: { letzter: null, tag: 0 },
-      gutscheine: [],
+      // Start: leeres Gewächshaus, ein Möbel nach Wahl und eine Efeutute als Gutschein, dazu 50 Samen
+      gutscheine: [
+        { kategorie: 'moebel', typ: '*', bisLevel: 1 },
+        { kategorie: 'pflanze', typ: 'efeutute' }
+      ],
       saatgut: {},
       tuete: { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 },
       gratisTueten: 0,
@@ -44,11 +48,8 @@ export function standardDaten(heute) {
       entdeckt: [],
       gewaechshaus: {
         groesse: 6,
-        moebel: [
-          { id: 'm1', typ: 'regal_holz', gx: 0, gy: 1.6, drehung: 90 },
-          { id: 'm2', typ: 'tisch_natur', gx: 1.2, gy: 0, drehung: 0 }
-        ],
-        pflanzen: [{ id: 'p1', typ: 'efeutute', stufe: 1, ort: { moebel: 'm2', platz: 0 } }],
+        moebel: [],
+        pflanzen: [],
         deko: []
       }
     }

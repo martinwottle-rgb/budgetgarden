@@ -86,3 +86,10 @@ darunter die bestehende Wochengrafik. Monat = dieselbe Kartenform für den Zeitr
   (Zahlen mit `font-variant-numeric: tabular-nums`), große Titel 34 px fett, Tippflächen mindestens 44 px, Segment-Schalter (`.ios-segment`),
   Sheets mit Griff oben und 16 px Rundung, `-webkit-user-select: none; -webkit-touch-callout: none` auf allen Karten und Knöpfen (Eingabefelder ausgenommen),
   `-webkit-tap-highlight-color: transparent`, Bewegungen mit `prefers-reduced-motion` abschaltbar. Farben bleiben (Pastell, Mint).
+
+## Nachtrag (23.10.): Freischaltungen verteilt, neuer Start
+- Bis Level 3 nur noch 12 statt 29 Artikel. Level 1: Efeutute, Kaktus, Brett auf Betonsteinen, Pflanzentisch Teak, Gießkanne, Laterne.
+  Danach meist je eine Pflanze, ein Möbel und ein Deko-Teil pro Level bis 25 (Tabelle in js/spiel.js, PREISE_*).
+- Neuer Spielstand: leeres Gewächshaus, 50 Samen, Gutschein `{kategorie: 'moebel', typ: '*', bisLevel: 1}` (Möbel nach Wahl) und Gutschein Efeutute.
+  Bestehende Spielstände behalten alles.
+- Shop sortiert: Gutscheine, kaufbar, gesperrt; jeweils nach Level und Preis.
