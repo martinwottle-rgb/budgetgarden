@@ -5,7 +5,7 @@ Beträge in Cent, Datum als ISO-Text. Bestehende Schnittstellen nicht umbenennen
 
 ## 0. Bereits erledigt (js/logik.js, nicht ändern)
 - `verfuegbar(daten, zr, stichtag?)`: mit Stichtag zählen einmalige Einnahmen/Fixkosten-Buchungen erst ab ihrem Datum.
-- Tagesbudget gilt mit dem Stand des Tages; das Wochenbudget `W` wird am ersten Tag der Woche festgelegt.
+- Tagesbudget gilt mit dem Stand des Tages (neue Einnahmen ab ihrem Tag). Anzeige der Woche (`woche`, `wochenStand`): alle bekannten Einnahmen zählen sofort. Spiel (`wocheFuerSpiel`, `wocheErfuellt`, Challenges): Stand am ersten Wochentag.
   Eine spätere Einnahme ändert keine vergangenen Tage und keine laufende Woche mehr (behebt: Challenge durch Einnahme erfüllt).
 - Neu: `L.wochenStand(daten, heute)` liefert `{von, bis, tage, W, ausgegeben, rest, proTag, tempo, prognoseAusgaben, prognoseRest}`.
   `L.zeitraumStand(daten, heute)` liefert `{zr, V, ausgegeben, rest, proTag, tempo, prognoseAusgaben, prognoseRest}`.

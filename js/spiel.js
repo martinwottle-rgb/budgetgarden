@@ -338,6 +338,7 @@ function tageIn(f) {
 // Ausgegebene Summe und Wochenbudget (wie logik.js woche())
 function wochenWerte(daten, wochenbeginn, zr) {
   const tage = tageIn(fenster(wochenbeginn, zr));
+  // Stand am ersten Tag der Woche: spätere Einnahmen machen eine Challenge nicht nachträglich leichter
   const W = tage.length ? L.tagesbudget(daten, tage[0]) * tage.length : 0;
   const ausgegeben = tage.reduce((s, t) => s + L.ausgabenAm(daten, t), 0);
   return { W, ausgegeben };

@@ -370,8 +370,10 @@ test('Spaetere Einnahme aendert vergangene Tage und die laufende Woche nicht', (
   });
   gleich(L.tagErfuellt(d, '2026-10-12'), false, '12.10. bleibt ueber Budget');
   gleich(L.tagesbudget(d, '2026-10-12'), 15500, 'B(12.10.) ohne spaetere Einnahme');
-  const w = L.woche(d, '2026-10-16');
-  gleich(w.W, 108500, 'W am Montag festgelegt: 7 x 155 EUR');
+  // Anzeige: die Einnahme zaehlt sofort mit, (3100 + 310) / 20 Tage = 170,50 EUR pro Tag
+  gleich(L.woche(d, '2026-10-16').W, 119350, 'Anzeige: W mit neuer Einnahme 7 x 170,50 EUR');
+  // Spiel: Stand Montag, die Einnahme vom Donnerstag macht die Woche nicht leichter
+  gleich(L.wocheFuerSpiel(d, '2026-10-16').W, 108500, 'Spiel: W am Montag festgelegt, 7 x 155 EUR');
   // 15.10.: (3100 + 310 - 160) / 17 Resttage = 191,18 EUR
   gleich(L.tagesbudget(d, '2026-10-15'), 19118, 'Einnahme wirkt ab ihrem Tag');
 });

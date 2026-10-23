@@ -202,9 +202,11 @@ export function ausgabenZwischen(daten, von, bis) {
 
 // ---------- Tagesbudget, Heute, Woche ----------
 
-// Budget für Tag d: verfügbares Geld (Stand d) minus Ausgaben vor d, verteilt auf die restlichen Tage.
-function budgetAm(daten, zr, d) {
-  const v = verfuegbar(daten, zr, d).V;
+// Budget für Tag d: verfügbares Geld minus Ausgaben vor d, verteilt auf die restlichen Tage.
+// stichtag: Stand dieses Tages (Spiel, damit spätere Einnahmen nichts rückwirkend bestehen lassen);
+// ohne Stichtag zählen alle bekannten Einnahmen (Anzeige).
+function budgetAm(daten, zr, d, stichtag = d) {
+  const v = verfuegbar(daten, zr, stichtag || undefined).V;
   const vorher = ausgabenZwischen(daten, zr.start, datumPlusTage(d, -1));
   const tageRest = tageZwischen(d, zr.ende) + 1;
   return rundeCent((v - vorher) / tageRest);
@@ -229,9 +231,10 @@ export function heute(daten, d) {
   };
 }
 
-// Das Wochenbudget wird am ersten Tag der Woche festgelegt (Stand dieses Tages).
-// Einnahmen, die später in der Woche kommen, wirken ab der nächsten Woche.
-function wocheIm(daten, zr, wb) {
+// Wochenbudget. fuerSpiel: festgelegt mit dem Stand des ersten Wochentags, damit eine spätere Einnahme
+// keine Wochenwertung und keine Challenge rückwirkend bestehen lässt. Für die Anzeige (Standard) zählen
+// alle bekannten Einnahmen sofort mit.
+function wocheIm(daten, zr, wb, fuerSpiel = false) {
   const so = datumPlusTage(wb, 6);
   // Woche beginnt frühestens am Zeitraumstart und am Starttag der App.
   const st = (daten.einstellungen && daten.einstellungen.startDatum) || '';
@@ -239,9 +242,14 @@ function wocheIm(daten, zr, wb) {
   if (st > von && st <= datumPlusTage(wb, 6)) von = st;
   const bis = so < zr.ende ? so : zr.ende;
   const tage = Math.max(0, tageZwischen(von, bis) + 1);
-  const W = budgetAm(daten, zr, von) * tage;
+  const W = budgetAm(daten, zr, von, fuerSpiel ? von : null) * tage;
   const ausgegeben = ausgabenZwischen(daten, von, bis);
   return { von, bis, tage, W, ausgegeben, rest: W - ausgegeben };
+}
+
+// Wochenbudget, wie es das Spiel wertet (Stand Wochenbeginn)
+export function wocheFuerSpiel(daten, d) {
+  return wocheIm(daten, zeitraum(daten, d), wochenbeginn(d), true);
 }
 
 export function woche(daten, d) {
@@ -289,7 +297,7 @@ export function tagErfuellt(daten, d) {
 }
 
 export function wocheErfuellt(daten, wochenbeginnDatum, zr) {
-  const w = wocheIm(daten, zr, wochenbeginnDatum);
+  const w = wocheIm(daten, zr, wochenbeginnDatum, true);
   return w.ausgegeben <= w.W;
 }
 
