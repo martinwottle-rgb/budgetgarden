@@ -137,14 +137,28 @@ test('Pflicht 10: monatlich ab 31.08., Feb-Zeitraum', () => {
   gleich(L.faelligkeiten(v, zr.start, zr.ende), ['2027-02-28'], 'faellig am 28.02.2027');
 });
 
-test('Pflicht 11: Woche beginnt vor Zeitraum', () => {
+test('Pflicht 11 (neu 30.10.): Woche ueber den Monatswechsel bleibt eine volle Kalenderwoche', () => {
+  // Zeitraum beginnt Donnerstag, 1.10. Die Woche Mo 28.9. bis So 4.10. hat 7 Tage, nicht 4:
+  // Mo bis Mi zaehlen mit dem September-Budget (hier 0 EUR), Do bis So mit 100 EUR pro Tag.
   const d = basis(1, {
     buchungen: [{ id: 'e', art: 'einnahme', name: 'Zuschuss', betrag: EUR(3100), datum: '2026-10-01', kategorie: '', notiz: '' }]
   });
   const w = L.woche(d, '2026-10-02');
-  gleich(w.von, '2026-10-01', 'von = Zeitraumbeginn');
+  gleich(w.von, '2026-09-28', 'von = Montag');
   gleich(w.bis, '2026-10-04', 'bis = Sonntag');
-  gleich(w.W, EUR(100) * 4, 'W = 4 Tage x 100 EUR');
+  gleich(w.tage, 7, '7 Tage');
+  gleich(w.W, EUR(100) * 4, 'W = 3 x 0 EUR + 4 x 100 EUR');
+});
+
+test('Monatsbeginn am Mittwoch: Woche hat 7 Tage, beide Monatsteile mit eigenem Tagesbudget', () => {
+  // Gehalt 3000 EUR am 1.; Juni hat 30 Tage (100 EUR/Tag), Juli 31 Tage. 1.7.2026 ist ein Mittwoch.
+  const d = dreitausend({ einstellungen: { gehaltstag: 1, ersteinrichtungFertig: true, startDatum: '2026-06-01', push: { abonniert: false } } });
+  d.vertraege[0].ersteFaelligkeit = '2026-06-01';
+  const w = L.wocheFuerSpiel(d, '2026-07-02');
+  gleich([w.von, w.bis, w.tage], ['2026-06-29', '2026-07-05', 7], 'Mo 29.6. bis So 5.7.');
+  // Juni-Teil: ohne Ausgaben bleiben 3000 EUR fuer die letzten 2 Tage; Juli-Teil: 5 Tage x 3000/31 = 96,77 EUR
+  gleich(w.W, EUR(3000) + 9677 * 5, 'W aus beiden Monatsteilen');
+  gleich(L.wocheErfuellt(d, '2026-06-29'), true, 'ohne Ausgaben im Budget');
 });
 
 test('Pflicht 12: Abschluss mit R = -60 EUR', () => {
@@ -268,11 +282,11 @@ test('Zeitraumrest und Wochenziel', () => {
   const d = dreitausend({ buchungen: [{ id: 'a', art: 'ausgabe', name: 'Brot', betrag: EUR(40), datum: '2026-11-01', kategorie: '', notiz: '' }] });
   const zr = L.zeitraum(d, '2026-11-01');
   gleich(L.zeitraumRest(d, zr), EUR(2960), 'R = V - Ausgaben');
-  // Woche 26.10. bis 01.11. schneidet den Zeitraum auf 01.11.: W = 100 EUR, Ausgaben 40 EUR
-  gleich(L.wocheErfuellt(d, '2026-10-26', zr), true, 'Woche im Budget');
-  const teuer = dreitausend({ buchungen: [{ id: 'a', art: 'ausgabe', name: 'Einkauf', betrag: EUR(160), datum: '2026-11-01', kategorie: '', notiz: '' }] });
-  const zrTeuer = L.zeitraum(teuer, '2026-11-01');
-  gleich(L.wocheErfuellt(teuer, '2026-10-26', zrTeuer), false, 'Woche ueber Budget');
+  // Volle Woche 26.10. bis 01.11.: Oktober-Teil 6 Tage mit 3000 / 6 = 500 EUR, November-Teil 1 Tag mit 100 EUR
+  gleich(L.wocheFuerSpiel(d, '2026-10-26').W, EUR(3100), 'W = 6 x 500 + 100 EUR');
+  gleich(L.wocheErfuellt(d, '2026-10-26'), true, 'Woche im Budget');
+  const teuer = dreitausend({ buchungen: [{ id: 'a', art: 'ausgabe', name: 'Einkauf', betrag: EUR(3200), datum: '2026-11-01', kategorie: '', notiz: '' }] });
+  gleich(L.wocheErfuellt(teuer, '2026-10-26'), false, 'Woche ueber Budget');
 });
 
 test('Frueher Eingang, danach naechster Gehaltstag ohne neuen Eingang', () => {

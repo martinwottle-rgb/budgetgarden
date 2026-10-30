@@ -6,7 +6,7 @@
 import * as L from '../logik.js';
 import { zeichneSzene, vorschau, einpassen, feldAusPunkt, punktAusOrt, FELD_PX, erntereif, ERNTE_WARTE_TAGE } from '../szene.js';
 import { iso } from '../grafik/hilfen.js';
-import { welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
+import { dekoBreite, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { RARITAETEN } from '../grafik/raritaeten.js';
@@ -553,14 +553,17 @@ function vorbereiten(ctx, z) {
     z.ziel = { gx: dat.gx, gy: dat.gy };
     z.fehler = null;
   } else {
-    const a0 = punktAusOrt(dat.ort, gh);
+    // Breite Deko (Bank): Mittelpunkt über beide Felder, wie in der Szene
+    const breit = z.obj.art === 'deko' ? dekoBreite(dat.typ) : 1;
+    const eigenerOrt = breit > 1 && Array.isArray(dat.ort.feld) ? { ...dat.ort, breite: breit } : dat.ort;
+    const a0 = punktAusOrt(eigenerOrt, gh);
     if (!a0) return false;
     z.a0 = a0;
     z.teile.push(teil(z.obj.el, a0, true));
     // Kandidaten: freie Orte, der eigene Platz zählt als frei. Saatpflanzen nur Beetplätze, Topfpflanzen nie.
     const kat = z.obj.art === 'deko' ? 'deko' : dat.saat ? 'saat' : 'pflanze';
     const liste = freiePlaetze(ctx.daten, kat, dat.typ);
-    liste.push(dat.ort);
+    liste.push(eigenerOrt);
     const gesehen = new Set();
     z.kand = [];
     for (const o of liste) {
@@ -658,7 +661,8 @@ function zielBestimmen(ctx, z) {
     const o = bestKand.ort;
     if (Array.isArray(o.feld)) {
       const [gx, gy] = o.feld;
-      vorschauSetzen(z, [iso(gx, gy), iso(gx + 1, gy), iso(gx + 1, gy + 1), iso(gx, gy + 1)], null, true);
+      const w = o.breite > 1 ? o.breite : 1;
+      vorschauSetzen(z, [iso(gx, gy), iso(gx + w, gy), iso(gx + w, gy + 1), iso(gx, gy + 1)], null, true);
     } else {
       vorschauSetzen(z, null, bestKand.p, true);
     }

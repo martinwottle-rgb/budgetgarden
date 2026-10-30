@@ -231,29 +231,34 @@ export function heute(daten, d) {
   };
 }
 
-// Wochenbudget. fuerSpiel: festgelegt mit dem Stand des ersten Wochentags, damit eine spätere Einnahme
-// keine Wochenwertung und keine Challenge rückwirkend bestehen lässt. Für die Anzeige (Standard) zählen
-// alle bekannten Einnahmen sofort mit.
-function wocheIm(daten, zr, wb, fuerSpiel = false) {
+// Wochenbudget über die volle Kalenderwoche Montag bis Sonntag, auch über einen Monatswechsel hinweg
+// (vorher wurde die Woche am Zeitraum abgeschnitten: Monatsbeginn am Mittwoch ergab eine 2-Tage-Woche).
+// Jeder Teil der Woche zählt mit dem Tagesbudget seines eigenen Zeitraums. Die Woche beginnt frühestens am Starttag der App.
+// fuerSpiel: Budget mit dem Stand des ersten Tages jedes Teils, damit eine spätere Einnahme keine Wochenwertung und
+// keine Challenge rückwirkend bestehen lässt. Für die Anzeige (Standard) zählen alle bekannten Einnahmen sofort mit.
+function wocheIm(daten, wb, fuerSpiel = false) {
   const so = datumPlusTage(wb, 6);
-  // Woche beginnt frühestens am Zeitraumstart und am Starttag der App.
   const st = (daten.einstellungen && daten.einstellungen.startDatum) || '';
-  let von = wb > zr.start ? wb : zr.start;
-  if (st > von && st <= datumPlusTage(wb, 6)) von = st;
-  const bis = so < zr.ende ? so : zr.ende;
-  const tage = Math.max(0, tageZwischen(von, bis) + 1);
-  const W = budgetAm(daten, zr, von, fuerSpiel ? von : null) * tage;
-  const ausgegeben = ausgabenZwischen(daten, von, bis);
-  return { von, bis, tage, W, ausgegeben, rest: W - ausgegeben };
+  const von = st > wb && st <= so ? st : wb;
+  let W = 0;
+  for (let t = von, schutz = 0; t <= so && schutz < 7; schutz++) {
+    const zr = zeitraum(daten, t);
+    const teilBis = zr.ende < so ? zr.ende : so;
+    W += budgetAm(daten, zr, t, fuerSpiel ? t : null) * (tageZwischen(t, teilBis) + 1);
+    t = datumPlusTage(teilBis, 1);
+  }
+  const tage = tageZwischen(von, so) + 1;
+  const ausgegeben = ausgabenZwischen(daten, von, so);
+  return { von, bis: so, tage, W, ausgegeben, rest: W - ausgegeben };
 }
 
-// Wochenbudget, wie es das Spiel wertet (Stand Wochenbeginn)
+// Wochenbudget, wie es das Spiel wertet (Stand am Anfang der Woche bzw. des Monatsteils)
 export function wocheFuerSpiel(daten, d) {
-  return wocheIm(daten, zeitraum(daten, d), wochenbeginn(d), true);
+  return wocheIm(daten, wochenbeginn(d), true);
 }
 
 export function woche(daten, d) {
-  return wocheIm(daten, zeitraum(daten, d), wochenbeginn(d));
+  return wocheIm(daten, wochenbeginn(d));
 }
 
 // Prognose für ein Fenster von..bis am Tag d (von <= d <= bis): Tempo = Ausgaben bis gestern je Tag.
@@ -291,14 +296,17 @@ export function zeitraumStand(daten, d) {
 
 // ---------- Ziele ----------
 
+// Ist das Budget negativ (Monat schon überzogen), gilt ein Tag ohne Ausgaben trotzdem als im Budget.
+// Sonst wäre bis Monatsende kein Tag mehr zu schaffen und jede Tages-Challenge unmöglich.
 export function tagErfuellt(daten, d) {
   const zr = zeitraum(daten, d);
-  return ausgabenAm(daten, d) <= budgetAm(daten, zr, d);
+  return ausgabenAm(daten, d) <= Math.max(0, budgetAm(daten, zr, d));
 }
 
-export function wocheErfuellt(daten, wochenbeginnDatum, zr) {
-  const w = wocheIm(daten, zr, wochenbeginnDatum, true);
-  return w.ausgegeben <= w.W;
+// Volle Kalenderwoche ab wochenbeginnDatum (der frühere Parameter zr wird nicht mehr gebraucht)
+export function wocheErfuellt(daten, wochenbeginnDatum) {
+  const w = wocheIm(daten, wochenbeginnDatum, true);
+  return w.ausgegeben <= Math.max(0, w.W);
 }
 
 export function zeitraumRest(daten, zr) {

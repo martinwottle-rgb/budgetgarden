@@ -563,7 +563,8 @@ function markierungenSvg(liste, moebel, hk) {
     const attr = `data-ort="${escAttr(JSON.stringify(ort))}" style="cursor:pointer"`;
     if (Array.isArray(ort.feld)) {
       const [gx, gy] = ort.feld;
-      s += feldMarke([iso(gx, gy), iso(gx + 1, gy), iso(gx + 1, gy + 1), iso(gx, gy + 1)], attr, k++);
+      const w = ort.breite > 1 ? ort.breite : 1;
+      s += feldMarke([iso(gx, gy), iso(gx + w, gy), iso(gx + w, gy + 1), iso(gx, gy + 1)], attr, k++);
     } else if (Number.isFinite(ort.gx) && Number.isFinite(ort.gy)) {
       // Moebel-Position: Grundflaeche des Moebels in der Drehung des Ortes
       const def = hat(MOEBEL_ALLE, mk.typ);
@@ -632,7 +633,8 @@ export function feldAusPunkt(x, y, zustand, z = 0) {
 // SVG-Punkt eines Ortes: Feldmitte (Boden), Stellplatz auf einem Moebel (mit Hoehe z), Haken, oder Mitte einer Moebel-Position
 export function punktAusOrt(ort, zustand) {
   if (!ort || typeof ort !== 'object') return null;
-  if (Array.isArray(ort.feld)) return iso(ort.feld[0] + 0.5, ort.feld[1] + 0.5, 0);
+  // ort.breite: breite Deko (Bank), Mittelpunkt über alle belegten Felder
+  if (Array.isArray(ort.feld)) return iso(ort.feld[0] + (ort.breite > 1 ? ort.breite : 1) / 2, ort.feld[1] + 0.5, 0);
   if (ort.moebel !== undefined) {
     const m = ((zustand && zustand.moebel) || []).find(x => x.id === ort.moebel);
     const pos = m && platzVon(m, ort.platz);
@@ -719,6 +721,8 @@ export function zeichneSzene(container, zustand) {
   const bodenEintraege = [];
   // Laternen bei abend und nacht: nach der Raum-Stimmung gezeichnet, damit sie hell bleiben
   const lichtEintraege = [];
+  // Bodenbeläge (Teppich): flach auf dem Boden, vor allen Möbeln, Pflanzen und Deko
+  const belagEintraege = [];
   const objekte = [
     ...(z.pflanzen || []).map((p) => ({ ...p, art: 'pflanze' })),
     ...(z.deko || []).map((d) => ({ ...d, art: 'deko' })),
@@ -759,9 +763,12 @@ export function zeichneSzene(container, zustand) {
       }
     } else if (o.ort.feld) {
       const [gx, gy] = o.ort.feld;
-      const svg = platziert(iso(gx + 0.5, gy + 0.5, 0), inhalt, attr, skala);
-      if (istLicht) lichtEintraege.push({ key: gx + gy + 1, svg });
-      else bodenEintraege.push({ key: gx + gy + 1, svg });
+      // Breite Deko (Bank, breite 2) steht mittig auf ihren Feldern und wird nach dem vordersten Feld sortiert
+      const breit = o.art === 'deko' && Number.isInteger(def.breite) && def.breite > 1 ? def.breite : 1;
+      const svg = platziert(iso(gx + breit / 2, gy + 0.5, 0), inhalt, attr, skala);
+      if (def.bodenbelag) belagEintraege.push({ key: gx + gy, svg });
+      else if (istLicht) lichtEintraege.push({ key: gx + gy + 1, svg });
+      else bodenEintraege.push({ key: gx + gy + breit, svg });
     }
   }
 
@@ -773,7 +780,7 @@ export function zeichneSzene(container, zustand) {
     }))
     .concat(bodenEintraege);
   alle.sort((a, b) => a.key - b.key);
-  const inhalt = alle.map((o) => o.svg).join('');
+  const inhalt = belagEintraege.sort((a, b) => a.key - b.key).map((o) => o.svg).join('') + alle.map((o) => o.svg).join('');
 
   // Markierungen liegen ganz oben (ueber Pflanzen, Moebeln, Zaun), antippbar
   const marken = markierungenSvg(z.markierungen, z.moebel, hk);

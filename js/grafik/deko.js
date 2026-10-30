@@ -163,8 +163,11 @@ function bank() {
   // Zwei Kissen an der Lehne: senf links, petrol rechts
   const kissenPaar = kissenKlein(-7, 14, 6, '#e8b754', '#c0892c') + kissenKlein(6.2, 14, -8, '#3d8c90', '#25575a');
 
-  return oval(0, 0, 21, 10.5, 'fill="#6b4a3a" opacity="0.18"') +
+  const svg = oval(0, 0, 21, 10.5, 'fill="#6b4a3a" opacity="0.18"') +
     beineHinten + lehne + beineVorne + sitz + kissenPaar;
+  // Doppelte Größe, damit Sitzhöhe und Länge zum Pflanzentisch passen (zwei Felder breit).
+  // Strichstärken halbiert, damit die Konturen so fein bleiben wie bei allen anderen Teilen.
+  return `<g transform="scale(2)">${svg.replace(/stroke-width="([\d.]+)"/g, (m, v) => `stroke-width="${f(v / 2)}"`)}</g>`;
 }
 
 function giesskanne() {
@@ -372,7 +375,8 @@ function scheibeVert(x, y, z, r, attr) {
 // Teppich: ovaler, geflochtener Flickenteppich aus konzentrischen Ringen. Jeder Ring ist ein gedrehter
 // Stoffstrang (kurze schraege Striche entlang des Rings), Farben von aussen nach innen. Fransen nur an den Schmalseiten.
 function teppich() {
-  const a = 25, b = 15, z = 0.4, R = 6;
+  // Deutlich größer als ein Feld (etwa 3,5 x 2,3 Felder): liegt in der Bodenebene, andere Dinge dürfen darauf stehen
+  const a = 58, b = 38, z = 0.4, R = 7;
   const pt = (sc, t, dx = 0, dy = 0) => P(a * sc * Math.cos(t) + dx, b * sc * Math.sin(t) + dy, z);
   const umriss = (sc, n = 48, dx = 0, dy = 0) => {
     const pts = [];
@@ -380,19 +384,19 @@ function teppich() {
     return pts;
   };
   // Schatten flach auf dem Boden, nach rechts unten versetzt
-  let s = poly(umriss(1.02, 48, 1.6, 1.4), 'fill="#6b4a3a" opacity="0.16"');
+  let s = poly(umriss(1.02, 64, 1.6, 1.4), 'fill="#6b4a3a" opacity="0.18"');
   // Fransen: duenne, weiche Faeden an den beiden Schmalseiten (t = 0 und t = pi)
   for (const mitte of [0, Math.PI]) {
     for (let k = 0; k <= 10; k++) {
       const t = mitte + (k - 5) * 0.1;
-      const L = 2 + (k % 2) * 0.6;
-      s += linie(pt(1, t), pt(1 + L / a, t), 'stroke="#e3d1ac" stroke-width="0.9" stroke-linecap="round" opacity="0.9"');
+      const L = 3 + (k % 2) * 0.8;
+      s += linie(pt(1, t), pt(1 + L / a, t), 'stroke="#ddd0b4" stroke-width="0.9" stroke-linecap="round" opacity="0.9"');
     }
   }
-  // Ringe von aussen nach innen: Altrosa, Creme, Salbei, Creme, Altrosa, Mitte Senf
-  const farben = ['#e8a9a4', '#f3e6cf', '#b9d3a8', '#f3e6cf', '#e8a9a4', '#e9c46a'];
-  const dunkel = { '#e8a9a4': '#c77f79', '#f3e6cf': '#cdb38a', '#b9d3a8': '#86aa6e', '#e9c46a': '#b98a34' };
-  const K = 32;
+  // Ruhige Naturtöne wie ein Jute-Flechtteppich: Sand, Creme, gedämpftes Salbei, Mitte Haferbeige
+  const farben = ['#b8996c', '#e9dcc2', '#aab792', '#e9dcc2', '#c7ab80', '#e9dcc2', '#d3bf98'];
+  const dunkel = { '#b8996c': '#8e7350', '#e9dcc2': '#c4b18c', '#aab792': '#7f8c69', '#c7ab80': '#9c825c', '#d3bf98': '#a99470' };
+  const K = 64;
   for (let r = 0; r < R; r++) {
     const sa = 1 - r / R, si = 1 - (r + 1) / R;
     const f0 = farben[r], d = dunkel[f0];
@@ -583,11 +587,13 @@ function springbrunnen() {
 
 export const DEKO = {
   laterne: { name: 'Laterne', zeichne: () => laterne() },
-  bank: { name: 'Bank', zeichne: () => bank() },
+  // breite 2: belegt zwei Felder nebeneinander (in x-Richtung)
+  bank: { name: 'Bank', breite: 2, zeichne: () => bank() },
   giesskanne: { name: 'Gießkanne', zeichne: () => giesskanne() },
   katze: { name: 'Katze', zeichne: () => katze() },
   haengeampel: { name: 'Hängeampel', haengend: true, zeichne: () => haengeampel() },
-  teppich: { name: 'Teppich', zeichne: () => teppich() },
+  // bodenbelag: wird vor allen Möbeln, Pflanzen und Deko gezeichnet und blockiert kein Feld
+  teppich: { name: 'Teppich', bodenbelag: true, zeichne: () => teppich() },
   vogelhaus: { name: 'Vogelhaus', zeichne: () => vogelhaus() },
   gartenzwerg: { name: 'Gartenzwerg', zeichne: () => gartenzwerg() },
   windspiel: { name: 'Windspiel', zeichne: () => windspiel() },

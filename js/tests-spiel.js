@@ -702,6 +702,68 @@ test('Start: leeres Gewächshaus, 50 Samen, Möbel-Gutschein nach Wahl und Efeut
   gleich([r2.daten.spiel.samen, r2.daten.spiel.gutscheine.length], [50, 0], 'gratis, keine Gutscheine mehr');
 });
 
+
+test('Monatsbeginn am Mittwoch: Challenges sehen die volle Woche', () => {
+  // Gehalt am 1., Start im Juni. Woche Mo 29.6. bis So 5.7.2026, der Juli beginnt am Mittwoch.
+  const d = mitGehalt('2026-06-01', EUR(3000));
+  d.vertraege[0].ersteFaelligkeit = '2026-06-01';
+  d.einstellungen.ersteinrichtungFertig = true;
+  const wb = '2026-06-29';
+  const fuenf = S.challengePool.find(c => c.id === 'fuenf_im_budget');
+  // Keine Ausgaben: alle 7 Tage im Budget, also sind 5 Tage erreichbar (vorher nur Mo und Di sichtbar)
+  gleich(fuenf.pruefe(d, wb, L.zeitraum(d, wb)), true, '5 Tage im Budget über den Monatswechsel geschafft');
+  gleich(fuenf.fortschritt(d, wb, L.zeitraum(d, wb), '2026-07-05').ist, 7, 'Fortschritt zählt alle 7 Tage');
+  const r = S.bewerte(d, '2026-07-06');
+  gleich(r.daten.spiel.bewertet.wochen.find(w => w.start === wb).erfuellt, true, 'Woche im Budget gewertet');
+  gleich(r.ereignisse.filter(e => e.art === 'woche').length >= 1, true, 'Wochenbonus für die geteilte Woche');
+});
+
+
+test('Überzogener Monat: Tag ohne Ausgaben zählt, keine unmöglichen Budget-Challenges', () => {
+  // 3000 EUR im Oktober, am 2.10. schon 3500 EUR ausgegeben: das Tagesbudget ist danach negativ
+  const d = mitGehalt('2026-10-01', EUR(3000));
+  d.einstellungen.ersteinrichtungFertig = true;
+  d.buchungen.push({ id: 'x', art: 'ausgabe', name: 'Reparatur', betrag: EUR(3500), datum: '2026-10-02', kategorie: 'sonstiges', notiz: '' });
+  gleich(L.tagesbudget(d, '2026-10-12') < 0, true, 'Tagesbudget negativ');
+  gleich(L.tagErfuellt(d, '2026-10-12'), true, 'Tag ohne Ausgaben gilt als im Budget');
+  d.buchungen.push({ id: 'y', art: 'ausgabe', name: 'Brot', betrag: 300, datum: '2026-10-13', kategorie: 'lebensmittel', notiz: '' });
+  gleich(L.tagErfuellt(d, '2026-10-13'), false, 'Tag mit Ausgaben bleibt drüber');
+  // In den Wochen ab 12.10. ist das Wochenbudget negativ: keine Budget-Grenzen mehr unter den Challenges
+  for (const wb of ['2026-10-12', '2026-10-19', '2026-10-26']) {
+    gleich(S.challengesDerWoche(wb, d).some(c => c.brauchtBudget), false, 'keine Budget-Challenge in Woche ' + wb);
+    gleich(S.challengesDerWoche(wb, d).length, 2, 'trotzdem zwei Challenges ' + wb);
+  }
+});
+
+
+test('Teppich: liegt unter Möbeln, blockiert kein Feld, Abstand zum Rand', () => {
+  const d = basis(500, 300); // Level 3: Teppich freigeschaltet. Tisch m2 steht auf Feldern (1,0) und (2,0)
+  scheitert(S.kaufen(d, 'deko', 'teppich', { feld: [0, 2] }), 'am Rand nicht erlaubt');
+  const r = S.kaufen(d, 'deko', 'teppich', { feld: [2, 2] });
+  klappt(r, 'Teppich auf (2,2)');
+  klappt(S.kaufen(r.daten, 'pflanze', 'kaktus', { feld: [2, 2] }), 'Kaktus darf auf den Teppich');
+  klappt(S.kaufen(r.daten, 'deko', 'giesskanne', { feld: [2, 2] }), 'Gießkanne darf auf den Teppich');
+  scheitert(S.kaufen(r.daten, 'deko', 'teppich', { feld: [2, 2] }), 'kein zweiter Teppich auf demselben Feld');
+  const unterTisch = basis(500, 300);
+  unterTisch.spiel.gewaechshaus.moebel.push({ id: 'm3', typ: 'tisch_natur', gx: 2, gy: 3, drehung: 0 });
+  klappt(S.kaufen(unterTisch, 'deko', 'teppich', { feld: [2, 3] }), 'Teppich unter einen Tisch');
+  gleich(S.freiePlaetze(unterTisch, 'deko', 'teppich').some(o => o.feld[0] === 2 && o.feld[1] === 3), true, 'Feld unter dem Tisch wird angeboten');
+});
+
+
+test('Bank belegt zwei Felder nebeneinander', () => {
+  const d = basis(500, 1000); // Level 5: Bank freigeschaltet
+  gleich(S.dekoBreite('bank'), 2, 'Bank ist 2 Felder breit');
+  scheitert(S.kaufen(d, 'deko', 'bank', { feld: [5, 4] }), 'am rechten Rand fehlt das zweite Feld');
+  const r = S.kaufen(d, 'deko', 'bank', { feld: [3, 4] });
+  klappt(r, 'Bank auf (3,4) und (4,4)');
+  scheitert(S.kaufen(r.daten, 'pflanze', 'kaktus', { feld: [4, 4] }), 'zweites Feld ist belegt');
+  klappt(S.kaufen(r.daten, 'pflanze', 'kaktus', { feld: [5, 4] }), 'Feld daneben bleibt frei');
+  const orte = S.freiePlaetze(r.daten, 'deko', 'bank');
+  gleich(orte.every(o => o.breite === 2), true, 'Orte tragen die Breite für die Vorschau');
+  gleich(orte.some(o => o.feld[0] === 2 && o.feld[1] === 4), false, '(2,4) geht nicht, (3,4) ist belegt');
+});
+
 test('Katze kostet 250 und ist ab Level 9', () => {
   gleich(S.PREISE_DEKO.katze.preis, 250, 'Preis');
   gleich(S.PREISE_DEKO.katze.level, 9, 'Level');
@@ -886,7 +948,8 @@ test('Einsteiger-Challenges bei Start am Freitag: m = 3, n = 2, 20 und 30 Samen'
 
 test('Normale Challenges bei Start vor der Woche und am Montag', () => {
   const normal = S.challengesDerWoche('2026-10-05').map(c => c.id);
-  const d = basis();
+  // Mit Gehalt (positives Wochenbudget), sonst fallen Budget-Challenges zu Recht heraus
+  const d = mitGehalt('2026-10-01');
   d.einstellungen.startDatum = '2026-10-01';
   gleich(S.challengesDerWoche('2026-10-05', d).map(c => c.id), normal, 'Start vor der Woche');
   d.einstellungen.startDatum = '2026-10-05';

@@ -93,3 +93,12 @@ darunter die bestehende Wochengrafik. Monat = dieselbe Kartenform für den Zeitr
 - Neuer Spielstand: leeres Gewächshaus, 50 Samen, Gutschein `{kategorie: 'moebel', typ: '*', bisLevel: 1}` (Möbel nach Wahl) und Gutschein Efeutute.
   Bestehende Spielstände behalten alles.
 - Shop sortiert: Gutscheine, kaufbar, gesperrt; jeweils nach Level und Preis.
+
+## Nachtrag (30.10.): Wochen über den Monatswechsel, Teppich, Bank, Pflanzentisch
+- Wochen (Anzeige, Wochenwertung, Challenges, Rückblick) sind immer die volle Kalenderwoche Mo bis So, ab dem Starttag der App.
+  Liegt ein Monatswechsel in der Woche, zählt jeder Teil mit dem Tagesbudget seines Zeitraums (`wocheIm` in logik.js).
+  Vorher wurde am Zeitraum abgeschnitten: Monatsbeginn am Mittwoch ergab 2 Tage, „5 Tage im Budget“ war unmöglich.
+- Negatives Budget (Monat überzogen): ein Tag ohne Ausgaben gilt als im Budget; Challenges mit `brauchtBudget` werden
+  bei Wochenbudget ≤ 0 nicht vergeben.
+- Teppich: `bodenbelag: true`, größer, Naturtöne, eigene Bodenebene unter allem, blockiert kein Feld, ein Feld Abstand zum Rand.
+- Bank: `breite: 2` (zwei Felder in x-Richtung), doppelte Größe. Pflanzentisch Teak passt jetzt in seine 3 x 1 Felder, Platte auf 68.

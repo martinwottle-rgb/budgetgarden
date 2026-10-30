@@ -330,14 +330,15 @@ const gesamtSvg = (r) => r.teile.map((t) => t[1]).join('');
 const schichtenSvg = (r) => r.zs.map((z, k) => ({ z, svg: r.teile.filter((t) => t[0] === k).map((t) => t[1]).join('') }));
 
 // Pflanzentisch Teak: Platte mit abgerundeten Ecken, vier schraeg ausgestellte Beine mit Messingkappen
+// Platte und Füße bleiben innerhalb der 3 x 1 Felder (vorher 3,6 Felder lang, die Beine ragten seitlich hinaus)
 function tischZeichnen(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 3.6, 1);
-  for (const [u, v] of [[0.1, 0.15], [3.5, 0.15], [0.1, 0.8], [3.5, 0.8]]) {
-    s += standBein(m, u, v, u < 1.8 ? -0.14 : 0.14, v < 0.5 ? -0.08 : 0.08, 70);
+  let s = schatten(m, 3, 1);
+  for (const [u, v] of [[0.28, 0.22], [2.72, 0.22], [0.28, 0.78], [2.72, 0.78]]) {
+    s += standBein(m, u, v, u < 1.5 ? -0.12 : 0.12, v < 0.5 ? -0.07 : 0.07, 62);
   }
-  s += koerper(platte(m, 0, 3.6, 0.1, 0.9, 0.1), 70, 76, TEAK);
-  for (const v of [0.35, 0.65]) s += linie(pkt(m, 0.3, v, 76), pkt(m, 3.3, v, 76), MASER);
+  s += koerper(platte(m, 0.06, 2.94, 0.12, 0.88, 0.1), 62, 68, TEAK);
+  for (const v of [0.38, 0.62]) s += linie(pkt(m, 0.3, v, 68), pkt(m, 2.7, v, 68), MASER);
   return s;
 }
 
@@ -507,7 +508,7 @@ export const MOEBEL = {
     name: 'Pflanzentisch Teak',
     breite: 3,
     tiefe: 1,
-    plaetze: [{ dx: 0.8, dy: 0.5, z: 76 }, { dx: 2.0, dy: 0.5, z: 76 }, { dx: 3.2, dy: 0.5, z: 76 }],
+    plaetze: [{ dx: 0.5, dy: 0.5, z: 68 }, { dx: 1.5, dy: 0.5, z: 68 }, { dx: 2.5, dy: 0.5, z: 68 }],
     zeichne: (gx, gy, drehung = 0) => tischZeichnen(gx, gy, drehung),
   },
   regal_holz: {

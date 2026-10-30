@@ -321,11 +321,14 @@ export function levelAus(xp) {
 // ---------- Wochen-Challenges ----------
 
 // Tage der Woche, geschnitten mit dem Zeitraum
-function fenster(wochenbeginn, zr) {
-  const so = L.datumPlusTage(wochenbeginn, 6);
+// Volle Kalenderwoche Montag bis Sonntag, auch über einen Monatswechsel hinweg; frühestens ab dem Starttag der App.
+// Früher wurde hier am Zeitraum abgeschnitten: Monatsbeginn am Mittwoch ergab eine Woche aus 2 Tagen, und
+// Challenges wie „5 Tage im Budget“ waren unmöglich.
+function fenster(wochenbeginn, daten) {
+  const st = daten && daten.einstellungen ? daten.einstellungen.startDatum : '';
   return {
-    von: wochenbeginn > zr.start ? wochenbeginn : zr.start,
-    bis: so < zr.ende ? so : zr.ende
+    von: st && st > wochenbeginn ? st : wochenbeginn,
+    bis: L.datumPlusTage(wochenbeginn, 6)
   };
 }
 
@@ -336,11 +339,11 @@ function tageIn(f) {
 }
 
 // Ausgegebene Summe und Wochenbudget (wie logik.js woche())
-function wochenWerte(daten, wochenbeginn, zr) {
-  const tage = tageIn(fenster(wochenbeginn, zr));
-  // Stand am ersten Tag der Woche: spätere Einnahmen machen eine Challenge nicht nachträglich leichter
-  const W = tage.length ? L.tagesbudget(daten, tage[0]) * tage.length : 0;
-  const ausgegeben = tage.reduce((s, t) => s + L.ausgabenAm(daten, t), 0);
+function wochenWerte(daten, wochenbeginn) {
+  // Stand am Anfang der Woche (bzw. des Monatsteils): spätere Einnahmen machen eine Challenge nicht nachträglich leichter
+  const w = L.wocheFuerSpiel(daten, wochenbeginn);
+  const W = w.W;
+  const ausgegeben = w.ausgegeben;
   return { W, ausgegeben };
 }
 
@@ -352,25 +355,27 @@ export const challengePool = [
     text: '2 Tage ohne Ausgaben',
     samen: 50,
     art: 'zaehl',
-    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => L.ausgabenAm(daten, t) === 0).length >= 2,
+    pruefe: (daten, wb, zr) => tageIn(fenster(wb, daten)).filter(t => L.ausgabenAm(daten, t) === 0).length >= 2,
     fortschritt: (daten, wb, zr, heute) => ({
-      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => L.ausgabenAm(daten, t) === 0).length,
+      ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => L.ausgabenAm(daten, t) === 0).length,
       soll: 2,
       einheit: 'Tage'
     })
   },
   {
     id: 'woche_15_unter',
+    // Nur sinnvoll mit positivem Wochenbudget (bei überzogenem Monat nicht schaffbar)
+    brauchtBudget: true,
     text: 'Woche 15 % unter Wochenbudget',
     samen: 60,
     art: 'grenze',
     pruefe: (daten, wb, zr) => {
-      const w = wochenWerte(daten, wb, zr);
+      const w = wochenWerte(daten, wb);
       return w.ausgegeben * 100 <= w.W * 85;
     },
     fortschritt: (daten, wb, zr, heute) => {
-      const { W } = wochenWerte(daten, wb, zr);
-      const ausgegeben = bisHeute(tageIn(fenster(wb, zr)), heute).reduce((s, t) => s + L.ausgabenAm(daten, t), 0);
+      const { W } = wochenWerte(daten, wb);
+      const ausgegeben = bisHeute(tageIn(fenster(wb, daten)), heute).reduce((s, t) => s + L.ausgabenAm(daten, t), 0);
       return { ist: ausgegeben, soll: Math.floor(W * 85 / 100), einheit: 'cent' };
     }
   },
@@ -380,12 +385,12 @@ export const challengePool = [
     samen: 70,
     art: 'grenze',
     pruefe: (daten, wb, zr) => {
-      const tage = tageIn(fenster(wb, zr));
+      const tage = tageIn(fenster(wb, daten));
       return tage.length > 0 && tage.every(t => buchungenAm(daten, t) > 0);
     },
     // Heute zählt nicht als Verstoß, der Eintrag kann noch nachkommen
     fortschritt: (daten, wb, zr, heute) => ({
-      ist: tageIn(fenster(wb, zr)).filter(t => t < heute && buchungenAm(daten, t) === 0).length,
+      ist: tageIn(fenster(wb, daten)).filter(t => t < heute && buchungenAm(daten, t) === 0).length,
       soll: 0,
       einheit: 'verbot'
     })
@@ -396,11 +401,11 @@ export const challengePool = [
     samen: 50,
     art: 'grenze',
     pruefe: (daten, wb, zr) => {
-      const f = fenster(wb, zr);
+      const f = fenster(wb, daten);
       return !(daten.buchungen || []).some(b => b.art === 'ausgabe' && b.kategorie === 'essen' && b.datum >= f.von && b.datum <= f.bis);
     },
     fortschritt: (daten, wb, zr, heute) => {
-      const f = fenster(wb, zr);
+      const f = fenster(wb, daten);
       return {
         ist: (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.kategorie === 'essen' && b.datum >= f.von && b.datum <= f.bis && b.datum <= heute).length,
         soll: 0,
@@ -413,9 +418,9 @@ export const challengePool = [
     text: '5 Tage im Budget',
     samen: 70,
     art: 'zaehl',
-    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => L.tagErfuellt(daten, t)).length >= 5,
+    pruefe: (daten, wb, zr) => tageIn(fenster(wb, daten)).filter(t => L.tagErfuellt(daten, t)).length >= 5,
     fortschritt: (daten, wb, zr, heute) => ({
-      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => L.tagErfuellt(daten, t)).length,
+      ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => L.tagErfuellt(daten, t)).length,
       soll: 5,
       einheit: 'Tage'
     })
@@ -426,11 +431,11 @@ export const challengePool = [
     samen: 40,
     art: 'grenze',
     pruefe: (daten, wb, zr) => {
-      const f = fenster(wb, zr);
+      const f = fenster(wb, daten);
       return (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.betrag > 2000 && b.datum >= f.von && b.datum <= f.bis).length <= 3;
     },
     fortschritt: (daten, wb, zr, heute) => {
-      const f = fenster(wb, zr);
+      const f = fenster(wb, daten);
       return {
         ist: (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.betrag > 2000 && b.datum >= f.von && b.datum <= f.bis && b.datum <= heute).length,
         soll: 3,
@@ -440,15 +445,17 @@ export const challengePool = [
   },
   {
     id: 'kein_tag_150',
+    // Nur sinnvoll mit positivem Wochenbudget (bei überzogenem Monat nicht schaffbar)
+    brauchtBudget: true,
     text: 'Kein Tag über 150 % des Tagesbudgets',
     samen: 60,
     art: 'grenze',
-    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).every(t => {
+    pruefe: (daten, wb, zr) => tageIn(fenster(wb, daten)).every(t => {
       const a = L.ausgabenAm(daten, t);
       return a === 0 || a * 100 <= L.tagesbudget(daten, t) * 150;
     }),
     fortschritt: (daten, wb, zr, heute) => ({
-      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => {
+      ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => {
         const a = L.ausgabenAm(daten, t);
         return a !== 0 && a * 100 > L.tagesbudget(daten, t) * 150;
       }).length,
@@ -461,9 +468,9 @@ export const challengePool = [
     text: 'Mindestens 4 Tage mit Eintrag',
     samen: 50,
     art: 'zaehl',
-    pruefe: (daten, wb, zr) => tageIn(fenster(wb, zr)).filter(t => buchungenAm(daten, t) > 0).length >= 4,
+    pruefe: (daten, wb, zr) => tageIn(fenster(wb, daten)).filter(t => buchungenAm(daten, t) > 0).length >= 4,
     fortschritt: (daten, wb, zr, heute) => ({
-      ist: bisHeute(tageIn(fenster(wb, zr)), heute).filter(t => buchungenAm(daten, t) > 0).length,
+      ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => buchungenAm(daten, t) > 0).length,
       soll: 4,
       einheit: 'Tage'
     })
@@ -476,7 +483,7 @@ export const challengePool = [
     pruefe: (daten, wb, zr) => {
       let beste = 0;
       let lauf = 0;
-      for (const t of tageIn(fenster(wb, zr))) {
+      for (const t of tageIn(fenster(wb, daten))) {
         lauf = L.tagErfuellt(daten, t) ? lauf + 1 : 0;
         beste = Math.max(beste, lauf);
       }
@@ -485,7 +492,7 @@ export const challengePool = [
     fortschritt: (daten, wb, zr, heute) => {
       let beste = 0;
       let lauf = 0;
-      for (const t of bisHeute(tageIn(fenster(wb, zr)), heute)) {
+      for (const t of bisHeute(tageIn(fenster(wb, daten)), heute)) {
         lauf = L.tagErfuellt(daten, t) ? lauf + 1 : 0;
         beste = Math.max(beste, lauf);
       }
@@ -562,7 +569,9 @@ export function challengesDerWoche(wochenbeginn, daten) {
     return einsteiger(wochenbeginn, daten);
   }
   const rnd = zufallAusDatum(wochenbeginn);
-  const reihe = challengePool.map((_, i) => i);
+  // Unmögliche Challenges gar nicht erst vergeben: ohne positives Wochenbudget (Stand Wochenbeginn) keine Budget-Grenzen
+  const budgetDa = !daten || L.wocheFuerSpiel(daten, wochenbeginn).W > 0;
+  const reihe = challengePool.map((_, i) => i).filter(i => budgetDa || !challengePool[i].brauchtBudget);
   for (let i = reihe.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
     [reihe[i], reihe[j]] = [reihe[j], reihe[i]];
@@ -598,7 +607,7 @@ export function challengeStatus(daten, challenge, wochenbeginn, heute) {
     zustand = ist <= soll ? 'auf_kurs' : 'verpasst';
   } else {
     const fehlt = soll - ist;
-    const uebrig = tageIn(fenster(wochenbeginn, zr)).filter(t => t > heute).length;
+    const uebrig = tageIn(fenster(wochenbeginn, daten)).filter(t => t > heute).length;
     if (fehlt <= 0) zustand = 'geschafft';
     else if (fehlt > uebrig) zustand = 'verpasst';
     else if (fehlt === uebrig) zustand = 'gefaehrdet';
@@ -763,8 +772,7 @@ function challengesBewerten(d, wb, zr, heute, gut, komplett) {
   d.spiel.challenges[wb] = neu;
 }
 
-// Woche bewerten. Eine Woche, die einen Zeitraumwechsel enthaelt, wird am Wochenziel des ersten Teils geprueft
-// und am Teil des folgenden Zeitraums; Challenges nur im Zeitraum des Montags.
+// Woche bewerten: immer die volle Kalenderwoche, auch über einen Zeitraumwechsel (jeder Teil mit seinem Tagesbudget).
 // startwoche: Start mitten in der Woche. Nur Challenges (Einsteiger), kein Wochenbonus.
 function wocheBewerten(d, wb, gut, startwoche = false) {
   const samenVorher = d.spiel.samen;
@@ -772,11 +780,7 @@ function wocheBewerten(d, wb, gut, startwoche = false) {
   const zrA = L.zeitraum(d, wb);
   let erfuellt = false;
   if (!startwoche) {
-    erfuellt = L.wocheErfuellt(d, wb, zrA);
-    if (zrA.ende < so) {
-      const folgeStart = L.datumPlusTage(zrA.ende, 1);
-      erfuellt = erfuellt && L.wocheErfuellt(d, folgeStart, L.zeitraum(d, folgeStart));
-    }
+    erfuellt = L.wocheErfuellt(d, wb);
     if (erfuellt) gut('woche', `Woche im Budget (${kurz(wb)} bis ${kurz(so)})`, 50);
   }
   // Zähl-Challenges dieser Woche, die schon sofort gutgeschrieben wurden, gehören zur Wochen-Summe
@@ -972,9 +976,24 @@ function belegung(gh, ausser) {
     if (p.id !== ausser && p.ort.feld) belegt.add(schluessel(p.ort.feld[0], p.ort.feld[1]));
   }
   for (const d of gh.deko) {
-    if (d.id !== ausser && d.ort.feld) belegt.add(schluessel(d.ort.feld[0], d.ort.feld[1]));
+    // Bodenbeläge (Teppich) liegen unter allem und blockieren kein Feld
+    if (d.id !== ausser && d.ort.feld && !istBodenbelag(d.typ)) {
+      // Breite Deko (Bank) belegt mehrere Felder in x-Richtung
+      for (let i = 0; i < dekoBreite(d.typ); i++) belegt.add(schluessel(d.ort.feld[0] + i, d.ort.feld[1]));
+    }
   }
   return belegt;
+}
+
+// Anzahl Felder, die eine Deko in x-Richtung belegt (Bank: 2), sonst 1
+export function dekoBreite(typ) {
+  const def = dekoDef(typ);
+  return def && Number.isInteger(def.breite) && def.breite > 1 ? def.breite : 1;
+}
+
+function istBodenbelag(typ) {
+  const def = dekoDef(typ);
+  return !!(def && def.bodenbelag);
 }
 
 function feldFrei(gh, x, y, ausser) {
@@ -985,7 +1004,7 @@ function feldFrei(gh, x, y, ausser) {
 
 // Hoehe der Moebel in px (Oberkante hoechstes Brett bzw. Platte), fuer die Haengeampel. Ohne Eintrag: 100.
 const MOEBEL_HOEHE = {
-  regal_holz: 130, tisch_natur: 76, tisch_weiss: 76, leiterregal: 150,
+  regal_holz: 130, tisch_natur: 68, tisch_weiss: 76, leiterregal: 150,
   metallregal: 140, blumenhocker: 45, holzkiste: 30, steinsockel: 55,
   ziegelbrett: 25, gaertnertisch_guss: 80, wandregal: 100, rattan_etagere: 110,
   kraeuterbeet: 45, hochbeet: 60, sideboard: 55, pflanzentreppe: 70, vitrine: 120, sputnik: 110, hochregal: 150, zinkregal: 74, zinkregal_hoch: 140
@@ -1073,7 +1092,20 @@ function pruefeOrt(gh, kategorie, typ, ort, ausser) {
   if (ort.haken !== undefined) return kategorie === 'deko' ? 'Diese Deko steht auf dem Boden.' : 'Unbekannter Platz.';
   if (Array.isArray(ort.feld)) {
     if (kategorie === 'saat') return 'Saatgut wächst nur auf einem Beet.';
-    if (!feldFrei(gh, ort.feld[0], ort.feld[1], ausser)) return 'Dieses Feld ist nicht frei oder liegt außerhalb.';
+    if (kategorie === 'deko' && istBodenbelag(typ)) {
+      // Teppich: darf unter Möbeln und Pflanzen liegen, nur nicht auf einem anderen Teppich
+      const [x, y] = ort.feld;
+      // Der Teppich ist größer als ein Feld: mindestens ein Feld Abstand zu den Wänden und zum Zaun
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 1 || y < 1 || x > gh.groesse - 2 || y > gh.groesse - 2) return 'Der Teppich braucht ein Feld Abstand zum Rand.';
+      if (gh.deko.some(d => d.id !== ausser && d.ort.feld && istBodenbelag(d.typ) && d.ort.feld[0] === x && d.ort.feld[1] === y)) return 'Hier liegt schon ein Teppich.';
+      return null;
+    }
+    const breit = kategorie === 'deko' ? dekoBreite(typ) : 1;
+    for (let i = 0; i < breit; i++) {
+      if (!feldFrei(gh, ort.feld[0] + i, ort.feld[1], ausser)) {
+        return breit > 1 ? 'Hier ist nicht genug Platz: Sie braucht zwei freie Felder nebeneinander.' : 'Dieses Feld ist nicht frei oder liegt außerhalb.';
+      }
+    }
     if (kategorie === 'pflanze' && groesseVon(typ) === 'gross' &&
       belegteHakenFelder(gh).has(schluessel(ort.feld[0], ort.feld[1]))) {
       return 'Unter der Hängeampel ist kein Platz für große Pflanzen.';
@@ -1202,6 +1234,16 @@ export function freiePlaetze(daten, kategorie, typ) {
   if (kategorie === 'deko') {
     if (dekoDef(typ) && dekoDef(typ).haengend) {
       return Object.keys(hakenFuer(gh.groesse || 6)).map(haken => ({ haken })).filter(o => !pruefeOrt(gh, 'deko', typ, o, null));
+    }
+    if (dekoBreite(typ) > 1) {
+      // Breite Deko: Startfelder, ab denen genug Felder frei sind; breite steht im Ort für Vorschau und Markierung
+      return felder.filter(o => !pruefeOrt(gh, 'deko', typ, o, null)).map(o => ({ ...o, breite: dekoBreite(typ) }));
+    }
+    if (istBodenbelag(typ)) {
+      // Teppich: jedes Feld ohne anderen Teppich, auch unter Möbeln und Pflanzen
+      const alle = [];
+      for (let x = 0; x < gh.groesse; x++) for (let y = 0; y < gh.groesse; y++) alle.push({ feld: [x, y] });
+      return alle.filter(o => !pruefeOrt(gh, 'deko', typ, o, null));
     }
     return felder;
   }
@@ -1371,15 +1413,15 @@ export function verkaufen(daten, kategorie, id) {
 
 // ---------- Wochenrückblick ----------
 
-// Rückblick auf eine Woche (Montag bis Sonntag, geschnitten mit dem Zeitraum).
+// Rückblick auf eine Woche (Montag bis Sonntag, ab dem Starttag der App).
 // Samen: die tatsächlichen Gutschriften der ganzen Woche (Mo bis So) aus bewertet.tage und bewertet.wochen.
 // Fehlt ein Eintrag oder sein Feld samen (alte Spielstände, noch nicht bewertet), wird nur dieser Teil
 // nach den Regeln geschätzt (10 pro Tag im Budget, 50 Woche, Challenges).
 export function wochenRueckblick(daten, wochenbeginn) {
   const zr = L.zeitraum(daten, wochenbeginn);
-  const f = fenster(wochenbeginn, zr);
+  const f = fenster(wochenbeginn, daten);
   const tage = tageIn(f);
-  const { W, ausgegeben } = wochenWerte(daten, wochenbeginn, zr);
+  const { W, ausgegeben } = wochenWerte(daten, wochenbeginn);
 
   const bewertetTage = new Map((daten.spiel.bewertet.tage || []).map(t => [t.datum, t.erfuellt]));
   const tageImBudget = tage.filter(t => (bewertetTage.has(t) ? bewertetTage.get(t) : L.tagErfuellt(daten, t))).length;
