@@ -355,9 +355,10 @@ export const challengePool = [
     text: '2 Tage ohne Ausgaben',
     samen: 50,
     art: 'zaehl',
+    zaehltHeuteNicht: true,
     pruefe: (daten, wb, zr) => tageIn(fenster(wb, daten)).filter(t => L.ausgabenAm(daten, t) === 0).length >= 2,
     fortschritt: (daten, wb, zr, heute) => ({
-      ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => L.ausgabenAm(daten, t) === 0).length,
+      ist: vorHeute(tageIn(fenster(wb, daten)), heute).filter(t => L.ausgabenAm(daten, t) === 0).length,
       soll: 2,
       einheit: 'Tage'
     })
@@ -384,6 +385,7 @@ export const challengePool = [
     text: 'Jeden Tag etwas eintragen',
     samen: 70,
     art: 'grenze',
+    gruppe: 'eintragen',
     pruefe: (daten, wb, zr) => {
       const tage = tageIn(fenster(wb, daten));
       return tage.length > 0 && tage.every(t => buchungenAm(daten, t) > 0);
@@ -400,6 +402,8 @@ export const challengePool = [
     text: 'Keine Ausgabe in Essen gehen',
     samen: 50,
     art: 'grenze',
+    gruppe: 'essen',
+    moeglich: (daten) => hatKategorie(daten, 'essen'),
     pruefe: (daten, wb, zr) => {
       const f = fenster(wb, daten);
       return !(daten.buchungen || []).some(b => b.art === 'ausgabe' && b.kategorie === 'essen' && b.datum >= f.von && b.datum <= f.bis);
@@ -418,9 +422,10 @@ export const challengePool = [
     text: '5 Tage im Budget',
     samen: 70,
     art: 'zaehl',
+    zaehltHeuteNicht: true,
     pruefe: (daten, wb, zr) => tageIn(fenster(wb, daten)).filter(t => L.tagErfuellt(daten, t)).length >= 5,
     fortschritt: (daten, wb, zr, heute) => ({
-      ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => L.tagErfuellt(daten, t)).length,
+      ist: vorHeute(tageIn(fenster(wb, daten)), heute).filter(t => L.tagErfuellt(daten, t)).length,
       soll: 5,
       einheit: 'Tage'
     })
@@ -468,6 +473,7 @@ export const challengePool = [
     text: 'Mindestens 4 Tage mit Eintrag',
     samen: 50,
     art: 'zaehl',
+    gruppe: 'eintragen',
     pruefe: (daten, wb, zr) => tageIn(fenster(wb, daten)).filter(t => buchungenAm(daten, t) > 0).length >= 4,
     fortschritt: (daten, wb, zr, heute) => ({
       ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => buchungenAm(daten, t) > 0).length,
@@ -480,6 +486,8 @@ export const challengePool = [
     text: 'Drei Tage am Stück im Budget',
     samen: 45,
     art: 'zaehl',
+    zaehltHeuteNicht: true,
+    verpasst: (daten, wb, heute) => laufVerpasst(tageIn(fenster(wb, daten)), heute, t => L.tagErfuellt(daten, t), 3),
     pruefe: (daten, wb, zr) => {
       let beste = 0;
       let lauf = 0;
@@ -492,11 +500,129 @@ export const challengePool = [
     fortschritt: (daten, wb, zr, heute) => {
       let beste = 0;
       let lauf = 0;
-      for (const t of bisHeute(tageIn(fenster(wb, daten)), heute)) {
+      for (const t of vorHeute(tageIn(fenster(wb, daten)), heute)) {
         lauf = L.tagErfuellt(daten, t) ? lauf + 1 : 0;
         beste = Math.max(beste, lauf);
       }
       return { ist: beste, soll: 3, einheit: 'Tage' };
+    }
+  },
+  {
+    id: 'wochenende_im_budget',
+    text: 'Wochenende im Budget (Sa und So)',
+    samen: 50,
+    art: 'zaehl',
+    zaehltHeuteNicht: true,
+    tage: (daten, wb) => wochenende(daten, wb),
+    // Nur wenn beide Wochenendtage ab dem Start der App liegen
+    moeglich: (daten, wb) => wochenende(daten, wb).length === 2,
+    pruefe: (daten, wb) => wochenende(daten, wb).every(t => L.tagErfuellt(daten, t)),
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: vorHeute(wochenende(daten, wb), heute).filter(t => L.tagErfuellt(daten, t)).length,
+      soll: 2,
+      einheit: 'Tage'
+    })
+  },
+  {
+    id: 'drei_ohne_folge',
+    text: '3 Tage hintereinander ohne Ausgaben',
+    samen: 70,
+    art: 'zaehl',
+    zaehltHeuteNicht: true,
+    verpasst: (daten, wb, heute) => laufVerpasst(tageIn(fenster(wb, daten)), heute, t => L.ausgabenAm(daten, t) === 0, 3),
+    pruefe: (daten, wb) => laengsterLauf(tageIn(fenster(wb, daten)), t => L.ausgabenAm(daten, t) === 0) >= 3,
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: Math.min(3, laengsterLauf(vorHeute(tageIn(fenster(wb, daten)), heute), t => L.ausgabenAm(daten, t) === 0)),
+      soll: 3,
+      einheit: 'Tage'
+    })
+  },
+  {
+    id: 'kein_tag_ueber_30',
+    text: 'Kein Tag über 30 €',
+    samen: 60,
+    art: 'grenze',
+    pruefe: (daten, wb) => tageIn(fenster(wb, daten)).every(t => L.ausgabenAm(daten, t) <= 3000),
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: bisHeute(tageIn(fenster(wb, daten)), heute).filter(t => L.ausgabenAm(daten, t) > 3000).length,
+      soll: 0,
+      einheit: 'verbot'
+    })
+  },
+  {
+    id: 'weniger_als_letzte_woche',
+    text: 'Weniger ausgeben als letzte Woche',
+    samen: 60,
+    art: 'grenze',
+    // Nur wenn die ganze Vorwoche ab dem Start lag und dort etwas ausgegeben wurde (sonst unmöglich oder ohne Sinn)
+    moeglich: (daten, wb) => {
+      const st = daten.einstellungen.startDatum || '';
+      return st <= L.datumPlusTage(wb, -7) && vorwocheAusgaben(daten, wb) > 0;
+    },
+    pruefe: (daten, wb) => L.ausgabenZwischen(daten, wb, L.datumPlusTage(wb, 6)) < vorwocheAusgaben(daten, wb),
+    fortschritt: (daten, wb, zr, heute) => {
+      const so = L.datumPlusTage(wb, 6);
+      return { ist: L.ausgabenZwischen(daten, wb, heute < so ? heute : so), soll: vorwocheAusgaben(daten, wb) - 1, einheit: 'cent' };
+    }
+  },
+  {
+    id: 'hoechstens_zwei_essen',
+    text: 'Höchstens 2× Essen gehen',
+    samen: 40,
+    art: 'grenze',
+    gruppe: 'essen',
+    moeglich: (daten) => hatKategorie(daten, 'essen'),
+    pruefe: (daten, wb) => essenBuchungen(daten, wb, L.datumPlusTage(wb, 6)) <= 2,
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: essenBuchungen(daten, wb, heute),
+      soll: 2,
+      einheit: 'Ausgaben'
+    })
+  },
+  {
+    id: 'abends_eingetragen',
+    text: 'Jeden Abend vor 22 Uhr eintragen',
+    samen: 50,
+    art: 'grenze',
+    gruppe: 'eintragen',
+    // Erst ab der ersten vollen Woche, in der die App den Zeitpunkt jeder Buchung kennt
+    moeglich: (daten, wb) => wb >= ABENDS_AB,
+    pruefe: (daten, wb) => tageIn(fenster(wb, daten)).every(t => vorZehnEingetragen(daten, t)),
+    // Heute zählt erst morgen: bis 22 Uhr kann der Eintrag noch kommen
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: vorHeute(tageIn(fenster(wb, daten)), heute).filter(t => !vorZehnEingetragen(daten, t)).length,
+      soll: 0,
+      einheit: 'verbot'
+    })
+  },
+  {
+    id: 'vier_tage_unter_70',
+    text: '4 Tage unter 70 % des Tagesbudgets',
+    samen: 70,
+    art: 'zaehl',
+    zaehltHeuteNicht: true,
+    pruefe: (daten, wb) => tageIn(fenster(wb, daten)).filter(t => unter70(daten, t)).length >= 4,
+    fortschritt: (daten, wb, zr, heute) => ({
+      ist: vorHeute(tageIn(fenster(wb, daten)), heute).filter(t => unter70(daten, t)).length,
+      soll: 4,
+      einheit: 'Tage'
+    })
+  },
+  {
+    id: 'kategorie_meiden',
+    text: 'Eine Kategorie diese Woche meiden',
+    samen: 60,
+    art: 'grenze',
+    // Wählbar sind Kategorien mit Ausgaben in den 4 Wochen davor; ohne solche gibt es die Challenge nicht
+    moeglich: (daten, wb) => meidbareKategorien(daten, wb).length > 0,
+    pruefe: (daten, wb) => {
+      const k = gewaehlteKategorie(daten, wb);
+      return !!k && !kategorieAusgaben(daten, wb, L.datumPlusTage(wb, 6), k);
+    },
+    fortschritt: (daten, wb, zr, heute) => {
+      const k = gewaehlteKategorie(daten, wb);
+      if (!k) return { ist: 0, soll: 0, einheit: 'wahl' };
+      return { ist: kategorieAusgaben(daten, wb, heute, k), soll: 0, einheit: 'verbot' };
     }
   }
 ];
@@ -505,6 +631,101 @@ export const challengePool = [
 function bisHeute(tage, heute) {
   return tage.filter(t => t <= heute);
 }
+
+// Abgeschlossene Tage (vor heute). Für Challenges, bei denen ein Tag erst am Abend feststeht (im Budget, ohne Ausgaben):
+// sonst gäbe es morgens schon die Belohnung, obwohl später am Tag noch Ausgaben kommen.
+function vorHeute(tage, heute) {
+  return tage.filter(t => t < heute);
+}
+
+// Längste Folge aufeinanderfolgender Tage, für die test(t) gilt
+function laengsterLauf(tage, test) {
+  let beste = 0;
+  let lauf = 0;
+  for (const t of tage) {
+    lauf = test(t) ? lauf + 1 : 0;
+    beste = Math.max(beste, lauf);
+  }
+  return beste;
+}
+
+// Folge von n Tagen nicht mehr erreichbar: nicht schon geschafft, und die laufende Folge plus alle offenen Tage (ab heute) reicht nicht
+function laufVerpasst(tage, heute, test, n) {
+  const zu = vorHeute(tage, heute);
+  if (laengsterLauf(zu, test) >= n) return false;
+  let lauf = 0;
+  for (const t of zu) lauf = test(t) ? lauf + 1 : 0;
+  const offen = tage.filter(t => t >= heute).length;
+  return lauf + offen < n;
+}
+
+// Samstag und Sonntag der Woche, soweit sie ab dem Start der App liegen
+function wochenende(daten, wb) {
+  const st = daten.einstellungen.startDatum || '';
+  return [L.datumPlusTage(wb, 5), L.datumPlusTage(wb, 6)].filter(t => t >= st);
+}
+
+function vorwocheAusgaben(daten, wb) {
+  return L.ausgabenZwischen(daten, L.datumPlusTage(wb, -7), L.datumPlusTage(wb, -1));
+}
+
+function hatKategorie(daten, id) {
+  return (daten.kategorien || []).some(k => k.id === id);
+}
+
+function essenBuchungen(daten, wb, bis) {
+  return (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.kategorie === 'essen' && b.betrag > 0 && b.datum >= wb && b.datum <= bis).length;
+}
+
+// Ausgabe an Tag t höchstens 70 % des Tagesbudgets (bei negativem Budget: gar keine Ausgabe)
+function unter70(daten, t) {
+  return L.ausgabenAm(daten, t) * 100 <= 70 * Math.max(0, L.tagesbudget(daten, t));
+}
+
+// Erste Woche, in der alle Buchungen einen Anlegezeitpunkt haben (eingeführt am 30.10.2026)
+const ABENDS_AB = '2026-11-02';
+
+// Für Tag t gibt es eine Buchung mit diesem Datum, die am selben Tag vor 22 Uhr (Gerätezeit) angelegt wurde
+function vorZehnEingetragen(daten, t) {
+  return (daten.buchungen || []).some(b => {
+    if (b.datum !== t || !b.erstellt) return false;
+    const z = new Date(b.erstellt);
+    if (Number.isNaN(z.getTime())) return false;
+    const tag = `${z.getFullYear()}-${String(z.getMonth() + 1).padStart(2, '0')}-${String(z.getDate()).padStart(2, '0')}`;
+    return tag === t && z.getHours() < 22;
+  });
+}
+
+// ---------- Kategorie meiden: Auswahl ----------
+
+export function gewaehlteKategorie(daten, wb) {
+  const w = daten.spiel.challengeWahl;
+  return w && typeof w === 'object' ? w[wb] || null : null;
+}
+
+function kategorieAusgaben(daten, wb, bis, k) {
+  return (daten.buchungen || []).filter(b => b.art === 'ausgabe' && b.kategorie === k && b.betrag > 0 && b.datum >= wb && b.datum <= bis).length;
+}
+
+// Kategorien mit Ausgaben in den 4 Wochen vor dieser Woche (nur die lohnt es sich zu meiden)
+export function meidbareKategorien(daten, wb) {
+  const von = L.datumPlusTage(wb, -28);
+  const bis = L.datumPlusTage(wb, -1);
+  const ids = new Set((daten.buchungen || [])
+    .filter(b => b.art === 'ausgabe' && b.betrag > 0 && b.datum >= von && b.datum <= bis)
+    .map(b => b.kategorie));
+  return (daten.kategorien || []).filter(k => ids.has(k.id));
+}
+
+// Kategorie für „Eine Kategorie diese Woche meiden“ festlegen. Nur einmal je Woche, nur aus meidbareKategorien.
+export function kategorieWaehlen(daten, wb, kategorieId) {
+  if (gewaehlteKategorie(daten, wb)) return fehler('Für diese Woche ist schon eine Kategorie gewählt.');
+  if (!meidbareKategorien(daten, wb).some(k => k.id === kategorieId)) return fehler('Diese Kategorie kann nicht gewählt werden.');
+  const d = kopie(daten);
+  d.spiel.challengeWahl = { ...(d.spiel.challengeWahl || {}), [wb]: kategorieId };
+  return { daten: d };
+}
+
 
 // Hash des Datums als Seed, Mulberry32 als Zufallsgenerator
 function zufallAusDatum(text) {
@@ -568,15 +789,35 @@ export function challengesDerWoche(wochenbeginn, daten) {
   if (st && st > wochenbeginn && st <= L.datumPlusTage(wochenbeginn, 6) && tageAb(daten, wochenbeginn).length < 7) {
     return einsteiger(wochenbeginn, daten);
   }
+  // Schon vergebene Challenges einer Woche bleiben (gespeichert in spiel.challenges), auch wenn der Pool wächst
+  const vergeben = daten && daten.spiel && daten.spiel.challenges ? daten.spiel.challenges[wochenbeginn] : null;
+  if (Array.isArray(vergeben) && vergeben.length === 2) {
+    const liste = vergeben.map(e => challengePool.find(c => c.id === e.id));
+    if (liste.every(Boolean)) return liste;
+  }
   const rnd = zufallAusDatum(wochenbeginn);
-  // Unmögliche Challenges gar nicht erst vergeben: ohne positives Wochenbudget (Stand Wochenbeginn) keine Budget-Grenzen
+  // Unmögliche Challenges gar nicht erst vergeben: ohne positives Wochenbudget (Stand Wochenbeginn) keine Budget-Grenzen,
+  // dazu die eigenen Bedingungen (moeglich), z. B. Vorwoche vorhanden, Kategorie vorhanden. Ohne daten nur die ohne Bedingung.
   const budgetDa = !daten || L.wocheFuerSpiel(daten, wochenbeginn).W > 0;
-  const reihe = challengePool.map((_, i) => i).filter(i => budgetDa || !challengePool[i].brauchtBudget);
+  const reihe = challengePool.map((_, i) => i).filter(i => {
+    const c = challengePool[i];
+    if (!budgetDa && c.brauchtBudget) return false;
+    if (c.moeglich && (!daten || !c.moeglich(daten, wochenbeginn))) return false;
+    return true;
+  });
   for (let i = reihe.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
     [reihe[i], reihe[j]] = [reihe[j], reihe[i]];
   }
-  return reihe.slice(0, 2).map(i => challengePool[i]);
+  // Zwei Challenges aus verschiedenen Gruppen (nicht zweimal Essen, nicht zweimal Eintragen)
+  const wahl = [];
+  for (const i of reihe) {
+    const c = challengePool[i];
+    if (c.gruppe && wahl.some(w => w.gruppe === c.gruppe)) continue;
+    wahl.push(c);
+    if (wahl.length === 2) break;
+  }
+  return wahl;
 }
 
 const EINHEIT_TEXT = { Tage: 'Tagen' };
@@ -586,6 +827,7 @@ function challengeText(art, ist, soll, einheit) {
   if (einheit === 'cent') {
     return ist <= soll ? `Noch ${L.euro(soll - ist)} Luft` : `${L.euro(ist - soll)} über dem Limit`;
   }
+  if (einheit === 'wahl') return 'Tippe hier und wähle eine Kategorie';
   if (einheit === 'verbot') {
     return ist === 0 ? 'Bisher ohne Verstoß' : `${ist} ${ist === 1 ? 'Verstoß' : 'Verstöße'} bisher`;
   }
@@ -603,14 +845,21 @@ export function challengeStatus(daten, challenge, wochenbeginn, heute) {
   let zustand;
   if (so < heute) {
     zustand = challenge.pruefe(daten, wochenbeginn, zr) ? 'geschafft' : 'verpasst';
+  } else if (einheit === 'wahl') {
+    zustand = 'offen';
   } else if (challenge.art === 'grenze') {
     zustand = ist <= soll ? 'auf_kurs' : 'verpasst';
+  } else if (challenge.verpasst && challenge.verpasst(daten, wochenbeginn, heute)) {
+    zustand = 'verpasst';
   } else {
     const fehlt = soll - ist;
-    const uebrig = tageIn(fenster(wochenbeginn, daten)).filter(t => t > heute).length;
+    // Offene Tage: bei Challenges, die nur abgeschlossene Tage zählen, gehört heute noch dazu
+    const relevant = challenge.tage ? challenge.tage(daten, wochenbeginn) : tageIn(fenster(wochenbeginn, daten));
+    const uebrig = relevant.filter(t => (challenge.zaehltHeuteNicht ? t >= heute : t > heute)).length;
     if (fehlt <= 0) zustand = 'geschafft';
     else if (fehlt > uebrig) zustand = 'verpasst';
-    else if (fehlt === uebrig) zustand = 'gefaehrdet';
+    // Gefährdet nur, wenn es Spielraum gab und er aufgebraucht ist (bei Sa und So von 2 nötig gab es nie Spielraum)
+    else if (fehlt === uebrig && relevant.length > soll) zustand = 'gefaehrdet';
     else zustand = 'auf_kurs';
   }
   return { zustand, ist, soll, einheit, text: challengeText(challenge.art, ist, soll, einheit) };

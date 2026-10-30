@@ -6,7 +6,7 @@
 import * as L from '../logik.js';
 import { zeichneSzene, vorschau, einpassen, feldAusPunkt, punktAusOrt, FELD_PX, erntereif, ERNTE_WARTE_TAGE } from '../szene.js';
 import { iso } from '../grafik/hilfen.js';
-import { dekoBreite, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
+import { dekoBreite, gewaehlteKategorie, meidbareKategorien, kategorieWaehlen, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { RARITAETEN } from '../grafik/raritaeten.js';
@@ -216,23 +216,55 @@ export function zeige(container, ctx, param) {
 
   // Wochen-Challenges: zwei kleine Karten
   container.append(el('div', { class: 'abschnitt', text: `Wochen-Challenges · ${kurzDatum(wochenStart)} bis ${kurzDatum(wochenEnde)}` }));
-  const challenges = challengesDerWoche(wochenStart, d).map(c => challengeKarte(c, challengeStatus(d, c, wochenStart, hd)));
+  const challenges = challengesDerWoche(wochenStart, d).map(c => challengeKarte(c, challengeStatus(d, c, wochenStart, hd), ctx, wochenStart));
   container.append(el('div', { class: 'raster' }, challenges));
 }
 
-const ZUSTAND_TEXT = { geschafft: 'Geschafft', auf_kurs: 'Auf Kurs', gefaehrdet: 'Gefährdet', verpasst: 'Verpasst' };
+const ZUSTAND_TEXT = { geschafft: 'Geschafft', auf_kurs: 'Auf Kurs', gefaehrdet: 'Gefährdet', verpasst: 'Verpasst', offen: 'Wählen' };
 
 // Challenge-Karte: farbige Marke für den Zustand, Fortschrittsbalken mit Text (ist von soll)
-function challengeKarte(c, s) {
+function challengeKarte(c, s, ctx, wb) {
   const prozent = s.soll > 0 ? Math.min(100, (s.ist / s.soll) * 100) : (s.ist > 0 ? 100 : 0);
   const beloh = el('div', { class: 'klein challenge-lohn' }, svgBox(muenzSvg(16), 'muenze-klein'), ` ${zahl(c.samen)} Samen`);
-  return el('section', { class: 'karte challenge sp11-karte sp11-' + s.zustand },
+  // „Eine Kategorie meiden“: vor der Wahl ist die Karte ein Knopf, danach steht die Kategorie im Text
+  const meiden = c.id === 'kategorie_meiden';
+  const gewaehlt = meiden ? gewaehlteKategorie(ctx.daten, wb) : null;
+  const kat = gewaehlt ? (ctx.daten.kategorien || []).find(k => k.id === gewaehlt) : null;
+  const text = kat ? `Keine Ausgabe in ${kat.emoji} ${kat.name}` : c.text;
+  const offen = meiden && s.zustand === 'offen';
+  return el(offen ? 'button' : 'section', {
+    class: 'karte challenge sp11-karte sp11-' + s.zustand + (offen ? ' ch-waehlbar' : ''),
+    type: offen ? 'button' : null,
+    onclick: offen ? () => kategorieWahlBlatt(ctx, wb) : null
+  },
     el('div', { class: 'sp11-marke sp11-' + s.zustand, text: ZUSTAND_TEXT[s.zustand] }),
-    el('div', { class: 'challenge-text', text: c.text }),
+    el('div', { class: 'challenge-text', text }),
     beloh,
     el('div', { class: 'sp11-balken', role: 'img', 'aria-label': s.text }, el('span', { style: 'width:' + prozent.toFixed(1) + '%' })),
     el('div', { class: 'sp11-fortschritt klein', text: s.text })
   );
+}
+
+// Blatt zur Wahl der Kategorie für „Eine Kategorie diese Woche meiden“ (Kategorien mit Ausgaben in den 4 Wochen davor)
+function kategorieWahlBlatt(ctx, wb) {
+  const liste = meidbareKategorien(ctx.daten, wb);
+  const inhalt = el('div', { class: 'ch-wahl' },
+    el('h2', { class: 'sh-titel', text: 'Welche Kategorie meidest du diese Woche?' }),
+    el('p', { class: 'klein', text: 'Die ganze Woche zählt, auch die Tage seit Montag. Die Wahl gilt bis Sonntag und lässt sich nicht ändern.' }),
+    el('div', { class: 'ch-wahl-liste' }, liste.map(k => el('button', {
+      type: 'button',
+      class: 'knopf knopf-voll ch-wahl-knopf',
+      text: `${k.emoji} ${k.name}`,
+      onclick: () => {
+        const r = kategorieWaehlen(ctx.daten, wb, k.id);
+        if (r.fehler) { ctx.toast(r.fehler); return; }
+        if (blatt) blatt.schliessen();
+        ctx.speichern(r.daten);
+        ctx.toast(`Diese Woche ohne ${k.name}. Viel Erfolg!`);
+      }
+    })))
+  );
+  const blatt = blattOeffnen(ctx, inhalt);
 }
 
 // ---------- Modus: Platzwahl (Shop) und Bewegungsmodus ----------

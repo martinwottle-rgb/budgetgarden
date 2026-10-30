@@ -102,3 +102,11 @@ darunter die bestehende Wochengrafik. Monat = dieselbe Kartenform für den Zeitr
   bei Wochenbudget ≤ 0 nicht vergeben.
 - Teppich: `bodenbelag: true`, größer, Naturtöne, eigene Bodenebene unter allem, blockiert kein Feld, ein Feld Abstand zum Rand.
 - Bank: `breite: 2` (zwei Felder in x-Richtung), doppelte Größe. Pflanzentisch Teak passt jetzt in seine 3 x 1 Felder, Platte auf 68.
+
+## Nachtrag (30.10.): Acht neue Wochen-Challenges
+wochenende_im_budget (50), drei_ohne_folge (70), kein_tag_ueber_30 (60), weniger_als_letzte_woche (60, nur mit voller Vorwoche mit Ausgaben),
+hoechstens_zwei_essen (40), abends_eingetragen (50, ab Woche 2.11., Buchungen tragen `erstellt`), vier_tage_unter_70 (70),
+kategorie_meiden (60, Wahl per Karte, `spiel.challengeWahl[wb]`, nur Kategorien mit Ausgaben in den 4 Wochen davor).
+- Auswahl: nur mögliche (`moeglich`), zwei verschiedene `gruppe` (essen, eintragen), schon vergebene Challenges einer Woche bleiben.
+- Tagesqualität (im Budget, ohne Ausgaben, unter 70 %) zählt nur abgeschlossene Tage (`zaehltHeuteNicht`), kein Lohn mehr am Morgen.
+- Status „gefährdet“ nur, wenn Spielraum bestand und aufgebraucht ist; Folgen-Challenges melden „verpasst“, sobald die Folge nicht mehr erreichbar ist.

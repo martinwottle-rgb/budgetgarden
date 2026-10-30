@@ -173,7 +173,7 @@ export function zeige(container, ctx, param) {
     const kat = kategorieVon(ctx.daten, g.kategorie);
     const eintrag = {
       id: neueId('b'), art: 'ausgabe', name: g.notiz || kat.name, betrag: g.betrag,
-      datum: z.datum || heute, kategorie: g.kategorie, notiz: g.notiz
+      datum: z.datum || heute, kategorie: g.kategorie, notiz: g.notiz, erstellt: new Date().toISOString()
     };
     merkeEntwurf = { ...z };
     sofortSpeichern([...ctx.daten.buchungen, eintrag], eintrag.datum, von);
@@ -231,8 +231,11 @@ export function zeige(container, ctx, param) {
       betrag: cent,
       datum: z.datum || heute,
       kategorie: z.kategorie,
-      notiz
+      notiz,
+      // Anlegezeitpunkt (für „Jeden Abend vor 22 Uhr eingetragen“); beim Bearbeiten bleibt der ursprüngliche
+      erstellt: (z.id && (ctx.daten.buchungen.find(b => b.id === z.id) || {}).erstellt) || (z.id ? null : new Date().toISOString())
     };
+    if (!eintrag.erstellt) delete eintrag.erstellt;
     const buchungen = z.id
       ? ctx.daten.buchungen.map(b => (b.id === z.id ? eintrag : b))
       : [...ctx.daten.buchungen, eintrag];
@@ -250,7 +253,7 @@ export function zeige(container, ctx, param) {
     const kategorie = ctx.daten.kategorien.some(k => k.id === 'sonstiges')
       ? 'sonstiges'
       : (ctx.daten.kategorien[0] ? ctx.daten.kategorien[0].id : null);
-    const eintrag = { id: neueId('b'), art: 'ausgabe', name: NICHTS, betrag: 0, datum: heute, kategorie, notiz: NICHTS };
+    const eintrag = { id: neueId('b'), art: 'ausgabe', name: NICHTS, betrag: 0, datum: heute, kategorie, notiz: NICHTS, erstellt: new Date().toISOString() };
     sofortSpeichern([...ctx.daten.buchungen, eintrag], heute, von);
     ctx.toast('Heute als „Nichts ausgegeben“ eingetragen.');
   }

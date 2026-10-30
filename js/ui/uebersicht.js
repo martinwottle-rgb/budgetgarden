@@ -767,6 +767,8 @@ function buchungSheet(ctx, b) {
         id: b.id, art: z.art, name: notiz || kat.name, betrag: cent,
         datum: z.datum, kategorie: z.kategorie, notiz
       };
+      // Anlegezeitpunkt bleibt beim Bearbeiten erhalten
+      if (b.erstellt) eintrag.erstellt = b.erstellt;
       blatt.schliessen();
       ctx.speichern({ ...ctx.daten, buchungen: aktuell.map(x => (x.id === b.id ? eintrag : x)) });
       ctx.toast('Buchung geändert: ' + euro(cent));

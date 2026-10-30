@@ -617,3 +617,11 @@ button:not([disabled]):active,
 
   .ios-konfetti { display: none; }
 }
+
+/* Challenge „Eine Kategorie meiden“: Karte vor der Wahl antippbar, Marke „Wählen“ */
+.sp11-marke.sp11-offen { background: var(--gold, #f2c14e); color: #6b4a3a; }
+.ch-waehlbar { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; border: 2px dashed rgba(107, 74, 58, 0.35); }
+.ch-waehlbar:active { transform: scale(0.98); }
+.ch-wahl { display: grid; gap: 12px; }
+.ch-wahl-liste { display: grid; gap: 8px; }
+.ch-wahl-knopf { justify-content: flex-start; min-height: 48px; }

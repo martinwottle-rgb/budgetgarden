@@ -147,8 +147,9 @@ test('bewerte: 8 Tage mit einem überzogenen Tag', () => {
   // Tag 1: B = 3100/31 = 100 EUR, 500 EUR ausgegeben: nicht erfüllt, +2 für den Eintrag
   // Tage 2 bis 8: sieben erfüllte Tage à 10, Serie erreicht 7 am 8. Tag: +30
   // Startwoche (Start Donnerstag): Einsteiger-Challenges 20 (Eintrag am Start) und 40 (3 von 4 Tagen im Budget)
-  gleich(r1.daten.spiel.samen, 50 + 70 + 30 + 2 + 60, 'Samen: Start 50, 7 Tage à 10, Serienbonus 30, Eintrag 2, Einsteiger 60');
-  gleich(r1.daten.spiel.xp, 162, 'XP = verdiente Samen');
+  // Laufende Woche ab 5.10.: „Drei Tage am Stück im Budget“ ist ausgelost, Mo bis Do (abgeschlossene Tage) im Budget: +45
+  gleich(r1.daten.spiel.samen, 50 + 70 + 30 + 2 + 60 + 45, 'Samen: Start 50, 7 Tage à 10, Serienbonus 30, Eintrag 2, Einsteiger 60, Challenge 45');
+  gleich(r1.daten.spiel.xp, 207, 'XP = verdiente Samen');
   gleich(r1.daten.spiel.serie, 7, 'Serie 7');
   gleich(r1.daten.spiel.besteSerie, 7, 'beste Serie 7');
   gleich(r1.daten.spiel.bewertet.tage.length, 8, '8 Tage bewertet');
@@ -168,7 +169,7 @@ test('bewerte: Wochenbonus mit Challenges', () => {
   const r1 = S.bewerte(d0, '2026-10-12');
   const wb = '2026-10-05';
   const zr = L.zeitraum(d0, wb);
-  const bonus = S.challengesDerWoche(wb)
+  const bonus = S.challengesDerWoche(wb, r1.daten)
     .filter(c => c.pruefe(d0, wb, zr))
     .reduce((s, c) => s + c.samen, 0);
   gleich(r1.daten.spiel.bewertet.wochen.length, 1, 'eine Woche bewertet');
@@ -406,25 +407,27 @@ test('challengePool: jede Challenge hat art und fortschritt', () => {
   gleich(S.challengePool.every(c => (c.art === 'zaehl' || c.art === 'grenze') && typeof c.fortschritt === 'function'), true, 'art und fortschritt');
 });
 
-test('fortschritt: zählt nur Tage bis heute', () => {
+test('fortschritt: Tage ohne Ausgaben zählen erst, wenn sie vorbei sind', () => {
   const d = wochenFixture();
   const wb = '2026-10-05';
   const zr = L.zeitraum(d, wb);
-  gleich(pool('zwei_ohne_ausgaben').fortschritt(d, wb, zr, '2026-10-06'), { ist: 1, soll: 2, einheit: 'Tage' }, 'Mo bis Di: nur Dienstag ohne Ausgabe');
-  gleich(pool('zwei_ohne_ausgaben').fortschritt(d, wb, zr, '2026-10-08').ist, 2, 'Di und Do ohne Ausgabe');
+  // Heute Dienstag: der Dienstag ist noch nicht vorbei, abgeschlossen ist nur der Montag (mit Ausgabe)
+  gleich(pool('zwei_ohne_ausgaben').fortschritt(d, wb, zr, '2026-10-06'), { ist: 0, soll: 2, einheit: 'Tage' }, 'Dienstag zählt erst ab Mittwoch');
+  gleich(pool('zwei_ohne_ausgaben').fortschritt(d, wb, zr, '2026-10-08').ist, 1, 'heute Donnerstag: nur Dienstag abgeschlossen');
+  gleich(pool('zwei_ohne_ausgaben').fortschritt(d, wb, zr, '2026-10-09').ist, 2, 'heute Freitag: Di und Do ohne Ausgabe');
   gleich(pool('woche_15_unter').fortschritt(d, wb, zr, '2026-10-06').ist, EUR(20), 'Betrag: nur Ausgaben bis heute');
 });
 
 test('challengeStatus: laufende Woche, Zählziel auf Kurs', () => {
   const d = wochenFixture();
   const s = S.challengeStatus(d, pool('zwei_ohne_ausgaben'), '2026-10-05', '2026-10-06');
-  gleich(s.zustand, 'auf_kurs', 'ein Tag von zwei, noch fünf Tage übrig');
-  gleich(s.text, '1 von 2 Tagen', 'Text');
+  gleich(s.zustand, 'auf_kurs', 'noch keiner, sechs Tage offen (heute zählt mit)');
+  gleich(s.text, '0 von 2 Tagen', 'Text');
 });
 
 test('challengeStatus: geschafft und gefährdet bei Zählzielen', () => {
   const d = wochenFixture();
-  const geschafft = S.challengeStatus(d, pool('zwei_ohne_ausgaben'), '2026-10-05', '2026-10-08');
+  const geschafft = S.challengeStatus(d, pool('zwei_ohne_ausgaben'), '2026-10-05', '2026-10-09');
   gleich(geschafft.zustand, 'geschafft', 'zwei Tage ohne Ausgabe erreicht');
   gleich(geschafft.text, '2 von 2 Tagen', 'Text geschafft');
   // Eintraege am Montag und Mittwoch: 2 von 4, am Freitag fehlen 2 und genau 2 Tage sind übrig
@@ -464,7 +467,7 @@ test('wochenRueckblick: Zahlen einer Woche im Budget', () => {
   gleich(r.tageImBudget, 7, 'alle 7 Tage im Budget');
   gleich(r.topKategorie, { id: 'shopping', betrag: EUR(30) }, 'größte Kategorie');
   gleich(r.erfuellt, true, 'Woche erfüllt');
-  const bonus = S.challengesDerWoche(wb).filter(c => c.pruefe(d, wb, L.zeitraum(d, wb))).reduce((s, c) => s + c.samen, 0);
+  const bonus = S.challengesDerWoche(wb, d).filter(c => c.pruefe(d, wb, L.zeitraum(d, wb))).reduce((s, c) => s + c.samen, 0);
   gleich(r.samen, 70 + 50 + bonus, 'Samen: 7 Tage à 10, Woche 50, Challenges');
 });
 
@@ -523,8 +526,9 @@ test('bewerte: Samen je Tag und Summe fest fuer ein festes Szenario', () => {
     d0.buchungen.push({ id: 'g' + t, art: 'ausgabe', name: 'Kleinkram', betrag: EUR(1), datum: '2026-10-0' + t, kategorie: 'lebensmittel', notiz: '' });
   }
   const r = S.bewerte(d0, '2026-10-09');
-  gleich(r.daten.spiel.samen, 226, 'Samen gesamt');
-  gleich(r.daten.spiel.xp, 176, 'XP gesamt');
+  // Dazu die Woche ab 5.10.: „Drei Tage am Stück im Budget“ (45) und „Mindestens 4 Tage mit Eintrag“ (50), Mo bis Do erfüllt
+  gleich(r.daten.spiel.samen, 226 + 95, 'Samen gesamt');
+  gleich(r.daten.spiel.xp, 176 + 95, 'XP gesamt');
   gleich(r.daten.spiel.bewertet.tage.map(t => t.samen), [2, 12, 12, 12, 12, 12, 12, 42], 'Samen je Tag');
 });
 
@@ -712,7 +716,7 @@ test('Monatsbeginn am Mittwoch: Challenges sehen die volle Woche', () => {
   const fuenf = S.challengePool.find(c => c.id === 'fuenf_im_budget');
   // Keine Ausgaben: alle 7 Tage im Budget, also sind 5 Tage erreichbar (vorher nur Mo und Di sichtbar)
   gleich(fuenf.pruefe(d, wb, L.zeitraum(d, wb)), true, '5 Tage im Budget über den Monatswechsel geschafft');
-  gleich(fuenf.fortschritt(d, wb, L.zeitraum(d, wb), '2026-07-05').ist, 7, 'Fortschritt zählt alle 7 Tage');
+  gleich(fuenf.fortschritt(d, wb, L.zeitraum(d, wb), '2026-07-06').ist, 7, 'Fortschritt zählt alle 7 Tage');
   const r = S.bewerte(d, '2026-07-06');
   gleich(r.daten.spiel.bewertet.wochen.find(w => w.start === wb).erfuellt, true, 'Woche im Budget gewertet');
   gleich(r.ereignisse.filter(e => e.art === 'woche').length >= 1, true, 'Wochenbonus für die geteilte Woche');
@@ -762,6 +766,175 @@ test('Bank belegt zwei Felder nebeneinander', () => {
   const orte = S.freiePlaetze(r.daten, 'deko', 'bank');
   gleich(orte.every(o => o.breite === 2), true, 'Orte tragen die Breite für die Vorschau');
   gleich(orte.some(o => o.feld[0] === 2 && o.feld[1] === 4), false, '(2,4) geht nicht, (3,4) ist belegt');
+});
+
+
+// ---------- Neue Wochen-Challenges (30.10.) ----------
+// Woche Mo 2.11. bis So 8.11.2026, Start der App am 1.10., Gehalt 3100 EUR am 1.
+
+const NOV = '2026-11-02';
+const nov = (tag) => '2026-11-' + String(tag).padStart(2, '0');
+
+function novDaten() {
+  const d = mitGehalt('2026-10-01');
+  d.einstellungen.ersteinrichtungFertig = true;
+  return d;
+}
+
+function aus(d, datum, betrag, kategorie = 'lebensmittel', erstellt) {
+  const b = { id: 'x' + d.buchungen.length, art: 'ausgabe', name: 'Test', betrag, datum, kategorie, notiz: '' };
+  if (erstellt) b.erstellt = erstellt;
+  d.buchungen.push(b);
+}
+
+const pz = (id) => S.challengePool.find(c => c.id === id);
+const zrN = (d) => L.zeitraum(d, NOV);
+
+test('Challenge Wochenende im Budget', () => {
+  const c = pz('wochenende_im_budget');
+  const d = novDaten();
+  gleich(c.moeglich(d, NOV), true, 'möglich, beide Tage nach dem Start');
+  gleich(c.fortschritt(d, NOV, zrN(d), nov(7)).ist, 0, 'Samstag zählt erst, wenn er vorbei ist');
+  gleich(S.challengeStatus(d, c, NOV, nov(6)).zustand, 'auf_kurs', 'am Freitag auf Kurs, nichts ist schiefgegangen');
+  gleich(S.challengeStatus(d, c, NOV, nov(7)).zustand, 'auf_kurs', 'am Samstag noch auf Kurs');
+  gleich(c.pruefe(d, NOV, zrN(d)), true, 'ohne Ausgaben geschafft');
+  aus(d, nov(7), EUR(500));
+  gleich(c.pruefe(d, NOV, zrN(d)), false, 'Samstag überzogen: nicht geschafft');
+  gleich(S.challengeStatus(d, c, NOV, nov(8)).zustand, 'verpasst', 'am Sonntag schon verpasst');
+  const spaet = novDaten();
+  spaet.einstellungen.startDatum = nov(8);
+  gleich(c.moeglich(spaet, NOV), false, 'Start am Sonntag: nicht möglich');
+});
+
+test('Challenge 3 Tage hintereinander ohne Ausgaben', () => {
+  const c = pz('drei_ohne_folge');
+  const d = novDaten();
+  for (const t of [2, 4, 7]) aus(d, nov(t), EUR(5)); // frei: Di, Do, Fr, So
+  gleich(c.pruefe(d, NOV, zrN(d)), false, 'längste Folge 2 Tage');
+  gleich(S.challengeStatus(d, c, NOV, nov(7)).zustand, 'auf_kurs', 'Samstag: Do und Fr frei, Sa und So offen');
+  gleich(S.challengeStatus(d, c, NOV, nov(8)).zustand, 'verpasst', 'Sonntag: Folge durch Samstag unterbrochen');
+  const gut = novDaten();
+  for (const t of [2, 6, 7, 8]) aus(gut, nov(t), EUR(5)); // frei: Di, Mi, Do
+  gleich(gut && c.pruefe(gut, NOV, zrN(gut)), true, 'Di bis Do ohne Ausgaben');
+  gleich(c.fortschritt(gut, NOV, zrN(gut), nov(6)).ist, 3, 'am Freitag 3 von 3');
+});
+
+test('Challenge Kein Tag über 30 €', () => {
+  const c = pz('kein_tag_ueber_30');
+  const d = novDaten();
+  aus(d, nov(3), EUR(20));
+  aus(d, nov(3), EUR(10));
+  gleich(c.pruefe(d, NOV, zrN(d)), true, 'genau 30 € ist erlaubt');
+  aus(d, nov(5), 3001);
+  gleich(c.pruefe(d, NOV, zrN(d)), false, '30,01 € ist zu viel');
+  gleich(c.fortschritt(d, NOV, zrN(d), nov(5)).ist, 1, 'ein Verstoß');
+});
+
+test('Challenge Weniger ausgeben als letzte Woche', () => {
+  const c = pz('weniger_als_letzte_woche');
+  const d = novDaten();
+  gleich(c.moeglich(d, NOV), false, 'ohne Ausgaben in der Vorwoche nicht möglich');
+  aus(d, '2026-10-28', EUR(100));
+  gleich(c.moeglich(d, NOV), true, 'Vorwoche mit 100 € möglich');
+  aus(d, nov(3), 9999);
+  gleich(c.pruefe(d, NOV, zrN(d)), true, '99,99 € ist weniger');
+  aus(d, nov(4), 1);
+  gleich(c.pruefe(d, NOV, zrN(d)), false, 'genau 100 € ist nicht weniger');
+  const neu = novDaten();
+  neu.einstellungen.startDatum = '2026-10-28';
+  aus(neu, '2026-10-28', EUR(100));
+  gleich(c.moeglich(neu, NOV), false, 'Start mitten in der Vorwoche: nicht möglich');
+});
+
+test('Challenge Höchstens 2× Essen gehen', () => {
+  const c = pz('hoechstens_zwei_essen');
+  const d = novDaten();
+  aus(d, nov(3), EUR(15), 'essen');
+  aus(d, nov(5), EUR(20), 'essen');
+  gleich(c.pruefe(d, NOV, zrN(d)), true, 'zweimal erlaubt');
+  aus(d, nov(7), EUR(12), 'essen');
+  gleich(c.pruefe(d, NOV, zrN(d)), false, 'dreimal zu viel');
+  const ohne = novDaten();
+  ohne.kategorien = ohne.kategorien.filter(k => k.id !== 'essen');
+  gleich(c.moeglich(ohne, NOV), false, 'ohne Kategorie Essen nicht möglich');
+});
+
+test('Challenge Jeden Abend vor 22 Uhr eintragen', () => {
+  const c = pz('abends_eingetragen');
+  const d = novDaten();
+  gleich(c.moeglich(d, '2026-10-26'), false, 'vor der Einführung nicht möglich');
+  gleich(c.moeglich(d, NOV), true, 'ab 2.11. möglich');
+  for (let t = 2; t <= 8; t++) aus(d, nov(t), EUR(3), 'lebensmittel', new Date(2026, 10, t, 21, 30).toISOString());
+  gleich(c.pruefe(d, NOV, zrN(d)), true, 'jeden Tag um 21:30 eingetragen');
+  const spaet = novDaten();
+  for (let t = 2; t <= 8; t++) aus(spaet, nov(t), EUR(3), 'lebensmittel', new Date(2026, 10, t, t === 5 ? 22 : 21, 15).toISOString());
+  gleich(c.pruefe(spaet, NOV, zrN(spaet)), false, 'Donnerstag erst um 22:15');
+  gleich(c.fortschritt(spaet, NOV, zrN(spaet), nov(6)).ist, 1, 'am Freitag ein Verstoß');
+  gleich(c.fortschritt(spaet, NOV, zrN(spaet), nov(5)).ist, 0, 'der laufende Tag zählt noch nicht');
+  const nachgetragen = novDaten();
+  for (let t = 2; t <= 8; t++) aus(nachgetragen, nov(t), EUR(3), 'lebensmittel', new Date(2026, 10, t + 1, 9, 0).toISOString());
+  gleich(c.pruefe(nachgetragen, NOV, zrN(nachgetragen)), false, 'am nächsten Morgen nachgetragen zählt nicht');
+});
+
+test('Challenge 4 Tage unter 70 % des Tagesbudgets', () => {
+  const c = pz('vier_tage_unter_70');
+  const d = novDaten();
+  for (const t of [2, 3, 4, 5]) aus(d, nov(t), EUR(50));
+  for (const t of [6, 7, 8]) aus(d, nov(t), EUR(95));
+  gleich(c.pruefe(d, NOV, zrN(d)), true, 'Mo bis Do je 50 € bei etwa 103 € Tagesbudget');
+  gleich(c.fortschritt(d, NOV, zrN(d), nov(5)).ist, 3, 'am Donnerstag 3 abgeschlossene Tage');
+  const knapp = novDaten();
+  for (const t of [2, 3, 4]) aus(knapp, nov(t), EUR(50));
+  for (const t of [5, 6, 7, 8]) aus(knapp, nov(t), EUR(90));
+  gleich(c.pruefe(knapp, NOV, zrN(knapp)), false, 'nur 3 Tage unter 70 %');
+});
+
+test('Challenge Eine Kategorie meiden: Wahl und Wertung', () => {
+  const c = pz('kategorie_meiden');
+  const d = novDaten();
+  gleich(c.moeglich(d, NOV), false, 'ohne Ausgaben in den 4 Wochen davor nicht möglich');
+  aus(d, '2026-10-20', EUR(12), 'essen');
+  aus(d, '2026-10-21', EUR(30), 'lebensmittel');
+  gleich(S.meidbareKategorien(d, NOV).map(k => k.id), ['lebensmittel', 'essen'], 'wählbar: Kategorien mit Ausgaben');
+  gleich(S.challengeStatus(d, c, NOV, nov(3)).zustand, 'offen', 'vor der Wahl: offen');
+  gleich(c.pruefe(d, NOV, zrN(d)), false, 'ohne Wahl nicht geschafft');
+  scheitert(S.kategorieWaehlen(d, NOV, 'freizeit'), 'Freizeit ohne Ausgaben nicht wählbar');
+  const r = S.kategorieWaehlen(d, NOV, 'essen');
+  klappt(r, 'Essen gewählt');
+  scheitert(S.kategorieWaehlen(r.daten, NOV, 'lebensmittel'), 'zweite Wahl in derselben Woche');
+  gleich(c.pruefe(r.daten, NOV, zrN(r.daten)), true, 'ohne Essen-Ausgabe geschafft');
+  aus(r.daten, nov(6), EUR(18), 'essen');
+  gleich(c.pruefe(r.daten, NOV, zrN(r.daten)), false, 'Essen am Freitag: nicht geschafft');
+  gleich(S.challengeStatus(r.daten, c, NOV, nov(6)).zustand, 'verpasst', 'Status verpasst');
+});
+
+test('Challenge-Auswahl: verschiedene Gruppen, nur Mögliche, vergebene bleiben', () => {
+  const d = novDaten();
+  aus(d, '2026-10-20', EUR(12), 'essen');
+  aus(d, '2026-10-27', EUR(30), 'lebensmittel');
+  let wb = NOV;
+  for (let i = 0; i < 40; i++) {
+    const w = S.challengesDerWoche(wb, d);
+    gleich(w.length, 2, 'zwei Challenges ' + wb);
+    if (w[0].gruppe) gleich(w[0].gruppe !== w[1].gruppe, true, 'verschiedene Gruppen ' + wb);
+    gleich(w.every(c => !c.moeglich || c.moeglich(d, wb)), true, 'nur mögliche ' + wb);
+    wb = L.datumPlusTage(wb, 7);
+  }
+  const fest = novDaten();
+  fest.spiel.challenges = { [NOV]: [{ id: 'kein_tag_150', erfuellt: false, belohnt: false }, { id: 'zwei_ohne_ausgaben', erfuellt: false, belohnt: false }] };
+  gleich(S.challengesDerWoche(NOV, fest).map(c => c.id), ['kein_tag_150', 'zwei_ohne_ausgaben'], 'schon vergebene Challenges bleiben');
+});
+
+test('Kein vorzeitiger Lohn: Tag ohne Ausgaben zählt erst am nächsten Tag', () => {
+  const d = novDaten();
+  d.spiel.challenges = { [NOV]: [{ id: 'zwei_ohne_ausgaben', erfuellt: false, belohnt: false }, { id: 'kein_tag_ueber_30', erfuellt: false, belohnt: false }] };
+  aus(d, nov(2), EUR(5));
+  aus(d, nov(3), EUR(5));
+  // Mittwoch und Donnerstag ohne Ausgaben. Am Donnerstag (heute) darf es noch keinen Lohn geben.
+  const r = S.bewerte(d, nov(5));
+  gleich(r.ereignisse.some(e => e.art === 'challenge' && e.text === '2 Tage ohne Ausgaben'), false, 'Donnerstag läuft noch: kein Lohn');
+  const r2 = S.bewerte(r.daten, nov(6));
+  gleich(r2.ereignisse.some(e => e.art === 'challenge' && e.text === '2 Tage ohne Ausgaben'), true, 'Freitag: Lohn für Mi und Do');
 });
 
 test('Katze kostet 250 und ist ab Level 9', () => {
@@ -947,13 +1120,14 @@ test('Einsteiger-Challenges bei Start am Freitag: m = 3, n = 2, 20 und 30 Samen'
 });
 
 test('Normale Challenges bei Start vor der Woche und am Montag', () => {
-  const normal = S.challengesDerWoche('2026-10-05').map(c => c.id);
   // Mit Gehalt (positives Wochenbudget), sonst fallen Budget-Challenges zu Recht heraus
   const d = mitGehalt('2026-10-01');
   d.einstellungen.startDatum = '2026-10-01';
-  gleich(S.challengesDerWoche('2026-10-05', d).map(c => c.id), normal, 'Start vor der Woche');
+  const vorher = S.challengesDerWoche('2026-10-05', d).map(c => c.id);
+  gleich(vorher.length, 2, 'Start vor der Woche: zwei Challenges');
+  gleich(vorher.some(id => id.startsWith('einstieg')), false, 'Start vor der Woche: keine Einsteiger');
   d.einstellungen.startDatum = '2026-10-05';
-  gleich(S.challengesDerWoche('2026-10-05', d).map(c => c.id), normal, 'Start am Montag (7 Tage übrig)');
+  gleich(S.challengesDerWoche('2026-10-05', d).map(c => c.id), vorher, 'Start am Montag (7 Tage übrig): dieselben');
 });
 
 test('Einsteiger-Fortschritt zählt nur Tage ab dem Start', () => {

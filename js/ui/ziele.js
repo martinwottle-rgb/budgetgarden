@@ -249,7 +249,7 @@ async function extraEinzahlen(ctx, id, sheetSchliessen) {
     const sparziele = (d.sparziele || []).map(x => (x.id === id ? { ...x, angespart: (x.angespart || 0) + cent } : x));
     const buchung = {
       id: neueId('b'), art: 'fixkosten', name: `Extra in ${ziel.name}`, betrag: cent,
-      datum: ctx.heute, kategorie: 'sonstiges', notiz: ''
+      datum: ctx.heute, kategorie: 'sonstiges', notiz: '', erstellt: new Date().toISOString()
     };
     if (sheetSchliessen) sheetSchliessen();
     ctx.speichern({ ...d, sparziele, buchungen: [...(d.buchungen || []), buchung] });
