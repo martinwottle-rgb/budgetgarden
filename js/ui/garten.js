@@ -607,6 +607,8 @@ function vorbereiten(ctx, z) {
     }
     // Beetplätze sind für Topfpflanzen gesperrt (nur Saatpflanzen dürfen dorthin)
     z.beet = z.obj.art === 'pflanze' && !dat.saat ? beetPunkte(gh) : [];
+    // Umrisse der Möbel auf dem Bildschirm: Bodenfelder, deren Mitte darin liegt, stehen hinter einem Möbel
+    z.verdeckt = moebelUmrisse(gh);
     z.ziel = dat.ort;
     z.fehler = null;
   }
@@ -615,6 +617,52 @@ function vorbereiten(ctx, z) {
   z.vor.raute.style.display = 'none';
   z.vor.kreis.style.display = 'none';
   z.svg.append(z.vor.raute, z.vor.kreis);
+  return true;
+}
+
+// Bildschirm-Umriss jedes Möbels (konvexe Hülle aus Grundfläche und Oberkante). Die Oberkante ist der höchste Stellplatz plus etwas Luft.
+function moebelUmrisse(gh) {
+  const umrisse = [];
+  for (const m of gh.moebel || []) {
+    const def = hat(MOEBEL_ALLE, m.typ);
+    if (!def) continue;
+    const [w, h] = m.drehung === 90 ? [def.tiefe, def.breite] : [def.breite, def.tiefe];
+    const oben = Math.max(20, ...def.plaetze.map(p => p.z || 0)) + 12;
+    const ecken = [[m.gx, m.gy], [m.gx + w, m.gy], [m.gx + w, m.gy + h], [m.gx, m.gy + h]];
+    const punkte = [...ecken.map(([x, y]) => iso(x, y, 0)), ...ecken.map(([x, y]) => iso(x, y, oben))];
+    umrisse.push(huelle(punkte));
+  }
+  return umrisse;
+}
+
+// Konvexe Hülle (Andrew), Punkte gegen den Uhrzeigersinn im Bildschirm-Koordinatensystem
+function huelle(punkte) {
+  const p = [...punkte].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const kreuz = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const unten = [];
+  for (const q of p) {
+    while (unten.length >= 2 && kreuz(unten[unten.length - 2], unten[unten.length - 1], q) <= 0) unten.pop();
+    unten.push(q);
+  }
+  const obenL = [];
+  for (const q of [...p].reverse()) {
+    while (obenL.length >= 2 && kreuz(obenL[obenL.length - 2], obenL[obenL.length - 1], q) <= 0) obenL.pop();
+    obenL.push(q);
+  }
+  return unten.slice(0, -1).concat(obenL.slice(0, -1));
+}
+
+// Liegt der Punkt in einem konvexen Polygon (Ecken in einer Umlaufrichtung)?
+function imPolygon(pt, poly) {
+  let vorzeichen = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const k = (b[0] - a[0]) * (pt[1] - a[1]) - (b[1] - a[1]) * (pt[0] - a[0]);
+    if (k === 0) continue;
+    const v = Math.sign(k);
+    if (vorzeichen === 0) vorzeichen = v;
+    else if (v !== vorzeichen) return false;
+  }
   return true;
 }
 
@@ -682,7 +730,11 @@ function zielBestimmen(ctx, z) {
   let bestKand = null;
   let bestDist = Infinity;
   for (const k of z.kand) {
-    const dd = Math.hypot(k.p[0] - anker[0], k.p[1] - anker[1]);
+    let dd = Math.hypot(k.p[0] - anker[0], k.p[1] - anker[1]);
+    // Stellplätze auf Möbeln haben Vorrang. Bodenfelder hinter einem Möbel liegen auf dem Bildschirm fast auf Höhe
+    // der Tischplatte; ohne Gewichtung landete die Pflanze oft hinter dem Tisch auf dem Boden.
+    if (k.ort.moebel !== undefined) dd *= 0.6;
+    else if (Array.isArray(k.ort.feld) && (z.verdeckt || []).some(u => imPolygon(k.p, u))) dd *= 2.5;
     if (dd < bestDist) { bestDist = dd; bestKand = k; }
   }
   // Ein Beetplatz, der näher liegt als jeder freie Platz, sperrt den Zug (Topfpflanze auf dem Beet)

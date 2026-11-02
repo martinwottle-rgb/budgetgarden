@@ -338,7 +338,7 @@ function reich() {
 test('Haengeampel: freie Haken im Standardgarten', () => {
   // Unter h2 steht das Holzregal (Felder x 0, y 1 bis 3), unter h1 nichts Hohes
   gleich(S.freiePlaetze(basis(), 'deko', 'haengeampel').map(o => o.haken), ['h1'], 'nur h1 frei');
-  gleich(S.freiePlaetze(basis(), 'deko', 'katze').every(o => Array.isArray(o.feld)), true, 'Bodendeko bleibt bei Feldern');
+  gleich(S.freiePlaetze(basis(), 'deko', 'vogelhaus').every(o => Array.isArray(o.feld)), true, 'Bodendeko (Vogelhaus) bleibt bei Feldern');
 });
 
 test('Haengeampel: an freien Haken ok', () => {
@@ -430,8 +430,10 @@ test('challengeStatus: geschafft und gefährdet bei Zählzielen', () => {
   const geschafft = S.challengeStatus(d, pool('zwei_ohne_ausgaben'), '2026-10-05', '2026-10-09');
   gleich(geschafft.zustand, 'geschafft', 'zwei Tage ohne Ausgabe erreicht');
   gleich(geschafft.text, '2 von 2 Tagen', 'Text geschafft');
-  // Eintraege am Montag und Mittwoch: 2 von 4, am Freitag fehlen 2 und genau 2 Tage sind übrig
-  const gefaehrdet = S.challengeStatus(d, pool('vier_tage_eintrag'), '2026-10-05', '2026-10-09');
+  // Einträge am Montag und Mittwoch: 2 von 4. Am Freitag sind Fr, Sa, So offen (heute zählt mit): auf Kurs.
+  gleich(S.challengeStatus(d, pool('vier_tage_eintrag'), '2026-10-05', '2026-10-09').zustand, 'auf_kurs', 'Freitag: 3 Tage offen, 2 fehlen');
+  // Am Samstag sind nur noch Sa und So offen, es fehlen 2: jeder Tag muss zählen
+  const gefaehrdet = S.challengeStatus(d, pool('vier_tage_eintrag'), '2026-10-05', '2026-10-10');
   gleich(gefaehrdet.zustand, 'gefaehrdet', 'alle restlichen Tage müssen zählen');
   gleich(gefaehrdet.text, '2 von 4 Tagen', 'Text gefährdet');
 });
@@ -935,6 +937,39 @@ test('Kein vorzeitiger Lohn: Tag ohne Ausgaben zählt erst am nächsten Tag', ()
   gleich(r.ereignisse.some(e => e.art === 'challenge' && e.text === '2 Tage ohne Ausgaben'), false, 'Donnerstag läuft noch: kein Lohn');
   const r2 = S.bewerte(r.daten, nov(6));
   gleich(r2.ereignisse.some(e => e.art === 'challenge' && e.text === '2 Tage ohne Ausgaben'), true, 'Freitag: Lohn für Mi und Do');
+});
+
+
+test('Eintrage-Challenge am letzten Tag: morgens nicht verpasst, nach dem Eintrag geschafft', () => {
+  // Woche Mo 2.11. bis So 8.11.: Einträge Mo, Mi, Fr. Sonntag früh ist noch nichts eingetragen.
+  const d = novDaten();
+  for (const t of [2, 4, 6]) aus(d, nov(t), EUR(4));
+  const c = pz('vier_tage_eintrag');
+  const morgens = S.challengeStatus(d, c, NOV, nov(8));
+  gleich(morgens.zustand, 'gefaehrdet', 'Sonntag früh: gefährdet, nicht verpasst');
+  aus(d, nov(8), EUR(4));
+  gleich(S.challengeStatus(d, c, NOV, nov(8)).zustand, 'geschafft', 'nach dem Eintrag geschafft');
+  const zwei = novDaten();
+  for (const t of [2, 4]) aus(zwei, nov(t), EUR(4));
+  gleich(S.challengeStatus(zwei, c, NOV, nov(8)).zustand, 'verpasst', 'mit nur 2 Einträgen am Sonntag wirklich verpasst');
+});
+
+test('Kleine Deko auf Möbeln: Windspiel ja, Bank nein, Platz geteilt mit Pflanzen', () => {
+  const d = basis(2000, 2100); // Level 7: Windspiel, Bank, Laterne freigeschaltet. Tisch m2: Platz 0 mit Efeutute
+  klappt(S.kaufen(d, 'deko', 'windspiel', { moebel: 'm2', platz: 1 }), 'Windspiel auf den Tisch');
+  scheitert(S.kaufen(d, 'deko', 'windspiel', { moebel: 'm2', platz: 0 }), 'Platz 0 hat schon die Efeutute');
+  scheitert(S.kaufen(d, 'deko', 'bank', { moebel: 'm2', platz: 1 }), 'Bank ist zu groß für ein Möbel');
+  const r = S.kaufen(d, 'deko', 'laterne', { moebel: 'm1', platz: 2 });
+  klappt(r, 'Laterne auf das Regal, oberster Boden');
+  scheitert(S.kaufen(r.daten, 'pflanze', 'kaktus', { moebel: 'm1', platz: 2 }), 'Pflanze nicht auf den Platz der Laterne');
+  gleich(S.freiePlaetze(d, 'deko', 'windspiel').some(o => o.moebel === 'm2' && o.platz === 1), true, 'freie Stellplätze werden angeboten');
+  gleich(S.freiePlaetze(d, 'deko', 'bank').some(o => o.moebel !== undefined), false, 'für die Bank keine Stellplätze');
+  const lat = r.daten.spiel.gewaechshaus.deko.find(x => x.typ === 'laterne');
+  scheitert(S.verkaufen(r.daten, 'moebel', 'm1'), 'Regal mit Laterne lässt sich nicht verkaufen');
+  klappt(S.platzieren(r.daten, 'deko', lat.id, { feld: [5, 5] }), 'Laterne vom Regal auf den Boden');
+  const beet = basis(2000, 2100);
+  beet.spiel.gewaechshaus.moebel.push({ id: 'k1', typ: 'kraeuterbeet', gx: 4, gy: 4, drehung: 0 });
+  scheitert(S.kaufen(beet, 'deko', 'windspiel', { moebel: 'k1', platz: 0 }), 'nicht aufs Beet');
 });
 
 test('Katze kostet 250 und ist ab Level 9', () => {

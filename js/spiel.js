@@ -9,6 +9,7 @@ import { MOEBEL } from './grafik/moebel.js';
 import { DEKO } from './grafik/deko.js';
 import { RARITAETEN } from './grafik/raritaeten.js';
 import { hakenFuer } from './szene.js';
+import { dekoAufMoebel } from './grafik/deko-klein.js';
 import * as G_MOEBEL2 from './grafik/moebel2.js';
 import * as G_PFLANZEN2 from './grafik/pflanzen2.js';
 import * as G_DEKO2 from './grafik/deko2.js';
@@ -852,11 +853,13 @@ export function challengeStatus(daten, challenge, wochenbeginn, heute) {
   } else if (challenge.verpasst && challenge.verpasst(daten, wochenbeginn, heute)) {
     zustand = 'verpasst';
   } else {
-    const fehlt = soll - ist;
-    // Offene Tage: bei Challenges, die nur abgeschlossene Tage zählen, gehört heute noch dazu
+    // Was bis gestern sicher erreicht ist, und wie viele Tage ab heute noch beitragen können. Heute ist immer noch offen:
+    // bei Eintrage-Challenges kann der Eintrag heute noch kommen (vorher stand am letzten Tag morgens schon „verpasst“).
+    const sicher = challenge.zaehltHeuteNicht ? ist : challenge.fortschritt(daten, wochenbeginn, zr, L.datumPlusTage(heute, -1)).ist;
     const relevant = challenge.tage ? challenge.tage(daten, wochenbeginn) : tageIn(fenster(wochenbeginn, daten));
-    const uebrig = relevant.filter(t => (challenge.zaehltHeuteNicht ? t >= heute : t > heute)).length;
-    if (fehlt <= 0) zustand = 'geschafft';
+    const uebrig = relevant.filter(t => t >= heute).length;
+    const fehlt = soll - sicher;
+    if (soll - ist <= 0) zustand = 'geschafft';
     else if (fehlt > uebrig) zustand = 'verpasst';
     // Gefährdet nur, wenn es Spielraum gab und er aufgebraucht ist (bei Sa und So von 2 nötig gab es nie Spielraum)
     else if (fehlt === uebrig && relevant.length > soll) zustand = 'gefaehrdet';
@@ -1362,8 +1365,9 @@ function pruefeOrt(gh, kategorie, typ, ort, ausser) {
     return null;
   }
   if (ort.moebel !== undefined) {
-    if (kategorie === 'deko') return 'Deko steht auf dem Boden.';
-    if (groesseVon(typ) === 'gross') return 'Große Pflanzen passen nicht auf ein Möbel.';
+    // Kleine Deko (Windspiel, Laterne, Gießkanne …) darf wie kleine Pflanzen auf Regalböden und Tische
+    if (kategorie === 'deko' && !dekoAufMoebel(typ)) return 'Diese Deko ist zu groß für ein Möbel.';
+    if (kategorie !== 'deko' && groesseVon(typ) === 'gross') return 'Große Pflanzen passen nicht auf ein Möbel.';
     const m = gh.moebel.find(x => x.id === ort.moebel);
     if (!m) return 'Das Möbel gibt es nicht.';
     const def = moebelDaten(m.typ);
@@ -1372,7 +1376,7 @@ function pruefeOrt(gh, kategorie, typ, ort, ausser) {
     const beet = !!def.plaetze[n].beet;
     if (kategorie === 'saat' && !beet) return 'Saatgut wächst nur auf einem Beet.';
     if (kategorie !== 'saat' && beet) return 'Auf dem Beet wachsen nur Saatpflanzen.';
-    const belegt = gh.pflanzen.some(p => p.id !== ausser && p.ort.moebel === m.id && p.ort.platz === n);
+    const belegt = [...gh.pflanzen, ...gh.deko].some(p => p.id !== ausser && p.ort.moebel === m.id && p.ort.platz === n);
     if (belegt) return 'Dieser Stellplatz ist schon belegt.';
     return null;
   }
@@ -1483,6 +1487,18 @@ export function freiePlaetze(daten, kategorie, typ) {
   if (kategorie === 'deko') {
     if (dekoDef(typ) && dekoDef(typ).haengend) {
       return Object.keys(hakenFuer(gh.groesse || 6)).map(haken => ({ haken })).filter(o => !pruefeOrt(gh, 'deko', typ, o, null));
+    }
+    if (dekoAufMoebel(typ)) {
+      const plaetze = [];
+      for (const m of gh.moebel) {
+        const def = moebelDaten(m.typ);
+        if (!def) continue;
+        def.plaetze.forEach((_, n) => {
+          const ort = { moebel: m.id, platz: n };
+          if (!pruefeOrt(gh, 'deko', typ, ort, null)) plaetze.push(ort);
+        });
+      }
+      return [...plaetze, ...felder];
     }
     if (dekoBreite(typ) > 1) {
       // Breite Deko: Startfelder, ab denen genug Felder frei sind; breite steht im Ort für Vorschau und Markierung
@@ -1652,6 +1668,9 @@ export function verkaufen(daten, kategorie, id) {
   if (liste[idx].rar) return fehler('Raritäten kann man nicht verkaufen.');
   if (kategorie === 'moebel' && gh.pflanzen.some(p => p.ort.moebel === id)) {
     return fehler('Auf dem Möbel stehen noch Pflanzen.');
+  }
+  if (kategorie === 'moebel' && gh.deko.some(x => x.ort.moebel === id)) {
+    return fehler('Auf dem Möbel steht noch Deko.');
   }
   const def = tabelle[liste[idx].typ] || preisVon(liste[idx].typ);
   const erloes = liste[idx].saat || !def ? 0 : Math.floor(def.preis / 2);

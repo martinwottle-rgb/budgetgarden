@@ -110,3 +110,11 @@ kategorie_meiden (60, Wahl per Karte, `spiel.challengeWahl[wb]`, nur Kategorien 
 - Auswahl: nur mögliche (`moeglich`), zwei verschiedene `gruppe` (essen, eintragen), schon vergebene Challenges einer Woche bleiben.
 - Tagesqualität (im Budget, ohne Ausgaben, unter 70 %) zählt nur abgeschlossene Tage (`zaehltHeuteNicht`), kein Lohn mehr am Morgen.
 - Status „gefährdet“ nur, wenn Spielraum bestand und aufgebraucht ist; Folgen-Challenges melden „verpasst“, sobald die Folge nicht mehr erreichbar ist.
+
+## Nachtrag (02.11.): Status am letzten Tag, Deko auf Möbeln, Ziehen auf Tische
+- challengeStatus: Heute ist immer offen. „Verpasst“ nur, wenn das bis gestern Erreichte plus alle Tage ab heute nicht mehr reicht
+  (vorher stand bei „4 Tage mit Eintrag“ am Sonntag früh schon „verpasst“).
+- Kleine Deko darf auf Möbel-Stellplätze (Liste und Höhen in js/grafik/deko-klein.js): Laterne, Gießkanne, Gartenzwerg, Windspiel,
+  Lichterglas, Katze, Messing-Skulptur, Goldene Gießkanne, Keramik-Pfau, Kürbisse, Schneelaterne. Nicht auf Beete.
+  Ein Stellplatz trägt entweder eine Pflanze oder eine Deko. Möbel mit Deko lassen sich nicht verkaufen.
+- Ziehen: Stellplätze auf Möbeln zählen mit 0,6-facher Entfernung, Bodenfelder hinter einem Möbel (Mitte im Bildschirm-Umriss) mit 2,5-facher.

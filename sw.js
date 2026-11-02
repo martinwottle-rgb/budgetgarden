@@ -1,5 +1,5 @@
 // Service Worker für den Budgetgarten: Offline-Cache und Erinnerungs-Push.
-const VERSION = 'v15';
+const VERSION = 'v16';
 const CACHE = `budgetgarten-${VERSION}`;
 
 // Alle App-Dateien, die beim Installieren vorab gespeichert werden (relativ zu dieser Datei).
@@ -28,6 +28,7 @@ const DATEIEN = [
   './js/grafik/pflanzen2.js',
   './js/grafik/moebel2.js',
   './js/grafik/deko2.js',
+  './js/grafik/deko-klein.js',
   './js/grafik/saat.js',
   './js/grafik/saison.js',
   './js/ui/bausteine.js',

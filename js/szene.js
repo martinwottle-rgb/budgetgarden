@@ -9,6 +9,7 @@ import { PFLANZEN2 } from './grafik/pflanzen2.js';
 import * as R from './grafik/raritaeten.js';
 import { DEKO } from './grafik/deko.js';
 import { DEKO2 } from './grafik/deko2.js';
+import { DEKO_AUF_MOEBEL } from './grafik/deko-klein.js';
 import { SAAT } from './grafik/saat.js';
 import { SAISON } from './grafik/saison.js';
 
@@ -756,7 +757,9 @@ export function zeichneSzene(container, zustand) {
       const pos = e && platzVon(e.m, o.ort.platz);
       if (pos) {
         // Platz mit hoehe: Pflanze wird so weit verkleinert, dass sie bis zum naechsten Brett passt
-        const sk = o.art === 'pflanze' && pos.hoehe ? Math.min(skala, pos.hoehe / geschaetzteHoehe(o, def)) : skala;
+        // Kleine Deko auf einem Regalboden wird wie eine Pflanze an die lichte Höhe angepasst
+        const hoeheObj = o.art === 'pflanze' ? geschaetzteHoehe(o, def) : DEKO_AUF_MOEBEL[o.typ];
+        const sk = pos.hoehe && hoeheObj ? Math.min(skala, pos.hoehe / hoeheObj) : skala;
         const svg = platziert(iso(pos.gx, pos.gy, pos.z), inhalt, attr, sk);
         if (istLicht) lichtEintraege.push({ key: e.key + 0.5, svg });
         else e.aufsatz.push({ z: pos.z, svg });
