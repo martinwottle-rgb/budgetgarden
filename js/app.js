@@ -3,8 +3,9 @@
 
 import * as L from './logik.js';
 import { laden, speichern as persistieren, standardDaten } from './speicher.js';
-import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze, katalog, tagesgeschenk, geschenkAbholen, MEILENSTEINE, naechsterMeilenstein, heuteInAussicht, samenQuellen, freischaltungenBei } from './spiel.js';
+import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze, katalog, tagesgeschenk, geschenkAbholen, MEILENSTEINE, naechsterMeilenstein, heuteInAussicht, samenQuellen, freischaltungenBei, SCHMUCK } from './spiel.js';
 import { RARITAETEN } from './grafik/raritaeten.js';
+import { SAISON } from './grafik/saison.js';
 import { vorschau, einpassen, tageszeitAus } from './szene.js';
 import { swRegistrieren } from './push.js';
 import { el, muenzSvg, zahl, heutigesDatum, svgBox, kurzDatum, tage, kategorieVon } from './ui/bausteine.js';
@@ -686,7 +687,8 @@ const GESCHENK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 1
 // Vorschau eines Gutscheins (Pflanze, Deko, auch aus den Grafiken der Erweiterungen PFLANZEN2 und DEKO2)
 function gutscheinVorschau(daten, gutschein) {
   const treffer = katalog(daten).find(k => k.kategorie === gutschein.kategorie && k.typ === gutschein.typ);
-  const name = treffer ? treffer.name : gutschein.typ;
+  const saisonName = Object.prototype.hasOwnProperty.call(SAISON, gutschein.typ) ? SAISON[gutschein.typ].name : null;
+  const name = treffer ? treffer.name : (gutschein.kategorie === 'saison' && saisonName) || gutschein.typ;
   const bild = shop.bildFuer(gutschein.kategorie, gutschein.typ);
   return el('div', { class: 'ios-gutschein' },
     el('div', { class: 'ios-gutschein-bild' }, bild ? vorschau(bild, 'ios-gutschein-vorschau') : el('span', { class: 'ios-emoji', 'aria-hidden': 'true', text: '🪴' })),
@@ -718,6 +720,7 @@ function zaehleZahl(ziel, element, dauer = 900) {
 // Erster Besuch am Tag: Geschenk antippen. Die Box wippt, dann schüttelt sie sich (400 ms), der Deckel fliegt auf,
 // Strahlen und Konfetti erscheinen, die Belohnung springt herein und die Samen zählen hoch.
 // „Danke!“ holt sie ab: Münzen fliegen zur Anzeige, der Zähler wächst.
+// Im Advent (g.advent) ersetzt ein Kalender mit 24 Türchen die Box: das heutige Türchen klappt auf.
 function tagesgeschenkZeigen() {
   const heute = ctx.heute;
   const g = tagesgeschenk(ctx.daten, heute);
@@ -727,26 +730,29 @@ function tagesgeschenkZeigen() {
     let offen = false;
     const timer = [];
     const meilensteinTage = new Set(MEILENSTEINE.map(m => m.tag));
+    const advent = g.advent ? g.advent.tag : 0;
 
-    // Die sieben Kästchen der Woche mit echten Tageszahlen
+    // Die sieben Kästchen der Woche mit echten Tageszahlen (außerhalb des Advents)
     const kaestchen = [];
-    for (let t = g.wocheStart; t < g.wocheStart + 7; t++) {
-      const erledigt = t < g.tag;
-      const heuteTag = t === g.tag;
-      const meilen = meilensteinTage.has(t);
-      kaestchen.push(el('span', {
-        class: 'ios-tag' + (erledigt ? ' erledigt' : '') + (heuteTag ? ' heute' : '') + (meilen ? ' meilenstein' : ''),
-        'aria-label': `Tag ${t}` + (erledigt ? ', erledigt' : '') + (heuteTag ? ', heute' : '') + (meilen ? ', Meilenstein' : '')
-      }, erledigt ? '✓' : String(t), meilen ? el('span', { class: 'ios-tag-stern', 'aria-hidden': 'true', text: '⭐' }) : null));
+    if (!advent) {
+      for (let t = g.wocheStart; t < g.wocheStart + 7; t++) {
+        const erledigt = t < g.tag;
+        const heuteTag = t === g.tag;
+        const meilen = meilensteinTage.has(t);
+        kaestchen.push(el('span', {
+          class: 'ios-tag' + (erledigt ? ' erledigt' : '') + (heuteTag ? ' heute' : '') + (meilen ? ' meilenstein' : ''),
+          'aria-label': `Tag ${t}` + (erledigt ? ', erledigt' : '') + (heuteTag ? ', heute' : '') + (meilen ? ', Meilenstein' : '')
+        }, erledigt ? '✓' : String(t), meilen ? el('span', { class: 'ios-tag-stern', 'aria-hidden': 'true', text: '⭐' }) : null));
+      }
     }
     // Entfernung ab dem heutigen Geschenktag: Tag 30 heute zeigt den Meilenstein, nicht „noch 1 Tag“
     const naechster = MEILENSTEINE.find(m => m.tag >= g.tag) || null;
     const meilenHinweis = !naechster ? null
       : naechster.tag === g.tag
         ? el('p', { class: 'klein ios-meilen-hinweis', text: `Heute ist Tag ${g.tag}: ein Meilenstein! ⭐` })
-        : el('p', { class: 'klein ios-meilen-hinweis', text: `Nächster Meilenstein: Tag ${naechster.tag} (in ${tage(naechster.tag - g.tag)})` });
+        : el('p', { class: 'klein ios-meilen-hinweis', text: `Nächster Meilenstein: Tag ${naechster.tag} (noch ${tage(naechster.tag - g.tag)})` });
 
-    const hinweis = el('p', { class: 'klein ios-hinweis', text: 'Tippe auf das Geschenk.' });
+    const hinweis = el('p', { class: 'klein ios-hinweis', text: advent ? 'Tippe auf das goldene Türchen.' : 'Tippe auf das Geschenk.' });
     const samenZahl = el('div', { class: 'ios-geschenk-samen', text: '+0 Samen', 'aria-live': 'polite' });
     const danke = el('button', {
       type: 'button',
@@ -770,6 +776,11 @@ function tagesgeschenkZeigen() {
     const belohnung = el('div', { class: 'ios-belohnung' },
       samenZahl,
       g.belohnung.gutschein ? gutscheinVorschau(ctx.daten, g.belohnung.gutschein) : null,
+      // Saison-Gutschein; am 24. Dezember das große Finale mit der Schneekugel
+      g.belohnung.saisonGutschein
+        ? (advent === 24 ? finaleKarte(g.belohnung.saisonGutschein) : gutscheinVorschau(ctx.daten, { kategorie: 'saison', typ: g.belohnung.saisonGutschein }))
+        : null,
+      g.belohnung.schmuck ? schmuckKarte(g.belohnung.schmuck) : null,
       g.belohnung.tuete
         ? el('div', { class: 'ios-extra' },
           el('span', { class: 'ios-emoji', 'aria-hidden': 'true', text: '🌱' }),
@@ -777,6 +788,23 @@ function tagesgeschenkZeigen() {
         : null,
       g.belohnung.meilenstein ? meilensteinKarte(g.belohnung.meilenstein) : null,
       danke);
+
+    // Adventskalender: das Türchen von heute öffnet sich (500 ms), danach erscheint die Belohnung
+    const adventKal = advent ? adventKalender(advent, () => adventOeffnen()) : null;
+    function adventOeffnen() {
+      if (offen) return;
+      offen = true;
+      adventKal.tuer.disabled = true;
+      adventKal.tuer.classList.add('adv-auf');
+      adventKal.platz.classList.add('adv-licht');
+      hinweis.remove();
+      timer.push(setTimeout(() => {
+        panel.append(konfettiSchicht(44));
+        belohnung.classList.add('sichtbar');
+        requestAnimationFrame(() => einpassen(belohnung));
+        zaehleZahl(g.belohnung.samen, samenZahl);
+      }, 500));
+    }
 
     const strahlen = el('div', { class: 'ios-strahlen', 'aria-hidden': 'true' });
     const bild = el('span', { class: 'ios-geschenk-bild' });
@@ -806,10 +834,10 @@ function tagesgeschenkZeigen() {
     }, strahlen, bild);
 
     const panel = el('div', { class: 'dialog ios-geschenk-dialog', role: 'alertdialog' },
-      el('h2', { class: 'dialog-titel', text: 'Dein Tagesgeschenk 🎁' }),
-      el('div', { class: 'ios-tage' }, kaestchen),
+      el('h2', { class: 'dialog-titel', text: advent ? 'Adventskalender 🎄' : 'Dein Tagesgeschenk 🎁' }),
+      advent ? adventKal.raster : el('div', { class: 'ios-tage' }, kaestchen),
       meilenHinweis,
-      el('div', { class: 'ios-geschenk-mitte' }, box, hinweis),
+      el('div', { class: 'ios-geschenk-mitte' }, advent ? null : box, hinweis),
       belohnung
     );
     ebene = oeffneEbene(panel, {
@@ -821,6 +849,52 @@ function tagesgeschenkZeigen() {
     });
     einpassen(panel);
   });
+}
+
+// Adventskalender: 24 Türchen im Raster 6 × 4. Tage vor heute gelten als geöffnet (✓), das heutige Türchen ist
+// golden und antippbar, die künftigen sind geschlossen und gedämpft. Liefert Raster sowie heutiges Türchen und seinen Platz.
+function adventKalender(heute, oeffnen) {
+  const raster = el('div', { class: 'adv-raster' });
+  let tuer = null;
+  let platz = null;
+  for (let t = 1; t <= 24; t++) {
+    const feld = el('div', { class: 'adv-platz' });
+    if (t === heute) {
+      tuer = el('button', {
+        type: 'button',
+        class: 'adv-tuer adv-heute',
+        'aria-label': `Türchen ${t}, heute öffnen`,
+        text: String(t),
+        onclick: oeffnen
+      });
+      platz = feld;
+      feld.append(tuer);
+    } else if (t < heute) {
+      feld.append(el('span', { class: 'adv-tuer adv-vergangen', 'aria-label': `Türchen ${t}, geöffnet`, text: String(t) },
+        el('span', { class: 'adv-haken', 'aria-hidden': 'true', text: '✓' })));
+    } else {
+      feld.append(el('span', { class: 'adv-tuer adv-zu', 'aria-label': `Türchen ${t}, noch geschlossen`, text: String(t) }));
+    }
+    raster.append(feld);
+  }
+  return { raster, tuer, platz };
+}
+
+// Schmuckteil aus dem Advent (Christbaumkugeln, Strohsterne, …) mit Name aus SCHMUCK
+function schmuckKarte(teil) {
+  const s = SCHMUCK.find(x => x.teil === teil);
+  return el('div', { class: 'ios-extra adv-gabe' },
+    el('span', { class: 'ios-emoji', 'aria-hidden': 'true', text: '🎄' }),
+    el('div', { class: 'sh-name', text: `+ ${s ? s.name : 'Schmuck'} für deine Zimmertanne` }));
+}
+
+// Tag 24: großes Bild der Schneekugel (Saison-Grafik) und Gruß
+function finaleKarte(typ) {
+  const bild = shop.bildFuer('saison', typ);
+  return el('div', { class: 'adv-finale' },
+    el('div', { class: 'adv-finale-bild' }, bild ? vorschau(bild, 'adv-finale-vorschau') : el('span', { class: 'ios-emoji', 'aria-hidden': 'true', text: '❄️' })),
+    el('div', { class: 'adv-finale-gruss', text: 'Frohe Weihnachten! 🎁' }),
+    el('div', { class: 'klein', text: 'Gratis im Shop, mit diesem Gutschein.' }));
 }
 
 // ---------- Samen-Blatt ----------

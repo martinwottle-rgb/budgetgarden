@@ -355,11 +355,118 @@ function bodenplatte(uid, G, boden) {
   return s;
 }
 
-// Winter: Schnee auf den Oberkanten der Waende (z 220: Glas- und Pfostenkante), je Wand eine Deckflaeche
+// Schneeband (Haube) entlang einer Kante von a nach b (Bildschirmpunkte der unteren Kante). Oben aneinandergereihte
+// flache Boegen unterschiedlicher Hoehe (dmin bis dmax px), untere Kante leicht wellig, hellblaue Schattenlinie darunter.
+// opt.schatten, opt.zapfen (ab und zu ein Eiszapfen oder Tropfen). Fuellung #ffffff. Deterministisch ueber rnd.
+function schneeBand(a, b, rnd, dmin, dmax, abstand, opt = {}) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const N = Math.max(2, Math.round(Math.hypot(dx, dy) / abstand));
+  const unten = [], oben = [];
+  for (let k = 0; k <= N; k++) {
+    const t = k / N;
+    const wob = k === 0 || k === N ? 0 : (rnd() - 0.5) * 1.4;
+    const x = a[0] + dx * t, y = a[1] + dy * t + wob;
+    unten.push([x, y]);
+    oben.push([x, y - (dmin + rnd() * (dmax - dmin))]);
+  }
+  let d = `M${p2(unten[0])}L${p2(oben[0])}`;
+  for (let k = 0; k < N; k++) {
+    const m = [(oben[k][0] + oben[k + 1][0]) / 2, (oben[k][1] + oben[k + 1][1]) / 2 - 1 - rnd() * 1.8];
+    d += `Q${p2(m)} ${p2(oben[k + 1])}`;
+  }
+  d += `L${p2(unten[N])}`;
+  for (let k = N; k > 0; k--) {
+    const m = [(unten[k][0] + unten[k - 1][0]) / 2, (unten[k][1] + unten[k - 1][1]) / 2 + 0.7];
+    d += `Q${p2(m)} ${p2(unten[k - 1])}`;
+  }
+  let s = pfad(d + 'Z', 'fill="#ffffff" stroke="none"');
+  if (opt.schatten !== false) {
+    let sch = `M${p2([unten[0][0], unten[0][1] + 0.9])}`;
+    for (let k = 1; k <= N; k++) sch += `L${p2([unten[k][0], unten[k][1] + 0.9])}`;
+    s += pfad(sch, 'fill="none" stroke="#c4d6e0" stroke-width="1.2" stroke-linecap="round"');
+  }
+  if (opt.zapfen !== false) {
+    for (let k = 1; k < N; k++) {
+      const u = rnd();
+      const [x, y] = unten[k];
+      if (u < 0.12) s += eiszapfen(x, y, 5 + rnd() * 4);
+      else if (u < 0.18) s += tropfen(x, y);
+    }
+  }
+  return s;
+}
+// Kleiner Eiszapfen, der von (x, y) nach unten haengt (weiche Spitze, hellblaue Kontur)
+function eiszapfen(x, y, len) {
+  return pfad(`M${f(x - 1.5)},${f(y)}Q${f(x - 0.3)},${f(y + len * 0.55)} ${f(x)},${f(y + len)}` +
+    `Q${f(x + 0.3)},${f(y + len * 0.55)} ${f(x + 1.5)},${f(y)}Z`,
+    'fill="#dff1fb" stroke="#8fb3c6" stroke-width="0.6" stroke-linejoin="round"');
+}
+// Tropfen, der unter (x, y) haengt
+function tropfen(x, y) {
+  return pfad(`M${f(x)},${f(y)}L${f(x)},${f(y + 1.2)}`, 'fill="none" stroke="#8fb3c6" stroke-width="0.6"') +
+    kreis(x, y + 2.8, 1.5, 'fill="#dff1fb" stroke="#8fb3c6" stroke-width="0.6"');
+}
+// Schneedecke auf der Oberkante einer Wand: liegt auf dem Balken und dem Efeu (z 226), hat eine Oberseite (Tiefe in den Raum),
+// eine dem Betrachter zugewandte Vorderseite mit weich überhängenden Wülsten, eine feine blaugraue Kontur und ein paar Eiszapfen.
+// Wand A läuft entlang x (Raum bei y > 0), Wand B entlang y (Raum bei x > 0).
+function schneeDecke(w, G, rnd) {
+  const P = (s, q, z) => (w === 'A' ? iso(s, q, z) : iso(q, s, z));
+  const Z = 226, TIEFE = 0.16, HINTEN = -0.05;
+  const phasen = [rnd() * 6.3, rnd() * 6.3, rnd() * 6.3];
+  // Dicke oben (6 bis 11) und Überhang unten (2 bis 9): weiche, unregelmäßige Wellen
+  const dicke = (s) => 8.5 + 1.6 * Math.sin(s * 2.1 + phasen[0]) + 1.1 * Math.sin(s * 5.3 + phasen[1]);
+  const haenge = (s) => 5 + 2.6 * Math.abs(Math.sin(s * 3.4 + phasen[2])) + 1.2 * Math.sin(s * 7.9 + phasen[0]);
+  const N = Math.max(12, Math.round(G / 0.07));
+  const ss = Array.from({ length: N + 1 }, (_, k) => (k / N) * G);
+  const obenHinten = ss.map((t) => P(t, HINTEN, Z + dicke(t)));
+  const obenVorn = ss.map((t) => P(t, TIEFE, Z + dicke(t)));
+  const untenVorn = ss.map((t) => P(t, TIEFE, Z - haenge(t)));
+  const zug = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + p2(p)).join('');
+  const zugR = (pts) => pts.slice().reverse().map((p) => 'L' + p2(p)).join('');
+  const vorderTon = w === 'A' ? '#eef5fa' : '#e2edf4';
+  // Vorderseite (Überhang), dann Oberseite, dann Kontur um die ganze Decke
+  let out = pfad(zug(obenVorn) + zugR(untenVorn) + 'Z', `fill="${vorderTon}"`);
+  out += pfad(zug(obenHinten) + zugR(obenVorn) + 'Z', 'fill="#ffffff"');
+  // Hellblaue Schattenlinie knapp über der Unterkante, wie bei weichem Schnee
+  out += pfad(zug(untenVorn.map(([x, y]) => [x, y - 1.6])), 'fill="none" stroke="#c9dbe6" stroke-width="1.6" stroke-linecap="round" opacity="0.8"');
+  const umriss = zug(obenHinten) + 'L' + p2(untenVorn[N]) + zugR(untenVorn) + 'L' + p2(obenHinten[0]) + 'Z';
+  out += pfad(umriss, 'fill="none" stroke="#9fb9c8" stroke-width="0.9" stroke-linejoin="round"');
+  // Ein paar Eiszapfen und Tropfen an der Unterkante
+  for (let k = 2; k < N - 1; k++) {
+    const u = rnd();
+    if (u < 0.09) out += eiszapfen(untenVorn[k][0], untenVorn[k][1] - 0.4, 6 + rnd() * 6);
+    else if (u < 0.13) out += tropfen(untenVorn[k][0], untenVorn[k][1]);
+  }
+  return out;
+}
+
+// Winter: Schneehauben auf den Wandoberkanten (z 220), kleine Haeubchen auf den Pfostenkoepfen (Ecken und Sprossen)
 function schneeKante(G) {
-  const farbe = 'fill="#fbfdfe" stroke="#c7d3dc" stroke-width="0.6" stroke-linejoin="round"';
-  return poly([iso(0, 0, 220), iso(G, 0, 220), iso(G, 0.3, 220), iso(0, 0.3, 220)], farbe) +
-    poly([iso(0, 0, 220), iso(0, G, 220), iso(0.3, G, 220), iso(0.3, 0, 220)], farbe);
+  const rnd = zufall(9173);
+  // Schneedecke mit Tiefe auf der Oberkante (über dem Efeu), hintere Wand B zuerst, dann A
+  let s = schneeDecke('B', G, rnd) + schneeDecke('A', G, rnd);
+  // Die Pfostenköpfe liegen unter der Schneedecke, eigene Häubchen würden durch sie hindurchscheinen
+  return s;
+}
+// Winter: Raureif als zarte weisse Eisblumen (verastete duenne Linien) in den unteren Ecken der Glasflaechen
+function raureif(G) {
+  const rnd = zufall(3307);
+  let s = '';
+  for (const [w, sp] of [['A', 0.35], ['A', G - 0.35], ['B', 0.35], ['B', G - 0.35]]) {
+    const wurzel = wp(w, sp, 36 + rnd() * 8);
+    let d = '';
+    for (let i = 0; i < 6; i++) {
+      const th = 0.1 + i * 0.42 + (rnd() - 0.5) * 0.2;
+      const L = 6 + rnd() * 6;
+      const p1 = [wurzel[0] + Math.cos(th) * L * 0.55, wurzel[1] - Math.sin(th) * L * 0.55];
+      const ende = [p1[0] + Math.cos(th - 0.25) * L * 0.45, p1[1] - Math.sin(th - 0.25) * L * 0.45];
+      const seite = i % 2 ? 0.9 : -0.9;
+      const ast = [p1[0] + Math.cos(th + seite) * L * 0.4, p1[1] - Math.sin(th + seite) * L * 0.4];
+      d += `M${p2(wurzel)}L${p2(p1)}L${p2(ende)}M${p2(p1)}L${p2(ast)}`;
+    }
+    s += pfad(d, `fill="none" stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round" opacity="${(0.5 + rnd() * 0.2).toFixed(2)}"`);
+  }
+  return s;
 }
 
 // Haengende Ranke von a nach b (Bildschirmkoordinaten), Blaetter wechselseitig am Stiel
@@ -427,6 +534,7 @@ function lichterkette(uid, G, faktor, zeit) {
 function zaun(G, c, winter) {
   // w = 0: Kante gy=G, w = 1: Kante gx=G; beide mit Luecke an der vorderen Ecke iso(G,G)
   const E = (w, u, z) => (w === 0 ? iso(u, G, z) : iso(G, u, z));
+  const kopfRnd = zufall(2719);
   let s = '';
   for (let w = 0; w < 2; w++) {
     for (const z of [9, 20]) {
@@ -445,16 +553,177 @@ function zaun(G, c, winter) {
       s += poly([E(w, u - 0.06, 0), E(w, u - 0.03, 0), E(w, u - 0.03, 24), E(w, u - 0.06, 24)], `fill="${c.licht}" opacity="0.7"`);
       s += poly([E(w, u + 0.03, 0), E(w, u + 0.06, 0), E(w, u + 0.06, 24), E(w, u + 0.03, 24)], `fill="${c.schatten}" opacity="0.6"`);
       if (winter) {
-        const p = E(w, u, 27);
-        s += oval(p[0], p[1], 3.2, 1.5, 'fill="#fbfdfe" stroke="#c7d3dc" stroke-width="0.6"');
+        // kleines Haeubchen auf dem Zaunkopf (Kopf liegt bei z 24 bis 27)
+        s += schneeBand(E(w, u - 0.08, 26), E(w, u + 0.08, 26), kopfRnd, 2.2, 3.2, 3, { zapfen: false });
       }
     }
   }
   return s;
 }
 
-function blumenkasten(G) {
-  let s = kiste(G - 1, G - 0.05, G - 1, G - 0.05, 0, 24, { oben: '#8a6a4a', links: '#d9a574', rechts: '#c98f5a' });
+// Blatt als schlanke Form von a nach b (Breite w, Spitze bei b)
+function blatt(a, b, w, farbe) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+  const nx = (-dy / l) * w, ny = (dx / l) * w;
+  const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  return pfad(`M${p2(a)}Q${p2([m[0] + nx, m[1] + ny])} ${p2(b)}Q${p2([m[0] - nx, m[1] - ny])} ${p2(a)}Z`,
+    `fill="${farbe}" stroke="#5e9a52" stroke-width="0.6" stroke-linejoin="round"`);
+}
+// Fruehling: Tulpen (rot, rosa, gelb) und Narzissen aus der Erde, dazu schmale Blaetter
+function bkFruehling(G) {
+  let s = '';
+  const laub = ['#6fae6a', '#5e9a52', '#7fbf6f'];
+  // Blattwerk wie im Sommer: füllt die Erde und quillt über die beiden vorderen Kanten
+  for (let k = 0; k < 10; k++) {
+    const u = G - 0.95 + k * 0.09;
+    for (const [gx, gy] of [[u, G - 0.05], [G - 0.05, u]]) {
+      const b = iso(gx, gy, 22);
+      s += oval(b[0], b[1] + 6, 7, 4.5, `transform="rotate(${k % 2 ? 25 : -25} ${f(b[0])} ${f(b[1] + 6)})" fill="${laub[k % laub.length]}" ${KON}`);
+    }
+  }
+  for (let k = 0; k < 4; k++) {
+    for (let m = 0; m < 4; m++) {
+      const b = iso(G - 0.88 + k * 0.25, G - 0.88 + m * 0.25, 24);
+      s += oval(b[0], b[1] - 1, 6.5, 3.6, `transform="rotate(${(k + m) % 2 ? 20 : -20} ${f(b[0])} ${f(b[1] - 1)})" fill="${laub[(k + m) % laub.length]}" ${KON}`);
+    }
+  }
+  // Tulpen (rot, rosa, gelb) und Narzissen in drei Reihen
+  const tulpe = (p, farbe) => pfad(`M${f(p[0] - 3.6)},${f(p[1])}Q${f(p[0] - 3.8)},${f(p[1] - 7)} ${f(p[0] - 1.6)},${f(p[1] - 8)}L${f(p[0])},${f(p[1] - 5.5)}L${f(p[0] + 1.6)},${f(p[1] - 8)}Q${f(p[0] + 3.8)},${f(p[1] - 7)} ${f(p[0] + 3.6)},${f(p[1])}Q${f(p[0])},${f(p[1] + 2.4)} ${f(p[0] - 3.6)},${f(p[1])}Z`, `fill="${farbe}" ${KON}`);
+  const narzisse = (p) => {
+    let n = '';
+    for (let j = 0; j < 6; j++) {
+      const a = (j * Math.PI) / 3;
+      n += oval(p[0] + Math.cos(a) * 2.8, p[1] + Math.sin(a) * 2.2, 2.4, 1.6, `transform="rotate(${f((a * 180) / Math.PI)} ${f(p[0] + Math.cos(a) * 2.8)} ${f(p[1] + Math.sin(a) * 2.2)})" fill="#fff6c8" stroke="#c9b45a" stroke-width="0.5"`);
+    }
+    return n + kreis(p[0], p[1], 1.9, 'fill="#f2a93b" stroke="#b8741f" stroke-width="0.5"');
+  };
+  const farben = ['#e4572e', '#f29bb5', '#f2c14e', '#e4572e', '#f29bb5'];
+  for (let k = 0; k < 12; k++) {
+    const bx = iso(G - 0.9 + (k % 4) * 0.25, G - 0.9 + Math.floor(k / 4) * 0.3, 24);
+    const p = [bx[0], bx[1] - 13 - (k % 3) * 5];
+    s += linie(bx, p, 'stroke="#5e9a52" stroke-width="2" stroke-linecap="round"');
+    s += oval(bx[0] + (k % 2 ? 3 : -3), bx[1] - 6, 1.6, 6, `transform="rotate(${k % 2 ? 15 : -15} ${f(bx[0] + (k % 2 ? 3 : -3))} ${f(bx[1] - 6)})" fill="#7fbf6f" ${KON}`);
+    s += k % 4 === 3 ? narzisse(p) : tulpe(p, farben[k % farben.length]);
+  }
+  return s;
+}
+// Herbst: Heidekraut (lila Rispen), Astern (violett, gelbe Mitte) und ein paar orange Blaetter auf der Erde
+function bkHerbst(G) {
+  let s = '';
+  const laub = ['#8a9a4a', '#a8a24a', '#6f8a45'];
+  // Blattwerk wie im Sommer: füllt die Erde und quillt über die beiden vorderen Kanten
+  for (let k = 0; k < 10; k++) {
+    const u = G - 0.95 + k * 0.09;
+    for (const [gx, gy] of [[u, G - 0.05], [G - 0.05, u]]) {
+      const b = iso(gx, gy, 22);
+      s += oval(b[0], b[1] + 6, 7, 4.5, `transform="rotate(${k % 2 ? 25 : -25} ${f(b[0])} ${f(b[1] + 6)})" fill="${laub[k % laub.length]}" ${KON}`);
+    }
+  }
+  for (let k = 0; k < 4; k++) {
+    for (let m = 0; m < 4; m++) {
+      const b = iso(G - 0.88 + k * 0.25, G - 0.88 + m * 0.25, 24);
+      s += oval(b[0], b[1] - 1, 6.5, 3.6, `transform="rotate(${(k + m) % 2 ? 20 : -20} ${f(b[0])} ${f(b[1] - 1)})" fill="${laub[(k + m) % laub.length]}" ${KON}`);
+    }
+  }
+  // Heidekraut (lila Rispen) und Astern (violett, gelbe Mitte), dazu bunte Blätter obenauf
+  for (let k = 0; k < 12; k++) {
+    const bx = iso(G - 0.9 + (k % 4) * 0.25, G - 0.9 + Math.floor(k / 4) * 0.3, 24);
+    if (k % 2) {
+      // Heidekraut: senkrechte Rispe aus kleinen Punkten
+      for (let j = 0; j < 7; j++) s += kreis(bx[0] + (j % 2 ? 1.4 : -1.4), bx[1] - 4 - j * 2.2, 1.6 - j * 0.1, `fill="${j % 3 ? '#b07cc6' : '#c99ad8'}" stroke="#7d4e94" stroke-width="0.4"`);
+    } else {
+      const p = [bx[0], bx[1] - 12 - (k % 3) * 4];
+      s += linie(bx, p, 'stroke="#5e8a45" stroke-width="1.8" stroke-linecap="round"');
+      for (let j = 0; j < 10; j++) {
+        const a = (j * Math.PI) / 5;
+        s += linie(p, [p[0] + Math.cos(a) * 4.2, p[1] + Math.sin(a) * 3.4], 'stroke="#8a5fbf" stroke-width="1.6" stroke-linecap="round"');
+      }
+      s += kreis(p[0], p[1], 1.7, 'fill="#f2c14e" stroke="#b8862a" stroke-width="0.4"');
+    }
+  }
+  const rnd = zufall(4421);
+  const blattF = ['#e08a3c', '#c9503a', '#d9a441'];
+  for (let n = 0; n < 7; n++) {
+    const c = iso(G - 0.9 + rnd() * 0.8, G - 0.9 + rnd() * 0.8, 27);
+    s += oval(c[0], c[1], 3.2, 1.7, `transform="rotate(${f(rnd() * 180)} ${f(c[0])} ${f(c[1])})" fill="${blattF[n % 3]}" stroke="#7a3a1e" stroke-width="0.4"`);
+  }
+  return s;
+}
+// Winter: Tannenzweige aus weichen Nadelbuescheln, zwei Christrosen, rote Beeren, Schneehaube auf dem Kasten
+function bkWinter(G) {
+  const rnd = zufall(8117);
+  const gruen = ['#2f5c3a', '#3a6b3a', '#477d43', '#5a8f52'];
+  let s = '';
+  // Nadelbüschel: viele kurze, weiche Nadelstriche um einen Mittelpunkt (keine spitzen Dreiecke)
+  const bueschel = (x, y, r, farbe) => {
+    let b = '';
+    for (let n = 0; n < 11; n++) {
+      const a = -Math.PI + (n / 10) * Math.PI + (rnd() - 0.5) * 0.25;
+      const l = r * (0.7 + rnd() * 0.35);
+      b += linie([x, y], [x + Math.cos(a) * l, y + Math.sin(a) * l * 0.8], `stroke="${farbe}" stroke-width="1.5" stroke-linecap="round"`);
+    }
+    return b;
+  };
+  // 1. Tannengrün füllt die Erde und quillt über die beiden vorderen Kanten (wie das Blattwerk im Sommer)
+  for (let k = 0; k < 4; k++) {
+    for (let m = 0; m < 4; m++) {
+      const b = iso(G - 0.88 + k * 0.25, G - 0.88 + m * 0.25, 24);
+      s += bueschel(b[0], b[1] - 2, 9, gruen[(k + m) % 4]);
+    }
+  }
+  for (let k = 0; k < 10; k++) {
+    const u = G - 0.95 + k * 0.09;
+    for (const [gx, gy] of [[u, G - 0.05], [G - 0.05, u]]) {
+      const b = iso(gx, gy, 22);
+      s += bueschel(b[0], b[1] + 5, 8, gruen[k % 4]);
+    }
+  }
+  // 2. Zwei Kiefernzapfen
+  for (const [gx, gy] of [[G - 0.3, G - 0.62], [G - 0.7, G - 0.28]]) {
+    const c = iso(gx, gy, 27);
+    s += oval(c[0], c[1], 3.4, 4.6, 'fill="#8a5a34" stroke="#5a3a22" stroke-width="0.6"');
+    for (const dy of [-2.2, 0, 2.2]) s += linie([c[0] - 2.6, c[1] + dy], [c[0] + 2.6, c[1] + dy], 'stroke="#5a3a22" stroke-width="0.5"');
+  }
+  // 3. Beerenbüschel (Ilex): je drei rote Beeren mit Glanz und zwei glänzenden Blättern
+  for (const [gx, gy] of [[G - 0.55, G - 0.85], [G - 0.85, G - 0.5], [G - 0.2, G - 0.3]]) {
+    const c = iso(gx, gy, 30);
+    for (const [dx, dy] of [[-4, 0], [4, -1]]) {
+      s += oval(c[0] + dx, c[1] + dy + 2, 3.8, 1.8, `transform="rotate(${dx < 0 ? -20 : 20} ${f(c[0] + dx)} ${f(c[1] + dy + 2)})" fill="#2f6b3a" stroke="#1f4a28" stroke-width="0.5"`);
+    }
+    for (const [dx, dy] of [[-1.6, -1], [1.6, -1.2], [0, 1]]) {
+      s += kreis(c[0] + dx, c[1] + dy, 1.9, 'fill="#d9503a" stroke="#8f2d22" stroke-width="0.5"') +
+        kreis(c[0] + dx - 0.6, c[1] + dy - 0.6, 0.6, 'fill="#ffffff" opacity="0.85"');
+    }
+  }
+  // 4. Drei Christrosen auf kurzen Stielen, größer als vorher
+  for (const [gx, gy, dx, dy] of [[G - 0.72, G - 0.42, -6, -20], [G - 0.42, G - 0.72, 7, -18], [G - 0.5, G - 0.5, 0, -26]]) {
+    const b = iso(gx, gy, 26);
+    const c = [b[0] + dx, b[1] + dy];
+    s += pfad(`M${p2(b)}Q${p2([b[0] + dx * 0.2, b[1] + dy * 0.6])} ${p2(c)}`, 'fill="none" stroke="#4f7a45" stroke-width="1.4" stroke-linecap="round"');
+    for (let j = 0; j < 5; j++) {
+      const a = (j * 2 * Math.PI) / 5 - Math.PI / 2;
+      s += oval(c[0] + Math.cos(a) * 3.4, c[1] + Math.sin(a) * 3.1, 3, 2.5,
+        `transform="rotate(${f((a * 180) / Math.PI)} ${f(c[0] + Math.cos(a) * 3.4)} ${f(c[1] + Math.sin(a) * 3.1)})" fill="#ffffff" stroke="#c7b6c2" stroke-width="0.5"`);
+    }
+    s += kreis(c[0], c[1], 1.8, 'fill="#f4e27a" stroke="#b8a24a" stroke-width="0.5"');
+  }
+  // 5. Schnee: Tupfer auf dem Grün und Hauben auf den vorderen Kastenkanten
+  for (let n = 0; n < 9; n++) {
+    const c = iso(G - 0.9 + rnd() * 0.8, G - 0.9 + rnd() * 0.8, 30 + rnd() * 4);
+    s += oval(c[0], c[1], 3 + rnd() * 2.5, 1.6 + rnd(), 'fill="#ffffff" stroke="#c9dbe6" stroke-width="0.5"');
+  }
+  s += schneeBand(iso(G - 1, G - 0.05, 24), iso(G - 0.05, G - 0.05, 24), rnd, 3, 5, 8, { zapfen: false }) +
+    schneeBand(iso(G - 0.05, G - 0.05, 24), iso(G - 0.05, G - 1, 24), rnd, 3, 5, 8, { zapfen: false });
+  return s;
+}
+// Blumenkasten vorn, je Saison eigene Bepflanzung (saison: herbst, winter, fruehling, sommer oder null)
+function blumenkasten(G, saison) {
+  const kasten = kiste(G - 1, G - 0.05, G - 1, G - 0.05, 0, 24, { oben: '#8a6a4a', links: '#d9a574', rechts: '#c98f5a' });
+  if (saison === 'fruehling') return kasten + bkFruehling(G);
+  if (saison === 'herbst') return kasten + bkHerbst(G);
+  if (saison === 'winter') return kasten + bkWinter(G);
+  // Sommer und ohne Saison: wie bisher
+  let s = kasten;
   const blueten = ['#ff8c42', '#e07a5f', '#ffb347', '#e4572e'];
   // Blattwerk quillt ueber die beiden vorderen Kanten
   for (let k = 0; k < 10; k++) {
@@ -474,22 +743,140 @@ function blumenkasten(G) {
   return s;
 }
 
-// Winter: ein paar Schneeflocken vor dem Glas, fallen langsam (SMIL-Animation, deterministisch verteilt)
-function schneeflocken(G) {
+// ---------- Saison-Teilchen vor dem Glas (Gruppe .saison-teilchen, pointer-events none, nur SMIL-Bewegung) ----------
+
+const SAISONEN = ['herbst', 'winter', 'fruehling', 'sommer'];
+// Bei reduzierter Bewegung: Teilchen ohne Animation (siehe reduziert) und per CSS etwas blasser
+const TEILCHEN_STIL = '<style>@media (prefers-reduced-motion: reduce) { .saison-teilchen * { animation: none } .saison-teilchen { opacity: 0.6 } }</style>';
+function reduziert() {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) {
+    return false;
+  }
+}
+// Gruppe mit allen Teilchen einer Saison
+function teilchenGruppe(inhalt) {
+  return `<g class="saison-teilchen" pointer-events="none">${inhalt}</g>`;
+}
+// Stern mit sechs Strahlen: blaue Kontur, darueber weisse Strahlen
+function stern(r) {
+  const a = r * 1.8;
+  const d = [0, 60, 120].map((g) => {
+    const c = (Math.cos((g * Math.PI) / 180) * a), s = (Math.sin((g * Math.PI) / 180) * a);
+    return `M${f(-c)},${f(-s)}L${f(c)},${f(s)}`;
+  }).join('');
+  return pfad(d, 'fill="none" stroke="#b9d4e6" stroke-width="2" stroke-linecap="round"') +
+    pfad(d, 'fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round"');
+}
+// Bewegtes Teilchen um (x, y) mit ineinander geschachtelten Gruppen: aussen Fallweg und Ausblenden (o.dx, o.dy, o.op),
+// dann Pendeln (o.sway, o.swayDauer), innen Drehung (o.drehung je Umdrehung). o.beginn: negativer Startversatz in s.
+// ruhig: ohne Animation, nur Position.
+function bewegt(x, y, o, inhalt, ruhig) {
+  const an = (xml) => (ruhig ? '' : xml);
+  const ende = `begin="${o.beginn}s" repeatCount="indefinite"`;
+  let s = inhalt;
+  if (o.drehung) {
+    s = `<g>${an(`<animateTransform attributeName="transform" type="rotate" values="0;360" dur="${f(o.drehung)}s" ${ende}/>`)}${s}</g>`;
+  }
+  if (o.sway) {
+    s = `<g>${an(`<animateTransform attributeName="transform" type="translate" values="${f(-o.sway)} 0;${f(o.sway)} 0;${f(-o.sway)} 0" dur="${f(o.swayDauer)}s" ${ende}/>`)}${s}</g>`;
+  }
+  if (o.dx || o.dy) {
+    const op = o.op ?? 0.9;
+    s = `<g>${an(`<animateTransform attributeName="transform" type="translate" values="0 0;${f(o.dx || 0)} ${f(o.dy)}" dur="${f(o.dauer)}s" ${ende}/>`)}` +
+      `${an(`<animate attributeName="opacity" values="0;${op};${op};0" keyTimes="0;0.12;0.8;1" dur="${f(o.dauer)}s" ${ende}/>`)}${s}</g>`;
+  }
+  return gruppe(tr([x, y]), s);
+}
+// Winter: 36 Schneeflocken vor dem Glas, drei Groessen, weiss mit hellblauer Kontur, jede fünfte als Stern
+function schneeflocken(G, ruhig) {
   const r = zufall(7331);
   let s = '';
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0; k < 36; k++) {
     const w = k % 2 ? 'A' : 'B';
     const p = wp(w, 0.4 + r() * (G - 0.8), 60 + r() * 150);
-    const dauer = 7 + Math.floor(r() * 4);
-    const beginn = -(r() * dauer).toFixed(1);
-    const radius = 1.4 + r() * 1.0;
-    s += `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="${f(radius)}" fill="#ffffff" opacity="0.7">` +
-      `<animate attributeName="cy" from="${f(p[1])}" to="${f(p[1] + 70)}" dur="${dauer}s" begin="${beginn}s" repeatCount="indefinite"/>` +
-      `<animate attributeName="opacity" values="0.7;0.7;0" keyTimes="0;0.8;1" dur="${dauer}s" begin="${beginn}s" repeatCount="indefinite"/>` +
-      '</circle>';
+    const groesse = [1.5, 2.5, 3.5][k % 3];
+    const dauer = 8 + r() * 5;
+    const form = k % 5 === 0
+      ? stern(groesse)
+      : kreis(0, 0, groesse, 'fill="#ffffff" stroke="#b9d4e6" stroke-width="0.8"');
+    s += bewegt(p[0], p[1], {
+      dy: 60 + r() * 10, dauer, beginn: -(r() * dauer).toFixed(1),
+      sway: 2.5 + r() * 2.5, swayDauer: 3 + r() * 2, op: 0.95,
+    }, form, ruhig);
   }
   return s;
+}
+// Herbst: 14 fallende, sich drehende Blaetter (orange, rot, senf)
+function herbstBlaetter(G, ruhig) {
+  const r = zufall(5513);
+  let s = '';
+  for (let k = 0; k < 14; k++) {
+    const w = k % 2 ? 'A' : 'B';
+    const p = wp(w, 0.4 + r() * (G - 0.8), 70 + r() * 150);
+    const farbe = ['#e08a3c', '#c9503a', '#d9a441'][k % 3];
+    const form = pfad('M-4,0Q0,-4.5 4,0Q0,4.5 -4,0Z', `fill="${farbe}" stroke="#6b4a3a" stroke-width="0.5" stroke-linejoin="round"`) +
+      linie([-3.2, 0], [3.2, 0], 'stroke="#6b4a3a" stroke-width="0.4" opacity="0.6"');
+    s += bewegt(p[0], p[1], {
+      dx: (r() - 0.5) * 16, dy: 80 + r() * 30, dauer: 7 + r() * 4, beginn: -(r() * 9).toFixed(1),
+      sway: 8 + r() * 6, swayDauer: 2.5 + r() * 1.5, drehung: 3 + r() * 3, op: 0.95,
+    }, form, ruhig);
+  }
+  return s;
+}
+// Fruehling: 16 rosa Kirschblutenblaetter, die langsam schweben
+function fruehlingBlueten(G, ruhig) {
+  const r = zufall(4421);
+  let s = '';
+  for (let k = 0; k < 16; k++) {
+    const w = k % 2 ? 'A' : 'B';
+    const p = wp(w, 0.4 + r() * (G - 0.8), 40 + r() * 170);
+    const farbe = k % 3 ? '#f6c3cf' : '#f29bb5';
+    const form = pfad('M-2.8,0Q0,-2.6 2.8,0Q0,2.2 -2.8,0Z', `fill="${farbe}" stroke="#d9809a" stroke-width="0.4" stroke-linejoin="round"`);
+    s += bewegt(p[0], p[1], {
+      dx: (r() - 0.5) * 24, dy: 40 + r() * 30, dauer: 10 + r() * 4, beginn: -(r() * 12).toFixed(1),
+      sway: 6 + r() * 6, swayDauer: 4 + r() * 3, drehung: 9 + r() * 4, op: 0.9,
+    }, form, ruhig);
+  }
+  return s;
+}
+// Sommer: 8 goldene Pollenpunkte, die langsam aufsteigen
+function sommerPollen(G, ruhig) {
+  const r = zufall(6229);
+  let s = '';
+  for (let k = 0; k < 8; k++) {
+    const w = k % 2 ? 'A' : 'B';
+    const p = wp(w, 0.4 + r() * (G - 0.8), 30 + r() * 80);
+    const form = kreis(0, 0, 1.4 + r() * 0.8, 'fill="#ffd34d" stroke="#c98f2a" stroke-width="0.6"');
+    s += bewegt(p[0], p[1], {
+      dy: -(50 + r() * 20), dauer: 9 + r() * 4, beginn: -(r() * 12).toFixed(1),
+      sway: 2 + r() * 2, swayDauer: 3 + r() * 2, op: 0.9,
+    }, form, ruhig);
+  }
+  return s;
+}
+// Sommer: ein Schmetterling mit zwei Fluegelpaaren, die flattern, auf einer langsamen Bahn vor dem Glas
+function schmetterling(G, ruhig) {
+  const an = (xml) => (ruhig ? '' : xml);
+  const p = wp('A', G * 0.55, 130);
+  const fluegel = (x, y, rx, ry, farbe, dauer) =>
+    `<g>${an(`<animateTransform attributeName="transform" type="scale" values="1 1;0.3 1;1 1" dur="${dauer}s" repeatCount="indefinite"/>`)}` +
+    `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="${farbe}" stroke="#6b4a3a" stroke-width="0.5"/></g>`;
+  const innen = fluegel(-3, -2, 3, 2.6, '#f5a623', 0.5) + fluegel(3, -2, 3, 2.6, '#f5a623', 0.5) +
+    fluegel(-2.2, 2, 2, 1.6, '#ffd27a', 0.4) + fluegel(2.2, 2, 2, 1.6, '#ffd27a', 0.4) +
+    '<ellipse cx="0" cy="0" rx="0.8" ry="3.2" fill="#6b4a3a"/>' +
+    pfad('M0,-2.6Q1,-5 2.6,-5.6M0,-2.6Q-1,-5 -2.6,-5.6', 'fill="none" stroke="#6b4a3a" stroke-width="0.4"');
+  const bahn = `<g>${an('<animateTransform attributeName="transform" type="translate" values="0 0;26 -10;8 -24;-18 -14;0 0" dur="18s" repeatCount="indefinite"/>')}${innen}</g>`;
+  return `<g transform="translate(${f(p[0])},${f(p[1])}) scale(1.3)">${bahn}</g>`;
+}
+// Teilchen der Saison (leer ohne Saison): Winter Flocken, Herbst Blaetter, Fruehling Bluetenblaetter, Sommer Pollen und Schmetterling
+function saisonTeilchen(saison, G, ruhig) {
+  if (saison === 'winter') return teilchenGruppe(schneeflocken(G, ruhig));
+  if (saison === 'herbst') return teilchenGruppe(herbstBlaetter(G, ruhig));
+  if (saison === 'fruehling') return teilchenGruppe(fruehlingBlueten(G, ruhig));
+  if (saison === 'sommer') return teilchenGruppe(sommerPollen(G, ruhig) + schmetterling(G, ruhig));
+  return '';
 }
 
 // Sonnenlicht durch die linke Glaswand (Wand B, gx = 0): weiche Flaeche auf dem Boden
@@ -511,7 +898,16 @@ const HAKEN_Z = 226;
 // Haken je Groesse: gleiche Lage relativ zur Rueckwand (h1 an Wand A, h2 an Wand B), bei 6 genau HAKEN
 export function hakenFuer(G) {
   const k = groesseAus(G) - BASIS;
-  return { h1: { gx: HAKEN.h1.gx + k, gy: HAKEN.h1.gy }, h2: { gx: HAKEN.h2.gx, gy: HAKEN.h2.gy + k } };
+  const g = BASIS + k;
+  // Je Rückwand drei Haken (h1/h2 bleiben an ihrer bisherigen Stelle, h3 bis h6 sind seit 2.2 dazugekommen)
+  return {
+    h1: { gx: HAKEN.h1.gx + k, gy: HAKEN.h1.gy },
+    h2: { gx: HAKEN.h2.gx, gy: HAKEN.h2.gy + k },
+    h3: { gx: 0.25 * g, gy: HAKEN.h1.gy },
+    h4: { gx: 0.51 * g, gy: HAKEN.h1.gy },
+    h5: { gx: HAKEN.h2.gx, gy: 0.27 * g },
+    h6: { gx: HAKEN.h2.gx, gy: 0.5 * g }
+  };
 }
 
 // Metallring an jedem Haken. Ohne Ampel ist nur dieser kleine Haken sichtbar.
@@ -676,7 +1072,7 @@ function moebelInhalt(e) {
 // ---------- Hauptfunktion ----------
 
 // zustand = { groesse: 6|7|8|9|10, moebel: [{id, typ, gx, gy, drehung}], pflanzen: [{id, typ, stufe, ort}], deko: [{id, typ, ort}],
-//   welk, markierungen: [{ort, ok: true, typ?}], ausschnitt: true, design: {boden, rahmen} (dach wird ignoriert), saison: 'winter'? }
+//   welk, markierungen: [{ort, ok: true, typ?}], ausschnitt: true, design: {boden, rahmen} (dach wird ignoriert), saison: 'herbst'|'winter'|'fruehling'|'sommer'|null }
 // ort = {feld: [gx, gy]} (Feld-Mitte gx+0.5, gy+0.5) oder {moebel: id, platz: n}; haengende Deko: {haken: 'h1'}
 // Markierung: ort wie oben, bei Moebel-Positionen {gx, gy, drehung} plus typ des Moebels.
 export function zeichneSzene(container, zustand) {
@@ -689,7 +1085,10 @@ export function zeichneSzene(container, zustand) {
   const hk = hakenFuer(G);
   const design = designAus(z);
   const rc = RAHMEN_FARBEN[design.rahmen];
-  const winter = z.saison === 'winter';
+  // Saison: herbst, winter, fruehling, sommer oder null (wie bisher)
+  const saison = SAISONEN.includes(z.saison) ? z.saison : null;
+  const winter = saison === 'winter';
+  const ruhig = reduziert();
   // Tageszeit: ohne Angabe aus der lokalen Uhrzeit
   const zeit = ZEITEN.includes(z.tageszeit) ? z.tageszeit : tageszeitAus(new Date());
   // abend und nacht: Raum-Stimmung ueber Boden und Inhalt, Laternen und Lichterkette bleiben hell darueber
@@ -701,6 +1100,8 @@ export function zeichneSzene(container, zustand) {
   if (zeit === 'tag' || zeit === 'morgen') hinten += sonnenlicht(uid);
   hinten += himmelDefs(uid, zeit);
   hinten += wand('A', uid, G, faktor, zeit, sterne, rc) + wand('B', uid, G, faktor, zeit, sterne, rc);
+  // Winter: Raureif auf dem Glas, vor dem Efeu (der davor haengt)
+  if (winter) hinten += raureif(G);
   hinten += efeu(rnd, G, faktor);
   // Schnee nach dem Efeu, damit die Wandoberkante auch bei dichtem Bewuchs sichtbar bleibt
   if (winter) hinten += schneeKante(G);
@@ -738,7 +1139,7 @@ export function zeichneSzene(container, zustand) {
     const ebene = aufMoebel ? 'brett' : 'boden';
     let inhalt;
     if (rar) inhalt = def.zeichne(o.stufe, welk, ebene, { tageszeit: zeit });
-    else if (o.art === 'pflanze') inhalt = def.zeichne(o.stufe, welk, ebene);
+    else if (o.art === 'pflanze') inhalt = def.zeichne(o.stufe, welk, ebene, o.schmuck || null); // schmuck: nur die Zimmertanne nutzt ihn
     else inhalt = def.zeichne();
     // Reife Beetpflanze: Erntemarke darueber (nicht bei welk)
     if (o.art === 'pflanze' && o.saat && !welk && erntereif(o)) inhalt += erntemarke();
@@ -794,7 +1195,7 @@ export function zeichneSzene(container, zustand) {
   const lichter = getoent
     ? lichterkette(uid, G, faktor, zeit) + lichtEintraege.sort((a, b) => a.key - b.key).map((o) => o.svg).join('')
     : '';
-  const vorn = zaun(G, rc, winter) + blumenkasten(G) + (winter ? schneeflocken(G) : '');
+  const vorn = zaun(G, rc, winter) + blumenkasten(G, saison) + saisonTeilchen(saison, G, ruhig);
 
   // Ausschnitt: eng um das Gewaechshaus. Sonst: wie bisher, bei 6 x 6 unveraendert 0 0 800 644, groesser wachsend.
   let x0, y0, breite, hoehe;
@@ -811,7 +1212,7 @@ export function zeichneSzene(container, zustand) {
   }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${breite} ${hoehe}" width="100%">` +
-    defs(uid) + `<rect x="${x0}" y="${y0}" width="${breite}" height="${hoehe}" fill="#a9d3a5"/>` +
+    defs(uid) + (saison ? TEILCHEN_STIL : '') + `<rect x="${x0}" y="${y0}" width="${breite}" height="${hoehe}" fill="#a9d3a5"/>` +
     hinten + inhalt + '<g pointer-events="none">' + strahl + stimmung + lichter + '</g>' + '<g pointer-events="none">' + vorn + '</g>' + marken + '</svg>';
 
   container.innerHTML = '';

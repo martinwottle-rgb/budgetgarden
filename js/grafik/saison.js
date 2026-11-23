@@ -5,6 +5,8 @@
 // Licht von links oben, Konturen #6b4a3a, Kontaktschatten unter jedem Objekt. Alles deterministisch.
 
 import { f, p2, gruppe, pfad, linie, oval, kreis, poly, zufall } from './hilfen.js';
+import { WINTER } from './winter.js';
+import { WINTER2 } from './winter2.js';
 
 const RAD = Math.PI / 180;
 const FAC = [0.5, 0.72, 0.9, 1]; // Groesse je Stufe 1 bis 4
@@ -331,18 +333,37 @@ function schneelaterne() {
   const zz = 0.6;
   out += zug([P(A[0], A[1], zz), P(B[0], B[1], zz)], 'stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"') +
     zug([P(A[0], A[1], zz), P(B[0], B[1], zz)], 'stroke="#a86b43" stroke-width="1.3" stroke-linecap="round"');
-  for (let i = 0; i < 6; i++) {
-    const t = 0.12 + i * 0.16;
-    const q = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];
-    for (const sd of [-1, 1]) {
-      const len = 8.5 * (1 - 0.4 * t);
+  // Weiche Nadelstriche: je Seite 10 bis 14 kurze, leicht gebogene Striche in zwei Gruentoenen
+  const nz = zufall(5150);
+  const achse = (t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];
+  let nadel = 0;
+  for (const sd of [-1, 1]) {
+    const n = 10 + Math.floor(nz() * 5);
+    for (let i = 0; i < n; i++) {
+      const t = 0.06 + (0.9 * (i + nz() * 0.6)) / n;
+      const q = achse(t);
+      const len = (7.6 - 2.4 * t) * (0.85 + nz() * 0.3);
       const tip = [q[0] + sd * nrm[0] * len - dir[0] * len * 0.35, q[1] + sd * nrm[1] * len - dir[1] * len * 0.35];
-      const b1 = [q[0] + dir[0] * 1.6, q[1] + dir[1] * 1.6], b2 = [q[0] - dir[0] * 1.6, q[1] - dir[1] * 1.6];
-      const fill = sd < 0 ? '#5e9a52' : '#3a6b3a';
-      out += pk([[b1[0], b1[1], zz], [b2[0], b2[1], zz], [tip[0], tip[1], zz + 1.5]], `fill="${fill}" stroke="#2f5a30" stroke-width="0.5" stroke-linejoin="round"`);
-      const sn = P(tip[0], tip[1], zz + 1.8);
-      out += oval(sn[0], sn[1], 1.4, 0.8, 'fill="#ffffff" opacity="0.9"');
+      const bog = (nz() - 0.5) * 1.2;
+      const mitte = [(q[0] + tip[0]) / 2 + bog * dir[0], (q[1] + tip[1]) / 2 + bog * dir[1]];
+      const farbe = nadel % 2 ? '#3a6b3a' : '#5e9a52';
+      out += pfad(`M${p2(P(q[0], q[1], zz))}Q${p2(P(mitte[0], mitte[1], zz))} ${p2(P(tip[0], tip[1], zz + 0.4))}`,
+        `fill="none" stroke="${farbe}" stroke-width="${nadel % 3 ? 0.6 : 0.8}" stroke-linecap="round"`);
+      nadel++;
     }
+  }
+  // Schneetupfer auf dem Zweig
+  for (const t of [0.22, 0.5, 0.78]) {
+    const q = achse(t);
+    const s = P(q[0], q[1], zz + 1.3);
+    out += oval(s[0], s[1], 1.3, 0.7, 'fill="#ffffff" opacity="0.9"');
+  }
+  // Drei rote Beeren mit Glanzpunkt
+  for (const [t, o] of [[0.34, 1.4], [0.47, -1.3], [0.6, 1.1]]) {
+    const q = achse(t);
+    const b = P(q[0] + nrm[0] * o, q[1] + nrm[1] * o, zz + 1.6);
+    out += kreis(b[0], b[1], 1.7, 'fill="#d94b3d" stroke="#a81e22" stroke-width="0.4"') +
+      kreis(b[0] - 0.6, b[1] - 0.6, 0.5, 'fill="#ffffff" opacity="0.75"');
   }
   return out;
 }
@@ -541,4 +562,7 @@ export const SAISON = {
   tulpen: { name: 'Tulpen', art: 'pflanze', groesse: 'klein', saison: 'fruehling', zeichne: (stufe = 1, welk = false, ebene = 'boden') => tulpen(stufeN(stufe), welk, ebene) },
   sonnenschirm: { name: 'Sonnenschirm', art: 'deko', saison: 'sommer', zeichne: () => sonnenschirm() },
   hibiskus: { name: 'Hibiskus', art: 'pflanze', groesse: 'gross', saison: 'sommer', zeichne: (stufe = 1, welk = false, ebene = 'boden') => hibiskus(stufeN(stufe), welk, ebene) },
+  // Winter 2.2 (SPEC-4): Zimmertanne mit Schmuck, Strohstern, Adventskranz, Schneekugel, Christrose, Amaryllis, Schlitten, Teekanne
+  ...WINTER,
+  ...WINTER2,
 };

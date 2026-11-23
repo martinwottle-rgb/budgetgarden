@@ -73,6 +73,7 @@ export const PREISE_MOEBEL = {
   gaertnertisch_guss: { name: 'Gärtnertisch Haarnadel', preis: 250, level: 9 },
   leiterregal: { name: 'Leiterregal', preis: 220, level: 7 },
   wandregal: { name: 'Wandboard', preis: 170, level: 5 },
+  wandbord: { name: 'Wandbord', preis: 90, level: 4 },
   metallregal: { name: 'Haarnadel-Regal', preis: 260, level: 13 },
   zinkregal: { name: 'Zinkregal', preis: 120, level: 2 },
   zinkregal_hoch: { name: 'Hohes Zinkregal', preis: 340, level: 14 },
@@ -115,7 +116,7 @@ export const PREISE_DEKO = {
 };
 
 export const ERWEITERUNGEN = [
-  { id: 'flaeche7', groesse: 7, preis: 1000, level: 6 },
+  { id: 'flaeche7', groesse: 7, preis: 600, level: 6 },
   { id: 'flaeche8', groesse: 8, preis: 2000, level: 10 },
   { id: 'flaeche9', groesse: 9, preis: 3500, level: 15 },
   { id: 'flaeche10', groesse: 10, preis: 6000, level: 20 }
@@ -156,7 +157,17 @@ const SAISON_ARTIKEL = {
   kirschbluete: { name: 'Kirschblüte', art: 'pflanze', groesse: 'gross', preis: 400, saison: 'fruehling' },
   tulpen: { name: 'Tulpen', art: 'pflanze', groesse: 'klein', preis: 90, saison: 'fruehling' },
   sonnenschirm: { name: 'Sonnenschirm', art: 'deko', preis: 200, saison: 'sommer' },
-  hibiskus: { name: 'Hibiskus', art: 'pflanze', groesse: 'gross', preis: 300, saison: 'sommer' }
+  hibiskus: { name: 'Hibiskus', art: 'pflanze', groesse: 'gross', preis: 300, saison: 'sommer' },
+  // Winter (SPEC-4, Abschnitt 1). haengend: am Haken wie die Hängeampel. aufMoebel: darf auf ein Möbel.
+  // exklusiv: kein Preis, nur mit Saison-Gutschein (Adventskalender Tag 24).
+  zimmertanne: { name: 'Zimmertanne', art: 'pflanze', groesse: 'gross', preis: 300, saison: 'winter' },
+  christrose: { name: 'Christrose', art: 'pflanze', groesse: 'klein', preis: 120, saison: 'winter' },
+  amaryllis: { name: 'Amaryllis', art: 'pflanze', groesse: 'klein', preis: 140, saison: 'winter' },
+  strohstern: { name: 'Strohstern', art: 'deko', preis: 80, saison: 'winter', haengend: true },
+  adventskranz: { name: 'Adventskranz', art: 'deko', preis: 120, saison: 'winter', aufMoebel: true },
+  schlitten: { name: 'Holzschlitten', art: 'deko', preis: 200, saison: 'winter' },
+  teekanne: { name: 'Teekanne mit Plätzchen', art: 'deko', preis: 90, saison: 'winter', aufMoebel: true },
+  schneekugel: { name: 'Schneekugel', art: 'deko', saison: 'winter', exklusiv: true }
 };
 
 const SAISON_NAME = { herbst: 'Herbst', winter: 'Winter', fruehling: 'Frühling', sommer: 'Sommer' };
@@ -240,7 +251,13 @@ function moebelDaten(typ) {
 function dekoDef(typ) {
   if (hat(DEKO, typ)) return DEKO[typ];
   if (hat(DEKO2, typ)) return DEKO2[typ];
+  if (hat(SAISON_ARTIKEL, typ) && SAISON_ARTIKEL[typ].art === 'deko') return SAISON_ARTIKEL[typ];
   return null;
+}
+
+// Kleine Deko darf auf ein Möbel: Liste aus deko-klein.js, dazu Saisonartikel mit aufMoebel
+function dekoAufMoebelOk(typ) {
+  return dekoAufMoebel(typ) || (hat(SAISON_ARTIKEL, typ) && !!SAISON_ARTIKEL[typ].aufMoebel);
 }
 
 function nachschlag(tabelle, typ) {
@@ -1057,6 +1074,16 @@ export function bewerte(daten, heute) {
     if (samen > 0) verlaufEintragen(d, heute, art, text, samen);
   };
 
+  // 0a. Wandboards hängen seit 2.2 an der Rückwand. Steht eines mitten im Raum, kommt es mit allem darauf ins Lager.
+  for (const m of [...sp.gewaechshaus.moebel]) {
+    if (!istWand(m.typ) || anDerWand(m)) continue;
+    const lg = einlagern(d, 'moebel', m.id);
+    if (lg.fehler) continue;
+    sp.gewaechshaus = lg.daten.spiel.gewaechshaus;
+    sp.lager = lg.daten.spiel.lager;
+    ereignisse.push({ art: 'erstattung', text: 'Das Wandboard hängt jetzt an der Wand und liegt im Lager. Von dort gratis aufhängen.', samen: 0 });
+  }
+
   // 0. Dächer entfallen: gekaufte Dach-Designs werden einmalig mit Samen erstattet (ohne XP) und aus der Besitzliste genommen.
   // Danach stehen sie nicht mehr in spiel.designs, deshalb gibt es beim nächsten Mal nichts mehr zu erstatten.
   sp.designs = sp.designs.filter(id => {
@@ -1222,7 +1249,7 @@ function moebelFelder(m) {
 function belegung(gh, ausser) {
   const belegt = new Set();
   for (const m of gh.moebel) {
-    if (m.id !== ausser) moebelFelder(m).forEach(f => belegt.add(f));
+    if (m.id !== ausser && !istWand(m.typ)) moebelFelder(m).forEach(f => belegt.add(f));
   }
   for (const p of gh.pflanzen) {
     if (p.id !== ausser && p.ort.feld) belegt.add(schluessel(p.ort.feld[0], p.ort.feld[1]));
@@ -1248,6 +1275,28 @@ function istBodenbelag(typ) {
   return !!(def && def.bodenbelag);
 }
 
+// Wandmöbel (Wandboard, Wandbord) hängen an einer Rückwand und belegen keinen Boden
+function istWand(typ) {
+  const def = moebelDaten(typ);
+  return !!(def && def.wand);
+}
+
+// Hängt ein Wandmöbel an der Position wirklich an einer Rückwand? drehung 0: Wand bei y = 0, drehung 90: Wand bei x = 0
+function anDerWand(m) {
+  return (m.drehung || 0) === 0 ? Math.floor(m.gy) === 0 : Math.floor(m.gx) === 0;
+}
+
+// Bodenfelder unter Wandmöbeln (dort ist nur Platz für Kleines)
+function wandFelder(gh, ausser) {
+  const felder = new Set();
+  for (const m of gh.moebel) {
+    if (m.id !== ausser && istWand(m.typ)) moebelFelder(m).forEach(f => felder.add(f));
+  }
+  return felder;
+}
+// Unter einem Wandmöbel erlaubte Höhe für Möbel am Boden (Hocker, Kiste, Brett)
+const UNTER_WAND = 45;
+
 function feldFrei(gh, x, y, ausser) {
   if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
   if (x < 0 || y < 0 || x >= gh.groesse || y >= gh.groesse) return false;
@@ -1258,7 +1307,7 @@ function feldFrei(gh, x, y, ausser) {
 const MOEBEL_HOEHE = {
   regal_holz: 130, tisch_natur: 68, tisch_weiss: 76, leiterregal: 150,
   metallregal: 140, blumenhocker: 45, holzkiste: 30, steinsockel: 55,
-  ziegelbrett: 25, gaertnertisch_guss: 80, wandregal: 100, rattan_etagere: 110,
+  ziegelbrett: 25, gaertnertisch_guss: 80, wandregal: 170, wandbord: 140, rattan_etagere: 110,
   kraeuterbeet: 45, hochbeet: 60, sideboard: 55, pflanzentreppe: 70, vitrine: 120, sputnik: 110, hochregal: 150, zinkregal: 74, zinkregal_hoch: 140
 };
 const HOEHE_UNBEKANNT = 100;
@@ -1318,8 +1367,23 @@ function pruefeMoebelPos(gh, typ, pos, ausser) {
   if (fx < 0 || fy < 0 || fx + w > gh.groesse || fy + h > gh.groesse) {
     return 'Das Möbel passt nicht ganz in das Gewächshaus.';
   }
-  const belegt = belegung(gh, ausser);
-  if (moebelFelder(m).some(f => belegt.has(f))) return 'Das Möbel würde sich mit etwas anderem überschneiden.';
+  if (istWand(typ)) {
+    if (!anDerWand(m)) return 'Wandboards hängen an einer der beiden Rückwände.';
+    const andere = wandFelder(gh, ausser);
+    if (moebelFelder(m).some(f => andere.has(f))) return 'Hier hängt schon ein Wandboard.';
+    // Darunter: keine hohen Möbel und keine großen Pflanzen
+    const darunter = new Set(moebelFelder(m));
+    const hochUnten = gh.moebel.some(x => x.id !== ausser && !istWand(x.typ) && hoeheVon(x.typ) > UNTER_WAND && moebelFelder(x).some(f => darunter.has(f)));
+    const grossUnten = gh.pflanzen.some(p => p.ort.feld && groesseVon(p.typ) === 'gross' && darunter.has(schluessel(p.ort.feld[0], p.ort.feld[1])));
+    if (hochUnten || grossUnten) return 'Unter dem Wandboard steht etwas zu Hohes.';
+  } else {
+    const belegt = belegung(gh, ausser);
+    if (moebelFelder(m).some(f => belegt.has(f))) return 'Das Möbel würde sich mit etwas anderem überschneiden.';
+    if (hoeheVon(typ) > UNTER_WAND) {
+      const wf = wandFelder(gh, ausser);
+      if (moebelFelder(m).some(f => wf.has(f))) return 'Unter dem Wandboard ist nur Platz für niedrige Möbel.';
+    }
+  }
   if (hoeheVon(typ) > HOHE_GRENZE) {
     const unterHaken = belegteHakenFelder(gh);
     if (moebelFelder(m).some(f => unterHaken.has(f))) return 'Unter der Hängeampel ist kein Platz für hohe Möbel.';
@@ -1358,6 +1422,9 @@ function pruefeOrt(gh, kategorie, typ, ort, ausser) {
         return breit > 1 ? 'Hier ist nicht genug Platz: Sie braucht zwei freie Felder nebeneinander.' : 'Dieses Feld ist nicht frei oder liegt außerhalb.';
       }
     }
+    if (kategorie === 'pflanze' && groesseVon(typ) === 'gross' && wandFelder(gh, null).has(schluessel(ort.feld[0], ort.feld[1]))) {
+      return 'Unter dem Wandboard ist kein Platz für große Pflanzen.';
+    }
     if (kategorie === 'pflanze' && groesseVon(typ) === 'gross' &&
       belegteHakenFelder(gh).has(schluessel(ort.feld[0], ort.feld[1]))) {
       return 'Unter der Hängeampel ist kein Platz für große Pflanzen.';
@@ -1366,7 +1433,7 @@ function pruefeOrt(gh, kategorie, typ, ort, ausser) {
   }
   if (ort.moebel !== undefined) {
     // Kleine Deko (Windspiel, Laterne, Gießkanne …) darf wie kleine Pflanzen auf Regalböden und Tische
-    if (kategorie === 'deko' && !dekoAufMoebel(typ)) return 'Diese Deko ist zu groß für ein Möbel.';
+    if (kategorie === 'deko' && !dekoAufMoebelOk(typ)) return 'Diese Deko ist zu groß für ein Möbel.';
     if (kategorie !== 'deko' && groesseVon(typ) === 'gross') return 'Große Pflanzen passen nicht auf ein Möbel.';
     const m = gh.moebel.find(x => x.id === ort.moebel);
     if (!m) return 'Das Möbel gibt es nicht.';
@@ -1488,7 +1555,7 @@ export function freiePlaetze(daten, kategorie, typ) {
     if (dekoDef(typ) && dekoDef(typ).haengend) {
       return Object.keys(hakenFuer(gh.groesse || 6)).map(haken => ({ haken })).filter(o => !pruefeOrt(gh, 'deko', typ, o, null));
     }
-    if (dekoAufMoebel(typ)) {
+    if (dekoAufMoebelOk(typ)) {
       const plaetze = [];
       for (const m of gh.moebel) {
         const def = moebelDaten(m.typ);
@@ -1794,27 +1861,41 @@ function levelVonArtikel(kategorie, typ) {
 
 // Tagesgeschenk für heute. verfuegbar: noch nicht abgeholt. tag: Nummer des Geschenks (zählt nie zurück).
 // wocheStart: erster Tag der 7er-Reihe, in der tag liegt.
+// advent: { tag } vom 1. bis 24. Dezember (dann ersetzt das Türchen die Reihe), sonst null.
+// Meilensteine kommen auch im Advent dazu.
 export function tagesgeschenk(daten, heute) {
   const besuch = besuchVon(daten.spiel);
   const verfuegbar = besuch.letzter !== heute;
   const tag = verfuegbar ? besuch.tag + 1 : Math.max(1, besuch.tag);
   const wocheStart = Math.floor((tag - 1) / 7) * 7 + 1;
   const position = (tag - 1) % 7;
+  const advent = adventTag(heute);
   const belohnung = { samen: samenFuer(tag) };
-  const k = katalog(daten);
-  if (position === 3) {
-    const liste = k.filter(a => a.kategorie === 'pflanze' && a.gezeichnet && a.freigeschaltet && groesseVon(a.typ) === 'klein');
-    const g = gutscheinAusDatum(liste, heute, 'pflanze');
-    if (g) belohnung.gutschein = { kategorie: 'pflanze', typ: g.typ };
-  }
-  if (position === 6) {
-    const lvl = levelAus(daten.spiel.xp).level;
-    if (lvl >= TUETE_LEVEL) {
-      belohnung.tuete = 1;
-    } else {
-      const liste = k.filter(a => a.kategorie === 'deko' && a.gezeichnet && !a.meilenstein && a.level <= lvl + 1);
-      const g = gutscheinAusDatum(liste, heute, 'deko');
-      if (g) belohnung.gutschein = { kategorie: 'deko', typ: g.typ };
+  if (advent) {
+    const tuerchen = ADVENT.find(e => e.tag === advent);
+    belohnung.samen = tuerchen.samen;
+    if (tuerchen.schmuck) belohnung.schmuck = tuerchen.schmuck;
+    if (tuerchen.saison) belohnung.saisonGutschein = tuerchen.saison;
+    if (tuerchen.tuete) {
+      if (levelAus(daten.spiel.xp).level >= TUETE_LEVEL) belohnung.tuete = 1;
+      else belohnung.samen += ADVENT_TUETE_ERSATZ;
+    }
+  } else {
+    const k = katalog(daten);
+    if (position === 3) {
+      const liste = k.filter(a => a.kategorie === 'pflanze' && a.gezeichnet && a.freigeschaltet && groesseVon(a.typ) === 'klein');
+      const g = gutscheinAusDatum(liste, heute, 'pflanze');
+      if (g) belohnung.gutschein = { kategorie: 'pflanze', typ: g.typ };
+    }
+    if (position === 6) {
+      const lvl = levelAus(daten.spiel.xp).level;
+      if (lvl >= TUETE_LEVEL) {
+        belohnung.tuete = 1;
+      } else {
+        const liste = k.filter(a => a.kategorie === 'deko' && a.gezeichnet && !a.meilenstein && a.level <= lvl + 1);
+        const g = gutscheinAusDatum(liste, heute, 'deko');
+        if (g) belohnung.gutschein = { kategorie: 'deko', typ: g.typ };
+      }
     }
   }
   const meilenstein = MEILENSTEINE.find(m => m.tag === tag);
@@ -1823,7 +1904,44 @@ export function tagesgeschenk(daten, heute) {
     belohnung.meilenstein = { tag: meilenstein.tag, typ: meilenstein.typ, name: meilenstein.name };
     belohnung.meilensteinGutschein = { kategorie: 'deko', typ: meilenstein.typ };
   }
-  return { verfuegbar, tag, wocheStart, belohnung };
+  return { verfuegbar, tag, wocheStart, belohnung, advent: advent ? { tag: advent } : null };
+}
+
+// Adventskalender (SPEC-4, Abschnitt 3): Türchen 1 bis 24 vom 1. bis 24. Dezember, Türchen = Tag im Monat.
+// samen ersetzt die Reihe; schmuck, saison (Gutschein-Typ) und tuete nur bei den genannten Türchen.
+export const ADVENT = [
+  { tag: 1, samen: 30 },
+  { tag: 2, samen: 25, schmuck: 'kugeln' },
+  { tag: 3, samen: 30, saison: 'christrose' },
+  { tag: 4, samen: 35 },
+  { tag: 5, samen: 25, schmuck: 'strohsterne' },
+  { tag: 6, samen: 50, saison: 'teekanne' },
+  { tag: 7, samen: 30 },
+  { tag: 8, samen: 35, schmuck: 'lichter' },
+  { tag: 9, samen: 30 },
+  { tag: 10, samen: 40, saison: 'strohstern' },
+  { tag: 11, samen: 30 },
+  { tag: 12, samen: 35, tuete: true },
+  { tag: 13, samen: 30, saison: 'amaryllis' },
+  { tag: 14, samen: 35 },
+  { tag: 15, samen: 30, schmuck: 'spitze' },
+  { tag: 16, samen: 40 },
+  { tag: 17, samen: 30, saison: 'adventskranz' },
+  { tag: 18, samen: 35 },
+  { tag: 19, samen: 30, saison: 'schlitten' },
+  { tag: 20, samen: 40 },
+  { tag: 21, samen: 35, schmuck: 'geschenke' },
+  { tag: 22, samen: 40 },
+  { tag: 23, samen: 50 },
+  { tag: 24, samen: 100, saison: 'schneekugel' }
+];
+// Samentüte im Adventskalender ohne Level 8: stattdessen so viele Samen
+const ADVENT_TUETE_ERSATZ = 30;
+
+// Türchen für das Datum (1 bis 24 im Dezember), sonst null
+function adventTag(heute) {
+  const md = String(heute).slice(5, 10);
+  return md >= '12-01' && md <= '12-24' ? Number(md.slice(3)) : null;
 }
 
 // Nächster noch nicht erreichter Meilenstein, null wenn alle erreicht sind
@@ -1844,12 +1962,14 @@ export function geschenkAbholen(daten, heute) {
   const neueGutscheine = [];
   if (b.gutschein) neueGutscheine.push({ ...b.gutschein });
   if (b.meilensteinGutschein) neueGutscheine.push({ ...b.meilensteinGutschein });
+  if (b.saisonGutschein) neueGutscheine.push({ kategorie: 'saison', typ: b.saisonGutschein });
   if (neueGutscheine.length) d.spiel.gutscheine = [...d.spiel.gutscheine, ...neueGutscheine];
+  if (b.schmuck) d.spiel.schmuckGutscheine = [...d.spiel.schmuckGutscheine, b.schmuck];
   if (b.tuete) d.spiel.gratisTueten += 1;
   d.spiel.besuch = { letzter: heute, tag: g.tag };
   const text = b.meilenstein ? `Tagesgeschenk, Tag ${g.tag}: ${b.meilenstein.name}` : `Tagesgeschenk, Tag ${g.tag}`;
   verlaufEintragen(d, heute, 'geschenk', text, b.samen);
-  return { daten: d, belohnung: b, tag: g.tag };
+  return { daten: d, belohnung: b, tag: g.tag, advent: g.advent };
 }
 
 // ---------- SPEC-2: Migration, Saatgut, Samentüten, Ernte, Designs, Herbarium, Saison ----------
@@ -1872,6 +1992,8 @@ function migriere(daten) {
   // Besuch: tag statt serie (alte Stände werden übernommen)
   sp.besuch = besuchVon(sp);
   if (!Array.isArray(sp.gutscheine)) sp.gutscheine = [];
+  if (!Array.isArray(sp.schmuckGutscheine)) sp.schmuckGutscheine = [];
+  if (!Array.isArray(sp.lager)) sp.lager = [];
   if (!Array.isArray(sp.verlauf)) sp.verlauf = [];
   if (!Array.isArray(sp.eintragSofort)) sp.eintragSofort = [];
   for (const p of sp.gewaechshaus.pflanzen) entdecke(daten, p.typ);
@@ -1983,34 +2105,46 @@ export function ernten(daten, id, heute = heuteIso()) {
   return { daten: d, samen, gratis };
 }
 
-// Saisonartikel im Shop: alle Artikel der aktiven Saison (leer außerhalb)
+// Saisonartikel im Shop: Artikel der aktiven Saison, dazu jeder Artikel mit Saison-Gutschein (auch außerhalb
+// der Saison). Exklusive Artikel (Schneekugel) stehen nur mit Gutschein drin. Mit Gutschein: gutschein true, preis 0.
 export function saisonKatalog(daten, heute = heuteIso()) {
   const s = aktiveSaison(heute);
-  if (!s) return [];
-  return Object.keys(SAISON_ARTIKEL).filter(typ => SAISON_ARTIKEL[typ].saison === s).map(typ => {
+  const liste = [];
+  for (const typ of Object.keys(SAISON_ARTIKEL)) {
     const a = SAISON_ARTIKEL[typ];
-    return {
+    const gutschein = !!gutscheinFuer(daten, 'saison', typ);
+    if (!gutschein && (a.saison !== s || a.exklusiv)) continue;
+    liste.push({
       kategorie: 'saison',
       typ,
       name: (hat(SAISON, typ) && SAISON[typ].name) || a.name,
       art: a.art,
       groesse: a.groesse,
-      preis: a.preis || null,
-      saison: s,
+      preis: gutschein ? 0 : (a.preis || null),
+      saison: a.saison,
       kaufbar: a.art !== 'saat',
-      gezeichnet: hat(SAISON, typ)
-    };
-  });
+      gezeichnet: hat(SAISON, typ),
+      gutschein,
+      exklusiv: !!a.exklusiv
+    });
+  }
+  return liste;
 }
 
+// Mit Saison-Gutschein: gratis und auch außerhalb der Saison. Ohne: nur in der Saison, exklusive Artikel nie.
 function saisonKaufen(daten, typ, ort, heute) {
   if (!hat(SAISON_ARTIKEL, typ)) return fehler('Diesen Artikel gibt es nicht.');
   const a = SAISON_ARTIKEL[typ];
-  if (aktiveSaison(heute) !== a.saison) return fehler(a.name + ' gibt es nur im ' + SAISON_NAME[a.saison] + '.');
+  const gutschein = gutscheinFuer(daten, 'saison', typ);
+  if (!gutschein) {
+    if (a.exklusiv) return fehler(a.name + ' gibt es nicht im Laden, nur als Geschenk.');
+    if (aktiveSaison(heute) !== a.saison) return fehler(a.name + ' gibt es nur im ' + SAISON_NAME[a.saison] + '.');
+  }
   if (a.art === 'saat') return fehler(a.name + ' wächst nur aus Samentüten.');
   if (!hat(SAISON, typ)) return fehler(a.name + ' ist noch nicht verfügbar.');
   const d = migriere(kopie(daten));
-  if (d.spiel.samen < a.preis) return fehler('Dafür fehlen ' + (a.preis - d.spiel.samen) + ' Samen.');
+  const preis = gutschein ? 0 : a.preis;
+  if (d.spiel.samen < preis) return fehler('Dafür fehlen ' + (preis - d.spiel.samen) + ' Samen.');
   const gh = d.spiel.gewaechshaus;
   const f = pruefeOrt(gh, a.art, typ, ort, null);
   if (f) return fehler(f);
@@ -2020,8 +2154,139 @@ function saisonKaufen(daten, typ, ort, heute) {
   } else {
     gh.deko.push({ id: neueId('d'), typ, ort: normOrt(ort) });
   }
-  d.spiel.samen -= a.preis;
+  if (gutschein) {
+    const g = gutscheinFuer(d, 'saison', typ);
+    const i = d.spiel.gutscheine.indexOf(g);
+    if (i >= 0) d.spiel.gutscheine.splice(i, 1);
+  }
+  d.spiel.samen -= preis;
   return { daten: d };
+}
+
+// ---------- SPEC-4, Abschnitt 2: Baumschmuck an der Zimmertanne ----------
+
+export const SCHMUCK = [
+  { teil: 'kugeln', name: 'Christbaumkugeln', preis: 60 },
+  { teil: 'strohsterne', name: 'Strohsterne', preis: 50 },
+  { teil: 'lichter', name: 'Lichterkette', preis: 80 },
+  { teil: 'spitze', name: 'Goldener Stern', preis: 70 },
+  { teil: 'geschenke', name: 'Geschenke', preis: 90 }
+];
+
+// Ein Schmuckteil an die Zimmertanne hängen. Mit Schmuck-Gutschein jederzeit gratis, sonst nur im Winter gegen Samen.
+// Jedes Teil nur einmal je Pflanze.
+export function schmuecken(daten, pflanzeId, teil, heute = heuteIso()) {
+  const eintrag = SCHMUCK.find(s => s.teil === teil);
+  if (!eintrag) return fehler('Diesen Schmuck gibt es nicht.');
+  const d = migriere(kopie(daten));
+  const p = d.spiel.gewaechshaus.pflanzen.find(x => x.id === pflanzeId);
+  if (!p) return fehler('Diese Pflanze gibt es nicht.');
+  if (p.typ !== 'zimmertanne') return fehler('Schmuck gibt es nur für die Zimmertanne.');
+  if (p.schmuck && p.schmuck[teil]) return fehler(eintrag.name + ' hängt schon am Baum.');
+  const i = d.spiel.schmuckGutscheine.indexOf(teil);
+  if (i >= 0) {
+    d.spiel.schmuckGutscheine.splice(i, 1);
+  } else {
+    if (aktiveSaison(heute) !== 'winter') return fehler(eintrag.name + ' gibt es nur im Winter.');
+    if (d.spiel.samen < eintrag.preis) return fehler('Dafür fehlen ' + (eintrag.preis - d.spiel.samen) + ' Samen.');
+    d.spiel.samen -= eintrag.preis;
+  }
+  p.schmuck = { ...(p.schmuck || {}), [teil]: true };
+  return { daten: d };
+}
+
+// ---------- SPEC-4, Abschnitt 4: Lager ----------
+
+// Kopie eines Objekts ohne die genannten Schlüssel
+const ohne = (obj, felder) => Object.fromEntries(Object.entries(obj).filter(([k]) => !felder.includes(k)));
+
+// Alle Elemente entfernen, für die pred gilt. Gibt sie in ursprünglicher Reihenfolge zurück.
+function herausnehmen(liste, pred) {
+  const raus = [];
+  for (let i = liste.length - 1; i >= 0; i--) {
+    if (pred(liste[i])) raus.unshift(liste.splice(i, 1)[0]);
+  }
+  return raus;
+}
+
+// Teil ins Lager legen: kostenlos, ohne Samen. kategorie: 'pflanze', 'deko' oder 'moebel' (Saisonartikel
+// liegen in der Liste ihrer Art). Eigenschaften bleiben erhalten. Bei einem Möbel kommt alles darauf mit ins Lager.
+export function einlagern(daten, kategorie, id) {
+  const d = migriere(kopie(daten));
+  const gh = d.spiel.gewaechshaus;
+  const neu = [];
+  if (kategorie === 'moebel') {
+    const idx = gh.moebel.findIndex(x => x.id === id);
+    if (idx < 0) return fehler('Dieses Möbel gibt es nicht.');
+    const [m] = gh.moebel.splice(idx, 1);
+    neu.push({ id: neueId('l'), kategorie: 'moebel', typ: m.typ, eigenschaften: ohne(m, ['id', 'typ', 'gx', 'gy']) });
+    const aufMoebel = (x) => !!x.ort && x.ort.moebel === id;
+    for (const p of herausnehmen(gh.pflanzen, aufMoebel)) {
+      neu.push({ id: neueId('l'), kategorie: 'pflanze', typ: p.typ, eigenschaften: ohne(p, ['id', 'typ', 'ort']) });
+    }
+    for (const x of herausnehmen(gh.deko, aufMoebel)) {
+      neu.push({ id: neueId('l'), kategorie: 'deko', typ: x.typ, eigenschaften: ohne(x, ['id', 'typ', 'ort']) });
+    }
+  } else if (kategorie === 'pflanze' || kategorie === 'deko') {
+    const liste = kategorie === 'pflanze' ? gh.pflanzen : gh.deko;
+    const idx = liste.findIndex(x => x.id === id);
+    if (idx < 0) return fehler('Diesen Gegenstand gibt es nicht.');
+    const [obj] = liste.splice(idx, 1);
+    neu.push({ id: neueId('l'), kategorie, typ: obj.typ, eigenschaften: ohne(obj, ['id', 'typ', 'ort']) });
+  } else {
+    return fehler('Unbekannte Kategorie.');
+  }
+  d.spiel.lager.push(...neu);
+  return { daten: d, anzahl: neu.length };
+}
+
+// Lagerteil zurück in den Garten: Ort wie beim Kauf geprüft (Möbel mit drehung, Pflanze und Deko mit ort),
+// kostenlos, mit allen Eigenschaften. Der Lagereintrag verschwindet.
+export function lagerPlatzieren(daten, lagerId, ort) {
+  const d = migriere(kopie(daten));
+  const gh = d.spiel.gewaechshaus;
+  const i = d.spiel.lager.findIndex(x => x.id === lagerId);
+  if (i < 0) return fehler('Dieses Teil liegt nicht im Lager.');
+  const e = d.spiel.lager[i];
+  const eig = e.eigenschaften || {};
+  if (e.kategorie === 'moebel') {
+    const pos = {
+      gx: ort ? ort.gx : undefined,
+      gy: ort ? ort.gy : undefined,
+      drehung: ort && ort.drehung !== undefined ? ort.drehung : (eig.drehung || 0)
+    };
+    const f = pruefeMoebelPos(gh, e.typ, pos, null);
+    if (f) return fehler(f);
+    gh.moebel.push({ id: neueId('m'), typ: e.typ, gx: pos.gx, gy: pos.gy, drehung: pos.drehung });
+  } else {
+    const art = e.kategorie === 'pflanze' && eig.saat ? 'saat' : e.kategorie;
+    const f = pruefeOrt(gh, art, e.typ, ort, null);
+    if (f) return fehler(f);
+    const liste = e.kategorie === 'pflanze' ? gh.pflanzen : gh.deko;
+    liste.push({ ...eig, id: neueId(e.kategorie === 'pflanze' ? 'p' : 'd'), typ: e.typ, ort: normOrt(ort) });
+  }
+  d.spiel.lager.splice(i, 1);
+  return { daten: d };
+}
+
+// Name eines Lagerteils: Katalog, Raritäten, Saisonartikel, Saat, sonst der Typ
+function lagerName(katalogListe, typ) {
+  if (hat(RARITAETEN, typ)) return RARITAETEN[typ].name;
+  const eintrag = katalogListe.find(x => x.typ === typ);
+  if (eintrag) return eintrag.name;
+  if (hat(SAISON_ARTIKEL, typ)) return (hat(SAISON, typ) && SAISON[typ].name) || SAISON_ARTIKEL[typ].name;
+  return saatName(typ);
+}
+
+// Lagerinhalt für die Anzeige: { lagerId, kategorie, typ, name }
+export function lagerListe(daten) {
+  const katalogListe = katalog(daten);
+  return (daten.spiel.lager || []).map(e => ({
+    lagerId: e.id,
+    kategorie: e.kategorie,
+    typ: e.typ,
+    name: lagerName(katalogListe, e.typ)
+  }));
 }
 
 // Designs: Liste mit Stand (gekauft, gewählt, freigeschaltet)

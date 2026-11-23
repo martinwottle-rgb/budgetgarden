@@ -625,3 +625,222 @@ button:not([disabled]):active,
 .ch-wahl { display: grid; gap: 12px; }
 .ch-wahl-liste { display: grid; gap: 8px; }
 .ch-wahl-knopf { justify-content: flex-start; min-height: 48px; }
+
+/* Zoom der Szene: Knopf zum Zurücksetzen oben rechts in der Szenenkarte */
+.ga-szene { position: relative; }
+.zoom-zurueck { position: absolute; top: 14px; right: 14px; z-index: 3; min-height: 36px; padding: 6px 12px;
+  border: 0; border-radius: 18px; background: rgba(255, 250, 240, 0.92); color: #6b4a3a; font: inherit; font-size: 14px; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(107, 74, 58, 0.18); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.zoom-zurueck[hidden] { display: none; }
+
+/* ---------- Adventskalender (SPEC-4, Abschnitt 3): 6 × 4 Türchen, das heutige klappt auf ---------- */
+
+.adv-raster {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  perspective: 700px;
+}
+
+.adv-platz {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Hinter dem geöffneten Türchen leuchtet es golden */
+.adv-platz.adv-licht {
+  background: radial-gradient(circle at 50% 50%, #fff6c9 0%, var(--gold) 75%);
+  box-shadow: 0 0 14px rgba(242, 193, 78, 0.6);
+}
+
+.adv-tuer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 12px;
+  background: #fff8ee;
+  color: var(--braun);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 0 0 1px rgba(107, 74, 58, 0.12), 0 2px 0 rgba(107, 74, 58, 0.1);
+  transform-origin: left center;
+  backface-visibility: hidden;
+}
+
+.adv-tuer.adv-vergangen {
+  background: #e4f1de;
+  color: var(--braun-2);
+}
+
+/* Künftige Türchen: geschlossen und gedämpft */
+.adv-tuer.adv-zu {
+  opacity: 0.45;
+  filter: saturate(0.5);
+}
+
+.adv-haken {
+  position: absolute;
+  top: 2px;
+  right: 5px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--positiv);
+}
+
+/* Heutiges Türchen: golden, wippt leicht, ein Glanz läuft darüber */
+.adv-tuer.adv-heute {
+  background: linear-gradient(135deg, #fff6c9 0%, var(--gold) 60%, #e0a93a 100%);
+  color: var(--braun);
+  overflow: hidden;
+  animation: adv-wippen 2.4s ease-in-out infinite, adv-leuchten 1.6s ease-in-out infinite;
+}
+
+.adv-tuer.adv-heute::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.8) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: adv-glanz 2.6s linear infinite;
+  pointer-events: none;
+}
+
+/* Aufgeklappt: die Tür schwingt um 100 Grad nach links und verschwindet (500 ms) */
+.adv-tuer.adv-heute.adv-auf,
+.adv-tuer.adv-auf {
+  animation: adv-oeffnen 500ms ease-in-out forwards;
+  box-shadow: none;
+}
+
+.adv-tuer.adv-auf::after { display: none; }
+
+@keyframes adv-oeffnen {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(-100deg); }
+}
+
+@keyframes adv-wippen {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-2deg); }
+}
+
+@keyframes adv-leuchten {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 193, 78, 0.7); }
+  50% { box-shadow: 0 0 0 5px rgba(242, 193, 78, 0); }
+}
+
+@keyframes adv-glanz {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* Belohnungen im Advent: Schmuck und Schneekugel-Finale */
+.adv-gabe { align-items: center; }
+
+.adv-finale {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: center;
+}
+
+.adv-finale-bild {
+  width: 170px;
+  height: 170px;
+}
+
+.adv-finale-vorschau,
+.adv-finale-vorschau svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.adv-finale-gruss {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--braun);
+}
+
+/* Band „Exklusiv“ auf Saisonartikeln, die es nur als Geschenk gibt */
+.adv-band {
+  display: block;
+  margin-bottom: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #c9514a;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Zimmertanne: Abschnitt „Schmücken“ im Pflanzenblatt */
+.adv-schmuck {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(107, 74, 58, 0.2);
+}
+
+.adv-schmuck-titel {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.adv-schmuck-zeile {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.adv-schmuck-name {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.adv-schmuck-knopf {
+  justify-content: center;
+  min-width: 150px;
+  font-size: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adv-tuer.adv-heute,
+  .adv-tuer.adv-heute::after { animation: none !important; }
+  .adv-tuer.adv-heute::after { display: none; }
+  .adv-tuer.adv-auf,
+  .adv-tuer.adv-heute.adv-auf { animation: none !important; transform: rotateY(-100deg); }
+  .adv-platz { transition: none; }
+}
+
+/* ---------- Lager (SPEC-4, Abschnitt 4): eingelagerte Teile im Shop ---------- */
+
+/* Eingelagerte Karten bekommen einen gestrichelten Rahmen, sie stehen gerade im Lager */
+.lg-karte { border: 2px dashed rgba(107, 74, 58, 0.25); }
+
+.lg-bild { margin-bottom: 2px; }
+
+/* Text unter dem Einlagern-Knopf im Blatt */
+.lg-einlagern-text {
+  margin: 0 4px;
+  text-align: center;
+}

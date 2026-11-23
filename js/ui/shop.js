@@ -4,7 +4,7 @@
 
 import {
   katalog, freiePlaetze, kaufen, levelAus, ERWEITERUNGEN, raritaetenListe,
-  samentuete, saatSeltenheit, saisonKatalog, aktiveSaison, designListe, designKaufen, designWaehlen
+  samentuete, saatSeltenheit, saisonKatalog, aktiveSaison, designListe, designKaufen, designWaehlen, lagerListe
 } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
@@ -20,6 +20,7 @@ import { vorschau, einpassen } from '../szene.js';
 import { el, muenzSvg, svgBox, zahl } from './bausteine.js';
 
 const REITER = [
+  { id: 'lager', name: 'Lager 📦' },
   { id: 'pflanze', name: 'Pflanzen' },
   { id: 'moebel', name: 'Möbel' },
   { id: 'deko', name: 'Deko' },
@@ -62,20 +63,32 @@ let reiterWahl = 'pflanze';
 export function zeige(container, ctx) {
   const d = ctx.daten;
   const saison = aktiveSaison(ctx.heute);
-  if (reiterWahl === 'saison' && !saison) reiterWahl = 'pflanze';
+  // Lager-Reiter nur mit eingelagerten Teilen, Saison-Reiter in der Saison oder mit Saison-Gutschein
+  const ansicht = {
+    lager: lagerListe(d).length > 0,
+    saison: !!saison || saisonGutscheine(d) > 0
+  };
+  if (reiterWahl === 'saison' && !ansicht.saison) reiterWahl = 'pflanze';
+  if (reiterWahl === 'lager' && !ansicht.lager) reiterWahl = 'pflanze';
   const gutscheine = (d.spiel.gutscheine || []).length;
   // filter(Boolean): ein null würde von append() als Text "null" angezeigt
   container.append(...[
     el('h1', { class: 'titel', text: 'Shop' }),
     samenStand(d),
     gutscheine ? el('section', { class: 'karte sp12-gutschein-hinweis', text: `🎁 Du hast ${gutscheine} ${gutscheine === 1 ? 'Gutschein' : 'Gutscheine'}` }) : null,
-    reiterLeiste(ctx, saison),
+    reiterLeiste(ctx, ansicht),
     inhaltDesReiters(ctx, saison)
   ].filter(Boolean));
   einpassen(container);
 }
 
+// Anzahl der Saison-Gutscheine (Tagesgeschenk, Adventskalender)
+function saisonGutscheine(d) {
+  return (d.spiel.gutscheine || []).filter(g => g.kategorie === 'saison').length;
+}
+
 function inhaltDesReiters(ctx, saison) {
+  if (reiterWahl === 'lager') return lagerBereich(ctx);
   if (reiterWahl === 'raritaet') return el('div', { class: 'raster' }, raritaetenListe(ctx.daten).map(r => raritaetKarte(ctx, r)));
   if (reiterWahl === 'tuete') return tuetenBereich(ctx);
   if (reiterWahl === 'saison') return saisonBereich(ctx, saison);
@@ -142,9 +155,9 @@ function samenStand(d) {
   );
 }
 
-// Die Saison-Reiter erscheint nur, wenn gerade eine Saison läuft
-function reiterLeiste(ctx, saison) {
-  const liste = REITER.filter(r => r.id !== 'saison' || saison);
+// Lager und Saison nur, wenn sie etwas zu zeigen haben (ansicht: { lager, saison })
+function reiterLeiste(ctx, ansicht) {
+  const liste = REITER.filter(r => (r.id !== 'saison' || ansicht.saison) && (r.id !== 'lager' || ansicht.lager));
   return el('div', { class: 'reiter sh-reiter' }, liste.map(r => el('button', {
     type: 'button',
     class: r.id === reiterWahl ? 'aktiv' : null,
@@ -208,10 +221,16 @@ function erweiterungKarte(ctx, a) {
 
 // Vorschau-Inhalt eines Artikels für Level-Up und Tagesgeschenk (SVG-Text). Null, wenn nichts gezeichnet ist.
 export function bildFuer(kategorie, typ) {
-  if (kategorie === 'pflanze') return pflanzenGrafik(typ) ? pflanzenGrafik(typ).zeichne(4) : null;
+  if (kategorie === 'pflanze') return pflanzenGrafik(typ) ? pflanzenGrafik(typ).zeichne(4) : saisonBild(typ);
   if (kategorie === 'moebel') return moebelDef(typ) ? moebelDef(typ).zeichne(2, 2, 0) : null;
-  if (kategorie === 'deko') return dekoDef(typ) ? dekoDef(typ).zeichne() : null;
+  if (kategorie === 'deko') return dekoDef(typ) ? dekoDef(typ).zeichne() : saisonBild(typ);
+  if (kategorie === 'saison') return saisonBild(typ);
   return null;
+}
+
+// Saisonartikel aus der SAISON-Grafik (Stufe 4), sonst null
+function saisonBild(typ) {
+  return Object.prototype.hasOwnProperty.call(SAISON, typ) ? SAISON[typ].zeichne(4) : null;
 }
 
 // Vorschau: Bild aus dem Grafik-Modul, oder "bald" wenn der Artikel noch nicht gezeichnet ist
@@ -250,6 +269,7 @@ function gitterInhalt(groesse, aktuell) {
 function beschreibung(a) {
   if (a.kategorie === 'saison') {
     if (!a.kaufbar) return `Nur ${SAISON_IM[a.saison]} aus Samentüten, wächst auf einem Beet.`;
+    if (a.gutschein) return `Mit Gutschein gratis. Danach bleibt er dauerhaft in deinem Garten.`;
     return `Nur ${SAISON_IM[a.saison]} kaufbar. Danach bleibt er dauerhaft in deinem Garten.`;
   }
   if (a.kategorie === 'pflanze') {
@@ -352,32 +372,88 @@ function saisonEnde(heute) {
 }
 
 function saisonBereich(ctx, saison) {
-  // Saisonartikel sind nur in ihrer Saison zu haben und danach dauerhaft im Besitz, daher ohne Level-Sperre
-  const liste = saisonKatalog(ctx.daten, ctx.heute).map(a => ({ ...a, freigeschaltet: true, gutschein: false }));
-  return el('div', {},
-    el('section', { class: 'karte s20-banner' },
+  // Saisonartikel sind nur in ihrer Saison zu haben und danach dauerhaft im Besitz, daher ohne Level-Sperre.
+  // Saison-Gutscheine (gutschein: true) zeigt saisonKatalog auch außerhalb der Saison, dort gratis.
+  const liste = saisonKatalog(ctx.daten, ctx.heute).map(a => ({ ...a, freigeschaltet: true }));
+  const banner = saison
+    ? [
       el('div', { class: 's20-banner-titel', text: `${SAISON_NAME[saison]}-Saison ${SAISON_EMOJI[saison]}` }),
       el('div', { class: 'klein', text: `Nur bis ${saisonEnde(ctx.heute)}` })
-    ),
+    ]
+    : [
+      el('div', { class: 's20-banner-titel', text: 'Saison-Gutscheine 🎁' }),
+      el('div', { class: 'klein', text: 'Gratis mit Gutschein aus dem Tagesgeschenk' })
+    ];
+  return el('div', {},
+    el('section', { class: 'karte s20-banner' }, banner),
     el('div', { class: 'raster' }, liste.map(a => saisonKarte(ctx, a)))
   );
 }
 
 function saisonKarte(ctx, a) {
   const samen = ctx.daten.spiel.samen;
-  const zuWenig = a.kaufbar && samen < a.preis;
+  const gratis = !!a.gutschein;
+  const zuWenig = a.kaufbar && !gratis && samen < a.preis;
   return el('button', {
     type: 'button',
     class: 'karte sh-karte' + (zuWenig || !a.kaufbar ? ' sh-ausgegraut' : ''),
     onclick: () => kaufBlatt(ctx, a)
   },
+    a.exklusiv ? el('div', { class: 'adv-band', text: 'Exklusiv' }) : null,
     bildVon(a),
     el('div', { class: 'sh-name', text: a.name }),
-    a.kaufbar
-      ? el('div', { class: 'sh-preis' }, svgBox(muenzSvg(18), 'muenze-klein'), zahl(a.preis))
-      : el('div', { class: 'sh-hinweis', text: 'Nur aus Samentüten' }),
+    !a.kaufbar ? el('div', { class: 'sh-hinweis', text: 'Nur aus Samentüten' })
+      : gratis ? el('div', { class: 'sh-preis sp12-gratis', text: '🎁 Gratis' })
+        : el('div', { class: 'sh-preis' }, svgBox(muenzSvg(18), 'muenze-klein'), zahl(a.preis)),
     zuWenig ? el('div', { class: 'sh-hinweis', text: `Noch ${zahl(a.preis - samen)} Samen` }) : null
   );
+}
+
+// ---------- Lager (eingelagerte Teile, gratis wieder aufstellen) ----------
+
+const hatEintrag = (tabelle, typ) => Object.prototype.hasOwnProperty.call(tabelle, typ);
+
+function lagerBereich(ctx) {
+  return el('div', { class: 'raster' }, lagerListe(ctx.daten).map(e => lagerKarte(ctx, e)));
+}
+
+// Karte wie artikelKarte. Antippen startet die Platzwahl im Garten (lagerId), ohne Kosten.
+function lagerKarte(ctx, e) {
+  const eintrag = (ctx.daten.spiel.lager || []).find(x => x.id === e.lagerId) || null;
+  const art = eintrag ? lagerArt(eintrag) : e.kategorie;
+  const passt = freiePlaetze(ctx.daten, art, e.typ).length > 0;
+  return el('button', {
+    type: 'button',
+    class: 'karte sh-karte lg-karte' + (passt ? '' : ' sh-ausgegraut'),
+    onclick: () => {
+      if (!passt) return ctx.toast(KEIN_PLATZ);
+      ctx.navigiere('garten', { platzieren: { kategorie: e.kategorie, typ: e.typ, lagerId: e.lagerId } });
+    }
+  },
+    lagerBild(eintrag),
+    el('div', { class: 'sh-name', text: e.name }),
+    el('div', { class: 'sh-preis sp12-gratis', text: 'Gratis aufstellen' }),
+    passt ? null : el('div', { class: 'sh-hinweis', text: 'Gerade kein freier Platz' })
+  );
+}
+
+// Saat im Lager wird wie Saat auf dem Beet geprüft, sonst zählt die Kategorie
+function lagerArt(eintrag) {
+  return eintrag.kategorie === 'pflanze' && eintrag.eigenschaften && eintrag.eigenschaften.saat ? 'saat' : eintrag.kategorie;
+}
+
+// Bild eines Lagerteils: Raritäten und Saat mit eigener Grafik, sonst die übliche Vorschau
+function lagerBild(eintrag) {
+  let inhalt = null;
+  if (eintrag) {
+    const eig = eintrag.eigenschaften || {};
+    if (eintrag.kategorie === 'pflanze' && eig.rar && hatEintrag(RARITAETEN, eintrag.typ)) inhalt = RARITAETEN[eintrag.typ].zeichne(4);
+    else if (eintrag.kategorie === 'pflanze' && eig.saat && hatEintrag(SAAT, eintrag.typ)) inhalt = SAAT[eintrag.typ].zeichne(4);
+    else inhalt = bildFuer(eintrag.kategorie, eintrag.typ);
+  }
+  return inhalt
+    ? el('div', { class: 'sh-bild lg-bild' }, vorschau(inhalt, 'sh-vorschau'))
+    : el('div', { class: 'sh-bild sh-bald' }, el('span', { text: 'bald' }));
 }
 
 // ---------- Samentüten ----------

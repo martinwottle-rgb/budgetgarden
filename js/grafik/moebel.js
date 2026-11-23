@@ -474,17 +474,29 @@ function gaertnertischTeile(gx, gy, drehung) {
 }
 
 // Wandboard: schmaler Teak-Sockel, Wandplatte, zwei Teakbretter auf petrolfarbenen Metallwinkeln
+// Wandboard: hängt an der Rückwand, berührt den Boden nicht (darunter bleibt Platz für Kleines).
+// Leiste an der Wand, zwei Teakbretter auf Petrol-Konsolen in 110 und 160 Höhe.
 function wandregalTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  // Wand und Sockel sowie die Winkel liegen hinten bzw. am Boden: unterste Ebene, auch der Winkel unter dem oberen Brett
-  const T = [[0, schatten(m, 2, 0.6)], [0, quader(m, 0, 2, 0, 0.03, 4, 100, TEAK_DUNKEL)], [0, quader(m, 0.04, 1.96, 0.1, 0.5, 0, 4, TEAK)]];
-  [42, 96].forEach((zb, k) => {
+  const T = [[0, quader(m, 0, 2, 0, 0.03, 100, 108, TEAK_DUNKEL)]];
+  [110, 160].forEach((zb, k) => {
     for (const uc of [0.3, 1.7]) {
-      T.push([0, prisma(m, uc - 0.04, uc + 0.04, [[0.03, zb], [0.5, zb], [0.5, zb - 4], [0.1, zb - 20], [0.03, zb - 20]], PETROL)]);
+      T.push([k, prisma(m, uc - 0.04, uc + 0.04, [[0.03, zb], [0.5, zb], [0.5, zb - 4], [0.1, zb - 20], [0.03, zb - 20]], PETROL)]);
     }
     T.push([k, koerper(platte(m, 0, 2, 0.03, 0.55, 0.04), zb, zb + 4, TEAK) + maser(m, 0, 2, 0.03, 0.55, zb, zb + 4, 2)]);
   });
-  return { teile: T, zs: [46, 100] };
+  return { teile: T, zs: [114, 164] };
+}
+
+// Kleines Wandbord: ein Brett für ein Feld an der Rückwand, in 130 Höhe
+function wandbordTeile(gx, gy, drehung) {
+  const m = { gx, gy, drehung };
+  const T = [[0, quader(m, 0.05, 0.95, 0, 0.03, 120, 127, TEAK_DUNKEL)]];
+  for (const uc of [0.22, 0.78]) {
+    T.push([0, prisma(m, uc - 0.04, uc + 0.04, [[0.03, 130], [0.48, 130], [0.48, 126], [0.1, 112], [0.03, 112]], PETROL)]);
+  }
+  T.push([0, koerper(platte(m, 0.04, 0.96, 0.03, 0.52, 0.04), 130, 134, TEAK) + maser(m, 0.04, 0.96, 0.03, 0.52, 130, 134, 1)]);
+  return { teile: T, zs: [134] };
 }
 
 // Rattan-Etagere: drei flache Koerbe, verbunden durch drei geschwungene Teakstreben mit Messingfuessen
@@ -599,12 +611,23 @@ export const MOEBEL = {
     name: 'Wandboard',
     breite: 2,
     tiefe: 1,
+    // wand: hängt an einer Rückwand (drehung 0 an der Wand bei y = 0, drehung 90 an der Wand bei x = 0) und belegt keinen Boden
+    wand: true,
     plaetze: [
-      { dx: 0.5, dy: 0.3, z: 46, hoehe: 50 }, { dx: 1.5, dy: 0.3, z: 46, hoehe: 50 },
-      { dx: 0.5, dy: 0.3, z: 100 }, { dx: 1.5, dy: 0.3, z: 100 },
+      { dx: 0.5, dy: 0.3, z: 114, hoehe: 46 }, { dx: 1.5, dy: 0.3, z: 114, hoehe: 46 },
+      { dx: 0.5, dy: 0.3, z: 164 }, { dx: 1.5, dy: 0.3, z: 164 },
     ],
     zeichne: (gx, gy, drehung = 0) => gesamtSvg(wandregalTeile(gx, gy, drehung)),
     schichten: (gx, gy, drehung = 0) => schichtenSvg(wandregalTeile(gx, gy, drehung)),
+  },
+  wandbord: {
+    name: 'Wandbord',
+    breite: 1,
+    tiefe: 1,
+    wand: true,
+    plaetze: [{ dx: 0.5, dy: 0.3, z: 134 }],
+    zeichne: (gx, gy, drehung = 0) => gesamtSvg(wandbordTeile(gx, gy, drehung)),
+    schichten: (gx, gy, drehung = 0) => schichtenSvg(wandbordTeile(gx, gy, drehung)),
   },
   rattan_etagere: {
     name: 'Rattan-Etagere',

@@ -6,7 +6,7 @@
 import * as L from '../logik.js';
 import { zeichneSzene, vorschau, einpassen, feldAusPunkt, punktAusOrt, FELD_PX, erntereif, ERNTE_WARTE_TAGE } from '../szene.js';
 import { iso } from '../grafik/hilfen.js';
-import { dekoBreite, gewaehlteKategorie, meidbareKategorien, kategorieWaehlen, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO } from '../spiel.js';
+import { dekoBreite, gewaehlteKategorie, meidbareKategorien, kategorieWaehlen, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO, einlagern, lagerPlatzieren, lagerListe, schmuecken, SCHMUCK } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { RARITAETEN } from '../grafik/raritaeten.js';
@@ -58,6 +58,10 @@ let gleitet = false;
 // Nach einem Kauf im Shop: Blätter-Konfetti beim nächsten Zeichnen (bei einer Rarität in Gold)
 let konfettiNaechstes = false;
 let konfettiGold = false;
+// Zoom der Szene: s = Faktor (1 bis ZOOM_MAX), cx/cy = Mitte des Ausschnitts in SVG-Einheiten (null = Mitte).
+// Bleibt über Neuzeichnen hinweg erhalten (nach jedem Speichern wird der Garten neu aufgebaut).
+let zoom = { s: 1, cx: null, cy: null };
+const ZOOM_MAX = 3;
 
 // ---------- Budgetkarte (Woche und Monat, SPEC-3 Abschnitt 6) ----------
 
@@ -141,7 +145,7 @@ export function zeige(container, ctx, param) {
   if (aktion) { bewegen = false; gewaehlt = null; }
 
   // Hinweisleiste oben bei Platzwahl
-  if (aktion) container.append(hinweisLeiste(ctx));
+  if (aktion) container.append(hinweisLeiste(ctx, aktion));
 
   // Wochenkarte: Budget der Woche mit Prognose, darunter der Stand von heute
   container.append(budgetKarte({
@@ -190,6 +194,7 @@ export function zeige(container, ctx, param) {
     saison: aktiveSaison(hd),
     markierungen: markierungenFuer(d, aktion, hd)
   });
+  zoomEinrichten(platz, karte);
   platz.addEventListener('click', (e) => szeneKlick(e, ctx, aktion));
   // Im Bewegungsmodus gehört jeder Klick den Zeigerereignissen, nicht dem Blatt
   platz.addEventListener('click', (e) => { if (bewegen) { e.stopPropagation(); e.preventDefault(); } }, true);
@@ -269,15 +274,16 @@ function kategorieWahlBlatt(ctx, wb) {
 
 // ---------- Modus: Platzwahl (Shop) und Bewegungsmodus ----------
 
-// param.platzieren = {kategorie, typ} (Kauf im Shop)
+// param.platzieren = {kategorie, typ} (Kauf im Shop) oder {kategorie, typ, lagerId} (Lager, gratis)
 function aktionAus(param) {
   if (param && param.platzieren) return { ...param.platzieren };
   return null;
 }
 
-function hinweisLeiste(ctx) {
+function hinweisLeiste(ctx, aktion) {
+  const name = aktion.lagerId ? lagerName(ctx.daten, aktion.lagerId) : '';
   return el('section', { class: 'karte ga-hinweis', role: 'status' },
-    el('span', { text: 'Tippe auf einen freien Platz' }),
+    el('span', { text: aktion.lagerId ? `Tippe auf einen freien Platz für ${name}` : 'Tippe auf einen freien Platz' }),
     el('span', { class: 'ga-punkt', 'aria-hidden': 'true', text: '·' }),
     el('button', { type: 'button', class: 'knopf knopf-leise ga-hinweis-knopf', text: 'Abbrechen', onclick: () => ctx.navigiere('garten') })
   );
@@ -310,8 +316,22 @@ function markierungenFuer(d, aktion, hd) {
   return freiePlaetze(d, kat, aktion.typ).map(ort => ({ ort, ok: true, typ: aktion.typ }));
 }
 
-// Kategorie für freiePlaetze: Saat auf 'saat', Saisonartikel nach seiner Art (pflanze oder deko), sonst die Kategorie selbst
+// Lagerteil: Saat wird wie Saat auf dem Beet geprüft, sonst zählt die Kategorie des Lagereintrags
+function lagerArt(d, lagerId) {
+  const e = (d.spiel.lager || []).find(x => x.id === lagerId);
+  if (!e) return null;
+  return e.kategorie === 'pflanze' && e.eigenschaften && e.eigenschaften.saat ? 'saat' : e.kategorie;
+}
+
+// Name eines Lagerteils für die Hinweisleiste
+function lagerName(d, lagerId) {
+  const e = lagerListe(d).find(x => x.lagerId === lagerId);
+  return e ? e.name : 'das Teil';
+}
+
+// Kategorie für freiePlaetze: Lagerteil nach seinem Eintrag, Saat auf 'saat', Saisonartikel nach seiner Art (pflanze oder deko), sonst die Kategorie selbst
 function platzKategorie(d, aktion, hd) {
+  if (aktion.lagerId) return lagerArt(d, aktion.lagerId);
   if (aktion.kategorie !== 'saison') return aktion.kategorie;
   const s = saisonKatalog(d, hd).find(x => x.typ === aktion.typ);
   return s && s.art !== 'saat' ? s.art : null;
@@ -340,6 +360,7 @@ function zielGewaehlt(ctx, aktion, ort) {
 }
 
 function platzAktion(ctx, aktion, ort) {
+  if (aktion.lagerId) return lagerPlatzieren(ctx.daten, aktion.lagerId, ort);
   if (aktion.kategorie === 'raritaet') return raritaetPflanzen(ctx.daten, aktion.typ, ort);
   if (aktion.kategorie === 'saat') return saatPflanzen(ctx.daten, aktion.typ, ort);
   return kaufen(ctx.daten, aktion.kategorie, aktion.typ, ort, ctx.heute);
@@ -441,6 +462,117 @@ function punktIm(svg, x, y) {
   pt.x = x;
   pt.y = y;
   return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+// ---------- Zoom: zwei Finger zum Zoomen, ein Finger zum Verschieben (nur gezoomt), Doppeltipp ----------
+
+function zoomEinrichten(platz, karte) {
+  const svg = platz.querySelector('svg');
+  if (!svg) return;
+  const vb0 = svg.getAttribute('viewBox').split(/[\s,]+/).map(Number);
+  const [x0, y0, w0, h0] = vb0;
+  if (zoom.cx === null) zoom = { s: 1, cx: x0 + w0 / 2, cy: y0 + h0 / 2 };
+
+  // Ausschnitt setzen; Mitte so begrenzen, dass er im ursprünglichen Bild bleibt
+  const anwenden = () => {
+    zoom.s = Math.min(ZOOM_MAX, Math.max(1, zoom.s));
+    const w = w0 / zoom.s, h = h0 / zoom.s;
+    zoom.cx = Math.min(x0 + w0 - w / 2, Math.max(x0 + w / 2, zoom.cx));
+    zoom.cy = Math.min(y0 + h0 - h / 2, Math.max(y0 + h / 2, zoom.cy));
+    svg.setAttribute('viewBox', `${(zoom.cx - w / 2).toFixed(2)} ${(zoom.cy - h / 2).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}`);
+    // Gezoomt: Seite scrollt nicht unter dem Finger, ein Finger verschiebt den Ausschnitt
+    if (zoom.s > 1.001) svg.style.touchAction = 'none';
+    else svg.style.removeProperty('touch-action');
+    knopf.hidden = zoom.s <= 1.001;
+  };
+  // SVG-Einheiten je Bildschirmpixel und Bildschirmpunkt in SVG-Koordinaten
+  const einheit = () => (w0 / zoom.s) / svg.getBoundingClientRect().width;
+  const svgPunkt = (x, y) => {
+    const r = svg.getBoundingClientRect();
+    const w = w0 / zoom.s, h = h0 / zoom.s;
+    return [zoom.cx - w / 2 + (x - r.left) * w / r.width, zoom.cy - h / 2 + (y - r.top) * h / r.height];
+  };
+
+  // Knopf zum Zurücksetzen, nur sichtbar, wenn gezoomt
+  const knopf = document.createElement('button');
+  knopf.type = 'button';
+  knopf.className = 'zoom-zurueck';
+  knopf.textContent = 'Ganzes Gewächshaus';
+  knopf.setAttribute('aria-label', 'Zoom zurücksetzen');
+  knopf.addEventListener('click', (e) => { e.stopPropagation(); zoom.s = 1; anwenden(); });
+  karte.append(knopf);
+  anwenden();
+
+  let pinch = null;   // { d0, s0, anker: [svgX, svgY] }
+  let pan = null;     // { x, y, bewegt }
+  let klickSperre = false;
+  let letzterTipp = null;
+  const abstand = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const mitte = (t) => [(t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2];
+  const aufObjekt = (el) => !!(el && el.closest && el.closest('[data-id]'));
+
+  platz.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2 && !(zug && zug.drag)) {
+      // Zweiter Finger: ein angefangener Langdruck wird abgebrochen, jetzt wird gezoomt
+      if (zug && zug.modus === 'druck') zugBeenden();
+      e.preventDefault();
+      const m = mitte(e.touches);
+      pinch = { d0: abstand(e.touches), s0: zoom.s, anker: svgPunkt(m[0], m[1]) };
+      pan = null;
+    } else if (e.touches.length === 1 && zoom.s > 1.001 && !bewegen && !aufObjekt(e.target)) {
+      pan = { x: e.touches[0].clientX, y: e.touches[0].clientY, bewegt: false };
+    }
+  }, { passive: false });
+
+  platz.addEventListener('touchmove', (e) => {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();
+      const m = mitte(e.touches);
+      zoom.s = Math.min(ZOOM_MAX, Math.max(1, pinch.s0 * abstand(e.touches) / pinch.d0));
+      // Der Punkt unter der Fingermitte bleibt unter der Fingermitte
+      const r = svg.getBoundingClientRect();
+      const w = w0 / zoom.s, h = h0 / zoom.s;
+      zoom.cx = pinch.anker[0] - (m[0] - r.left) * w / r.width + w / 2;
+      zoom.cy = pinch.anker[1] - (m[1] - r.top) * h / r.height + h / 2;
+      anwenden();
+    } else if (pan && e.touches.length === 1) {
+      e.preventDefault();
+      const t = e.touches[0];
+      const k = einheit();
+      if (Math.abs(t.clientX - pan.x) + Math.abs(t.clientY - pan.y) > 2) pan.bewegt = true;
+      zoom.cx -= (t.clientX - pan.x) * k;
+      zoom.cy -= (t.clientY - pan.y) * k;
+      pan.x = t.clientX;
+      pan.y = t.clientY;
+      anwenden();
+    }
+  }, { passive: false });
+
+  platz.addEventListener('touchend', (e) => {
+    if (pinch && e.touches.length < 2) { pinch = null; klickSperre = true; setTimeout(() => { klickSperre = false; }, 350); }
+    if (pan && e.touches.length === 0) {
+      if (pan.bewegt) { klickSperre = true; setTimeout(() => { klickSperre = false; }, 350); }
+      pan = null;
+    }
+    // Doppeltipp auf freie Fläche: hineinzoomen (Faktor 2 an dieser Stelle) oder zurück auf das ganze Gewächshaus
+    if (e.touches.length === 0 && e.changedTouches.length === 1 && !bewegen && !aufObjekt(e.target)) {
+      const t = e.changedTouches[0];
+      const jetzt = Date.now();
+      if (letzterTipp && jetzt - letzterTipp.zeit < 320 && Math.hypot(t.clientX - letzterTipp.x, t.clientY - letzterTipp.y) < 30) {
+        e.preventDefault();
+        if (zoom.s > 1.001) zoom.s = 1;
+        else { const [px, py] = svgPunkt(t.clientX, t.clientY); zoom.s = 2; zoom.cx = px; zoom.cy = py; }
+        anwenden();
+        letzterTipp = null;
+      } else {
+        letzterTipp = { zeit: jetzt, x: t.clientX, y: t.clientY };
+      }
+    }
+  });
+  // iOS: eigenes Zoomen der Seite verhindern, solange auf der Szene gezoomt wird
+  platz.addEventListener('gesturestart', (e) => e.preventDefault());
+  // Nach Zoomen oder Verschieben keinen Klick auslösen (sonst öffnet sich ein Blatt)
+  platz.addEventListener('click', (e) => { if (klickSperre) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
 
 // Objekt unter dem Zeiger: {art, id, el} oder null
@@ -908,6 +1040,62 @@ function verkaufBereich(ctx, kategorie, id, name, schliessen) {
   return [knopf];
 }
 
+// Einlagern: Teil kommt ohne Samen ins Lager und lässt sich später gratis wieder aufstellen.
+// Bei einem Möbel kommt alles darauf mit (Anzahl im Toast).
+function einlagernBereich(ctx, kategorie, id, schliessen, moebel = false) {
+  const knopf = el('button', {
+    type: 'button',
+    class: 'knopf knopf-leise knopf-voll',
+    text: 'Einlagern',
+    onclick: () => {
+      const r = einlagern(ctx.daten, kategorie, id);
+      if (r.fehler) return ctx.toast(r.fehler);
+      schliessen();
+      ctx.speichern(r.daten);
+      ctx.toast(r.anzahl > 1 ? `${r.anzahl} Teile eingelagert` : 'Eingelagert');
+    }
+  });
+  return [
+    knopf,
+    el('p', { class: 'klein lg-einlagern-text', text: 'Kommt ins Lager, ohne Samen. Später gratis wieder aufstellen.' }),
+    moebel ? el('p', { class: 'klein lg-einlagern-text', text: 'Alles, was darauf steht, kommt mit.' }) : null
+  ];
+}
+
+// Zimmertanne: Abschnitt „Schmücken“ mit den fünf Teilen aus SCHMUCK. Antippen hängt das Teil an den Baum.
+function schmuckAbschnitt(ctx, p, schliessen) {
+  const gutscheine = ctx.daten.spiel.schmuckGutscheine || [];
+  const winter = aktiveSaison(ctx.heute) === 'winter';
+  return el('div', { class: 'adv-schmuck' },
+    el('div', { class: 'adv-schmuck-titel', text: 'Schmücken' }),
+    SCHMUCK.map((s) => {
+      const dran = !!(p.schmuck && p.schmuck[s.teil]);
+      const gutschein = gutscheine.includes(s.teil);
+      let knopf;
+      if (dran) {
+        knopf = el('button', { type: 'button', class: 'knopf adv-schmuck-knopf', text: '✓ dran', disabled: true });
+      } else if (gutschein || winter) {
+        knopf = el('button', {
+          type: 'button',
+          class: 'knopf adv-schmuck-knopf' + (gutschein ? ' ios-knopf-gold' : ' knopf-primaer'),
+          text: gutschein ? '🎁 Gutschein' : `${zahl(s.preis)} Samen`,
+          onclick: () => {
+            const r = schmuecken(ctx.daten, p.id, s.teil, ctx.heute);
+            if (r.fehler) return ctx.toast(r.fehler);
+            schliessen();
+            ctx.speichern(r.daten);
+            const neu = ctx.daten.spiel.gewaechshaus.pflanzen.find(x => x.id === p.id);
+            if (neu) pflanzenBlatt(ctx, neu);
+          }
+        });
+      } else {
+        knopf = el('button', { type: 'button', class: 'knopf adv-schmuck-knopf', text: 'im Winter erhältlich', disabled: true });
+      }
+      return el('div', { class: 'adv-schmuck-zeile' }, el('span', { class: 'adv-schmuck-name', text: s.name }), knopf);
+    })
+  );
+}
+
 function pflanzenBlatt(ctx, p) {
   if (p.saat) return saatBlatt(ctx, p);
   const d = ctx.daten;
@@ -948,8 +1136,10 @@ function pflanzenBlatt(ctx, p) {
         onclick: () => verschiebenStarten(ctx, 'pflanze', p.id, schliessen)
       }),
       // Raritäten lassen sich nicht verkaufen: kein Verkaufen-Knopf
-      ...(p.rar ? [] : verkaufBereich(ctx, 'pflanze', p.id, name, schliessen))
-    )
+      ...(p.rar ? [] : verkaufBereich(ctx, 'pflanze', p.id, name, schliessen)),
+      ...einlagernBereich(ctx, 'pflanze', p.id, schliessen)
+    ),
+    p.typ === 'zimmertanne' ? schmuckAbschnitt(ctx, p, schliessen) : null
   );
   blatt = blattOeffnen(ctx, inhalt);
 }
@@ -1061,7 +1251,8 @@ function moebelBlatt(ctx, m) {
           ctx.speichern(r.daten);
         }
       }),
-      ...verkaufBereich(ctx, 'moebel', m.id, name, schliessen)
+      ...verkaufBereich(ctx, 'moebel', m.id, name, schliessen),
+      ...einlagernBereich(ctx, 'moebel', m.id, schliessen, true)
     )
   );
   blatt = blattOeffnen(ctx, inhalt);
@@ -1083,7 +1274,8 @@ function dekoBlatt(ctx, o) {
         text: 'Verschieben',
         onclick: () => verschiebenStarten(ctx, 'deko', o.id, schliessen)
       }),
-      ...verkaufBereich(ctx, 'deko', o.id, name, schliessen)
+      ...verkaufBereich(ctx, 'deko', o.id, name, schliessen),
+      ...einlagernBereich(ctx, 'deko', o.id, schliessen)
     )
   );
   blatt = blattOeffnen(ctx, inhalt);

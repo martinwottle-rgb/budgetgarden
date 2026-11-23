@@ -3,6 +3,7 @@
 import * as L from './logik.js';
 import * as S from './spiel.js';
 import * as P from './speicher.js';
+import { hakenFuer } from './szene.js';
 import { PFLANZEN } from './grafik/pflanzen.js';
 import { DEKO } from './grafik/deko.js';
 import { PFLANZEN2 } from './grafik/pflanzen2.js';
@@ -308,7 +309,7 @@ test('erweiterungKaufen: Level und Samen', () => {
   const r = S.kaufen(reich, 'erweiterung', 'flaeche7');
   klappt(r, 'Fläche 7 ab Level 6');
   gleich(r.daten.spiel.gewaechshaus.groesse, 7, 'Raster 7 x 7');
-  gleich(r.daten.spiel.samen, 0, 'Samen 1000 abgezogen');
+  gleich(r.daten.spiel.samen, 400, 'Samen 600 abgezogen (Preis seit 23.11. 600)');
 });
 
 test('freiePlaetze: Stellplätze und Felder', () => {
@@ -972,6 +973,48 @@ test('Kleine Deko auf Möbeln: Windspiel ja, Bank nein, Platz geteilt mit Pflanz
   scheitert(S.kaufen(beet, 'deko', 'windspiel', { moebel: 'k1', platz: 0 }), 'nicht aufs Beet');
 });
 
+
+test('Wandboard und Wandbord: nur an der Rückwand, Boden darunter bleibt frei', () => {
+  const d = basis(2000, 1000); // Level 5: Wandboard und Wandbord freigeschaltet
+  d.spiel.gewaechshaus.moebel = [];
+  d.spiel.gewaechshaus.pflanzen = [];
+  scheitert(S.kaufen(d, 'moebel', 'wandregal', { gx: 2, gy: 2, drehung: 0 }), 'mitten im Raum nicht');
+  const r = S.kaufen(d, 'moebel', 'wandregal', { gx: 2, gy: 0, drehung: 0 });
+  klappt(r, 'an der Wand bei y = 0');
+  klappt(S.kaufen(d, 'moebel', 'wandbord', { gx: 0, gy: 3, drehung: 90 }), 'Wandbord an der Wand bei x = 0');
+  scheitert(S.kaufen(d, 'moebel', 'wandbord', { gx: 3, gy: 0, drehung: 90 }), 'gedreht passt es nicht an die Wand bei y = 0');
+  klappt(S.kaufen(r.daten, 'pflanze', 'kaktus', { feld: [2, 0] }), 'kleine Pflanze darunter');
+  klappt(S.kaufen(r.daten, 'moebel', 'holzkiste', { gx: 3, gy: 0, drehung: 0 }), 'niedrige Kiste darunter');
+  scheitert(S.kaufen(r.daten, 'moebel', 'tisch_natur', { gx: 2, gy: 0, drehung: 0 }), 'Tisch (68) passt nicht darunter');
+  scheitert(S.kaufen(r.daten, 'moebel', 'wandbord', { gx: 3, gy: 0, drehung: 0 }), 'zweites Wandteil an derselben Stelle');
+  const gross = basis(2000, 3000);
+  gross.spiel.gewaechshaus.moebel = [{ id: 'w', typ: 'wandregal', gx: 2, gy: 0, drehung: 0 }];
+  gross.spiel.gewaechshaus.pflanzen = [];
+  scheitert(S.kaufen(gross, 'pflanze', 'monstera', { feld: [2, 0] }), 'große Pflanze nicht darunter');
+  gleich(S.freiePlaetze(r.daten, 'moebel', 'wandbord').every(o => (o.drehung === 0 ? o.gy === 0 : o.gx === 0)), true, 'angeboten werden nur Wandplätze');
+});
+
+test('Wandboard mitten im Raum kommt beim Update ins Lager', () => {
+  const d = basis(500, 1000);
+  d.spiel.gewaechshaus.moebel.push({ id: 'w', typ: 'wandregal', gx: 3, gy: 3, drehung: 0 });
+  d.spiel.gewaechshaus.pflanzen.push({ id: 'pk', typ: 'kaktus', stufe: 2, ort: { moebel: 'w', platz: 0 } });
+  const r = S.bewerte(d, '2026-10-01');
+  gleich(r.daten.spiel.gewaechshaus.moebel.some(m => m.id === 'w'), false, 'nicht mehr im Gewächshaus');
+  gleich(r.daten.spiel.lager.map(l => l.typ).sort(), ['kaktus', 'wandregal'], 'Wandboard und Kaktus im Lager');
+  gleich(r.ereignisse.some(e => /Wandboard/.test(e.text)), true, 'Hinweis für den Spieler');
+  const r2 = S.bewerte(r.daten, '2026-10-01');
+  gleich(r2.daten.spiel.lager.length, 2, 'beim zweiten Mal nichts mehr zu tun');
+});
+
+test('Sechs Haken an den Rückwänden', () => {
+  gleich(Object.keys(hakenFuer(6)).sort(), ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], 'sechs Haken');
+  gleich(hakenFuer(6).h1, { gx: 4.6, gy: 0.6 }, 'h1 unverändert');
+  const leer = basis(2000, 4500);
+  leer.spiel.gewaechshaus.moebel = [];
+  leer.spiel.gewaechshaus.pflanzen = [];
+  gleich(S.freiePlaetze(leer, 'deko', 'haengeampel').length, 6, 'im leeren Gewächshaus alle sechs frei');
+});
+
 test('Katze kostet 250 und ist ab Level 9', () => {
   gleich(S.PREISE_DEKO.katze.preis, 250, 'Preis');
   gleich(S.PREISE_DEKO.katze.level, 9, 'Level');
@@ -1604,6 +1647,199 @@ test('standardDaten: SPEC-2-Startwerte', () => {
   const s = P.standardDaten('2026-10-01').spiel;
   gleich([s.saatgut, s.tuete, s.gratisTueten, s.design, s.designs, s.entdeckt],
     [{}, { seitSelten: 0, seitLegendaer: 0, geoeffnet: 0 }, 0, { boden: 'dielen', rahmen: 'teak', dach: 'giebel' }, ['dielen', 'teak'], []], 'Startwerte');
+});
+
+// ---------- SPEC-4: Winter, Baumschmuck, Adventskalender, Saison-Gutscheine, Lager ----------
+
+const DEZ = '2026-12-10';
+const tanneVon = (d) => d.spiel.gewaechshaus.pflanzen.find(p => p.id === 'z1');
+
+// Zimmertanne z1 auf Feld (4,4), ohne Schmuck (groß, nur auf dem Boden)
+function mitTanne(d) {
+  d.spiel.gewaechshaus.pflanzen.push({ id: 'z1', typ: 'zimmertanne', stufe: 1, ort: { feld: [4, 4] } });
+  return d;
+}
+
+test('Winter-Artikel: Preise, Arten, Flags und Katalog', () => {
+  gleich(S.SCHMUCK.map(s => s.preis), [60, 50, 80, 70, 90], 'Schmuckpreise');
+  const k = S.saisonKatalog(basis(), DEZ);
+  const finde = (typ) => k.find(x => x.typ === typ);
+  gleich([finde('zimmertanne').preis, finde('zimmertanne').groesse, finde('zimmertanne').art], [300, 'gross', 'pflanze'], 'Zimmertanne');
+  gleich([finde('strohstern').art, finde('strohstern').preis], ['deko', 80], 'Strohstern');
+  gleich(finde('schneekugel'), undefined, 'Schneekugel ohne Gutschein nicht im Katalog');
+  gleich(k.some(x => x.typ === 'kuerbis'), false, 'Herbst-Artikel im Winter nicht im Katalog');
+});
+
+test('Schmuck: im Winter gegen Samen, jedes Teil einmal, nur Zimmertanne', () => {
+  const d = mitTanne(basis(500));
+  scheitert(S.schmuecken(d, 'z1', 'kugeln', '2026-10-05'), 'Herbst ohne Gutschein');
+  const r = S.schmuecken(d, 'z1', 'kugeln', DEZ);
+  klappt(r, 'Winter: Kugeln');
+  gleich([r.daten.spiel.samen, tanneVon(r.daten).schmuck], [440, { kugeln: true }], '60 Samen, Schmuck gesetzt');
+  scheitert(S.schmuecken(r.daten, 'z1', 'kugeln', DEZ), 'Kugeln doppelt');
+  klappt(S.schmuecken(r.daten, 'z1', 'lichter', DEZ), 'anderes Teil geht');
+  scheitert(S.schmuecken(d, 'p1', 'kugeln', DEZ), 'Efeutute nimmt keinen Schmuck');
+  scheitert(S.schmuecken(mitTanne(basis(30)), 'z1', 'geschenke', DEZ), 'zu wenig Samen (90)');
+  scheitert(S.schmuecken(d, 'z1', 'gibtsnicht', DEZ), 'unbekanntes Teil');
+});
+
+test('Schmuck-Gutschein: gratis, auch im Herbst, danach weg', () => {
+  const d = mitTanne(basis(0));
+  d.spiel.schmuckGutscheine = ['strohsterne'];
+  const r = S.schmuecken(d, 'z1', 'strohsterne', '2026-10-05');
+  klappt(r, 'Gutschein im Herbst');
+  gleich([r.daten.spiel.samen, r.daten.spiel.schmuckGutscheine, tanneVon(r.daten).schmuck], [0, [], { strohsterne: true }], 'kein Samen, Gutschein weg, Schmuck da');
+  scheitert(S.schmuecken(d, 'z1', 'kugeln', '2026-10-05'), 'ohne Gutschein im Herbst');
+});
+
+test('Adventskalender: Konstante mit 24 Türchen, Tag 6 und Tag 24', () => {
+  gleich(S.ADVENT.length, 24, '24 Türchen');
+  gleich(S.ADVENT.find(e => e.tag === 6), { tag: 6, samen: 50, saison: 'teekanne' }, 'Nikolaus');
+  gleich(S.ADVENT.find(e => e.tag === 24), { tag: 24, samen: 100, saison: 'schneekugel' }, 'Heiligabend');
+});
+
+test('Adventskalender 1.12.: 30 Samen, Türchen 1, keine Reihen-Gutscheine', () => {
+  const r = S.tagesgeschenk(mitBesuch('2026-11-30', 0), '2026-12-01');
+  gleich([r.tag, r.advent, r.belohnung.samen], [1, { tag: 1 }, 30], 'Tag 1, Türchen 1, 30 Samen');
+  gleich([r.belohnung.gutschein, r.belohnung.schmuck, r.belohnung.saisonGutschein], [undefined, undefined, undefined], 'nur Samen');
+});
+
+test('Adventskalender: Schmuck und Gutschein am 2.12. und 3.12., Gutscheine werden gespeichert', () => {
+  const a = S.geschenkAbholen(mitBesuch('2026-12-01', 1), '2026-12-02');
+  klappt(a, '2.12. abholen');
+  gleich([a.belohnung.samen, a.belohnung.schmuck, a.daten.spiel.schmuckGutscheine], [25, 'kugeln', ['kugeln']], '25 Samen, Schmuck kugeln');
+  const b = S.geschenkAbholen(mitBesuch('2026-12-02', 2), '2026-12-03');
+  gleich(b.daten.spiel.gutscheine.some(g => g.kategorie === 'saison' && g.typ === 'christrose'), true, '3.12.: Saison-Gutschein christrose');
+  gleich(b.belohnung.gutschein, undefined, 'Reihen-Gutschein Tag 4 entfällt im Advent');
+});
+
+test('Adventskalender 6.12.: Nikolaus mit 50 Samen und Gutschein teekanne, keine Tüte', () => {
+  const r = S.tagesgeschenk(mitBesuch('2026-12-05', 6), '2026-12-06').belohnung;
+  gleich([r.samen, r.saisonGutschein, r.tuete, r.gutschein], [50, 'teekanne', undefined, undefined], 'Tag 7 im Advent');
+});
+
+test('Adventskalender 24.12.: 100 Samen und Gutschein schneekugel', () => {
+  const r = S.tagesgeschenk(mitBesuch('2026-12-23', 23), '2026-12-24');
+  gleich([r.tag, r.advent, r.belohnung.samen, r.belohnung.saisonGutschein], [24, { tag: 24 }, 100, 'schneekugel'], 'Tag 24');
+});
+
+test('Adventskalender 25.12.: kein Türchen, Zähler läuft weiter', () => {
+  const r = S.tagesgeschenk(mitBesuch('2026-12-24', 24), '2026-12-25');
+  gleich([r.tag, r.advent, r.belohnung.saisonGutschein], [25, null, undefined], 'Tag 25, kein Advent');
+  gleich(r.belohnung.samen, 30, 'normale Reihe: Tag 25 mit 30 Samen');
+  const a = S.geschenkAbholen(mitBesuch('2026-12-23', 23), '2026-12-24');
+  const b = S.geschenkAbholen(a.daten, '2026-12-25');
+  gleich([a.tag, b.tag], [24, 25], 'Zähler zählt weiter');
+  gleich(S.tagesgeschenk(mitBesuch('2026-11-30', 0), '2026-11-30').advent, null, 'November: kein Advent');
+});
+
+test('Adventskalender 12.12.: Samentüte ab Level 8, sonst 30 Samen extra', () => {
+  const hoch = S.tagesgeschenk(mitBesuch('2026-12-11', 11, 50, 2800), '2026-12-12').belohnung;
+  gleich([hoch.samen, hoch.tuete], [35, 1], 'ab Level 8: Tüte');
+  const tief = S.tagesgeschenk(mitBesuch('2026-12-11', 11), '2026-12-12').belohnung;
+  gleich([tief.samen, tief.tuete], [65, undefined], 'darunter: 35 + 30 Samen');
+});
+
+test('Adventskalender am Adventstag: Meilenstein kommt zusätzlich', () => {
+  const m = S.tagesgeschenk(mitBesuch('2026-11-30', 29), '2026-12-01').belohnung;
+  gleich([m.samen, m.meilenstein.typ, m.meilensteinGutschein.typ], [130, 'goldene_giesskanne', 'goldene_giesskanne'], '30 + 100 Samen');
+});
+
+test('Saison-Gutschein: gratis, auch außerhalb der Saison, danach weg', () => {
+  const d = basis(0);
+  d.spiel.gutscheine = [{ kategorie: 'saison', typ: 'schneelaterne' }];
+  const r = S.kaufen(d, 'saison', 'schneelaterne', { feld: [2, 2] }, DEZ);
+  klappt(r, 'Winter: Schneelaterne mit Gutschein');
+  gleich([r.daten.spiel.samen, r.daten.spiel.gutscheine.length], [0, 0], '0 Samen, Gutschein weg');
+  const h = basis(0);
+  h.spiel.gutscheine = [{ kategorie: 'saison', typ: 'kuerbis' }];
+  const r2 = S.kaufen(h, 'saison', 'kuerbis', { feld: [2, 2] }, DEZ);
+  klappt(r2, 'Kürbis im Dezember mit Gutschein');
+  gleich(r2.daten.spiel.gutscheine.length, 0, 'Gutschein verbraucht');
+  gleich(S.saisonKatalog(h, DEZ).find(x => x.typ === 'kuerbis').preis, 0, 'Katalog: Kürbis gratis');
+  scheitert(S.kaufen(basis(0), 'saison', 'kuerbis', { feld: [2, 2] }, DEZ), 'Kürbis ohne Gutschein im Winter');
+});
+
+test('Schneekugel: nur mit Gutschein im Katalog, nie ohne Gutschein kaufbar', () => {
+  gleich(S.saisonKatalog(basis(), DEZ).some(x => x.typ === 'schneekugel'), false, 'ohne Gutschein nicht im Katalog');
+  scheitert(S.kaufen(basis(500), 'saison', 'schneekugel', { feld: [2, 2] }, DEZ), 'ohne Gutschein nicht kaufbar');
+  const d = basis(500);
+  d.spiel.gutscheine = [{ kategorie: 'saison', typ: 'schneekugel' }];
+  const k = S.saisonKatalog(d, DEZ).find(x => x.typ === 'schneekugel');
+  gleich([k.gutschein, k.preis, k.exklusiv], [true, 0, true], 'mit Gutschein: gratis, exklusiv');
+  gleich(S.saisonKatalog(d, '2026-10-05').some(x => x.typ === 'schneekugel'), true, 'Gutschein zeigt sie auch im Herbst');
+  const r = S.kaufen(d, 'saison', 'schneekugel', { feld: [2, 2] }, DEZ);
+  gleich(r.fehler === undefined, k.gezeichnet, 'mit Gutschein kaufbar genau dann, wenn gezeichnet');
+});
+
+test('Winterpflanzen und Deko: Platzregeln aus den Tabellen', () => {
+  gleich(S.freiePlaetze(basis(), 'pflanze', 'zimmertanne').every(o => o.feld !== undefined), true, 'Zimmertanne nur auf dem Boden');
+  gleich(S.freiePlaetze(basis(), 'deko', 'adventskranz').some(o => o.moebel !== undefined), true, 'Adventskranz auf Möbel');
+  gleich(S.freiePlaetze(basis(), 'deko', 'schlitten').every(o => o.moebel === undefined), true, 'Schlitten nicht auf Möbel');
+  const haken = S.freiePlaetze(basis(), 'deko', 'strohstern');
+  gleich(haken.length > 0 && haken.every(o => o.haken !== undefined), true, 'Strohstern hängt am Haken');
+});
+
+test('Lager: Pflanze mit Stufe 3 rein und wieder raus, Stufe bleibt, keine Samen', () => {
+  const d = basis(500, 300);
+  d.spiel.gewaechshaus.pflanzen[0].stufe = 3;
+  const e = S.einlagern(d, 'pflanze', 'p1');
+  klappt(e, 'einlagern');
+  gleich([e.anzahl, e.daten.spiel.samen, e.daten.spiel.gewaechshaus.pflanzen.length], [1, 500, 0], 'eine Pflanze, keine Samen, Garten leer');
+  const eintrag = e.daten.spiel.lager[0];
+  gleich([eintrag.kategorie, eintrag.typ, eintrag.eigenschaften.stufe], ['pflanze', 'efeutute', 3], 'Lagereintrag mit Stufe 3');
+  gleich(S.freiePlaetze(e.daten, 'pflanze', 'efeutute').some(o => o.feld && o.feld[0] === 5 && o.feld[1] === 5), true, 'freie Plätze wie für neue Pflanzen');
+  const p = S.lagerPlatzieren(e.daten, eintrag.id, { feld: [5, 5] });
+  klappt(p, 'wieder platzieren');
+  const neu = p.daten.spiel.gewaechshaus.pflanzen[0];
+  gleich([neu.typ, neu.stufe, neu.ort, p.daten.spiel.lager.length, p.daten.spiel.samen], ['efeutute', 3, { feld: [5, 5] }, 0, 500], 'Stufe 3, Lager leer, kostenlos');
+});
+
+test('Lager: Möbel mit Pflanze darauf, beide ins Lager, keine Samen, Pflanze danach auf dem neuen Tisch', () => {
+  const e = S.einlagern(basis(500), 'moebel', 'm2');
+  klappt(e, 'Pflanzentisch einlagern');
+  gleich([e.anzahl, e.daten.spiel.samen], [2, 500], 'Möbel und Pflanze, keine Samen');
+  gleich(e.daten.spiel.gewaechshaus.moebel.map(m => m.id), ['m1'], 'nur das Regal bleibt im Garten');
+  gleich([e.daten.spiel.gewaechshaus.pflanzen.length, e.daten.spiel.lager.map(x => x.kategorie).sort()], [0, ['moebel', 'pflanze']], 'Pflanze weg, beide im Lager');
+  const m = S.lagerPlatzieren(e.daten, e.daten.spiel.lager.find(x => x.kategorie === 'moebel').id, { gx: 3, gy: 4, drehung: 0 });
+  klappt(m, 'Tisch wieder auf (3,4)');
+  const tisch = m.daten.spiel.gewaechshaus.moebel.find(x => x.typ === 'tisch_natur');
+  const pl = S.lagerPlatzieren(m.daten, m.daten.spiel.lager.find(x => x.kategorie === 'pflanze').id, { moebel: tisch.id, platz: 0 });
+  klappt(pl, 'Efeutute zurück auf den Tisch');
+  gleich([pl.daten.spiel.lager.length, pl.daten.spiel.samen], [0, 500], 'Lager leer, weiter keine Samen');
+});
+
+test('Lager: Platzieren auf belegtem Feld scheitert, Lagerteil bleibt', () => {
+  const d = basis(500, 300);
+  d.spiel.gewaechshaus.pflanzen.push({ id: 'k1', typ: 'kaktus', stufe: 1, ort: { feld: [5, 5] } });
+  const e = S.einlagern(d, 'pflanze', 'p1');
+  const lid = e.daten.spiel.lager[0].id;
+  scheitert(S.lagerPlatzieren(e.daten, lid, { feld: [5, 5] }), 'Feld belegt');
+  gleich(e.daten.spiel.lager.length, 1, 'Lagerteil noch da');
+  gleich(S.lagerListe(e.daten), [{ lagerId: lid, kategorie: 'pflanze', typ: 'efeutute', name: S.katalog(d).find(k => k.typ === 'efeutute').name }], 'Name aus dem Katalog');
+});
+
+test('Lager: Raritaet bleibt rar und gepflanzt', () => {
+  const gp = S.raritaetPflanzen(freigeschaltet('jadewein'), 'jadewein', { feld: [5, 5] });
+  klappt(gp, 'Jadewein pflanzen');
+  const id = gp.daten.spiel.gewaechshaus.pflanzen.find(x => x.typ === 'jadewein').id;
+  const e = S.einlagern(gp.daten, 'pflanze', id);
+  klappt(e, 'einlagern');
+  gleich(e.daten.spiel.lager[0].eigenschaften.rar, true, 'rar im Lagereintrag');
+  const p = S.lagerPlatzieren(e.daten, e.daten.spiel.lager[0].id, { feld: [1, 1] });
+  klappt(p, 'zurück in den Garten');
+  gleich([p.daten.spiel.gewaechshaus.pflanzen.find(x => x.typ === 'jadewein').rar, p.daten.spiel.raritaeten.jadewein.gepflanzt], [true, true], 'rar und gepflanzt bleiben');
+  gleich(S.lagerListe(p.daten), [], 'Lager leer');
+});
+
+test('Lager: alte Spielstände ohne lager und Migration', () => {
+  const d = basis(50, 300);
+  delete d.spiel.lager;
+  delete d.spiel.schmuckGutscheine;
+  gleich(S.lagerListe(d), [], 'fehlendes lager ist leer');
+  const r = S.einlagern(d, 'deko', 'x');
+  gleich(r.fehler !== undefined, true, 'unbekanntes Teil scheitert');
+  gleich(d.spiel.lager, undefined, 'Eingabe unverändert');
 });
 
 // ---------- Speicher ----------
