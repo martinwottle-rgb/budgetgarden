@@ -16,19 +16,40 @@ const kontur = (welk) => (welk ? KON_WELK : KON_GRUEN);
 const ADER = 'stroke="#3a6b3a" stroke-width="0.5" stroke-linecap="round" opacity="0.6"';
 
 // ---------- Topf (Terrakotta, Kegelstumpf mit Ellipse oben) ----------
+// Verlaeufe mit eigenen Ids (Zaehler), weil der Topf pro Pflanze mehrfach gezeichnet wird.
+// Geometrie unveraendert: Rand bei y = -H, Radius R, Standflaeche y = 0.
+let TOPF_UID = 0;
 function topf(R, H) {
+  const u = 'tp' + (++TOPF_UID);
   const Rb = R * 0.72, ry = R * 0.4, ryb = Rb * 0.4, k = R / 14;
   const korpus = `M${f(-R)},${-H}L${f(-Rb)},0A${f(Rb)},${f(ryb)} 0 0 0 ${f(Rb)},0L${R},${-H}A${R},${f(ry)} 0 0 1 ${f(-R)},${-H}Z`;
   const krumen = [[-6, 1.5, 1.1, 0.6], [-2, 2.6, 0.9, 0.5], [3, 0.8, 1, 0.55], [6, 2.2, 0.8, 0.45], [1, -1.2, 0.7, 0.4]]
     .map(([x, y, rx, rr]) => oval(x * k, -H + y * k, rx * k, rr * k, 'fill="#d6b08a"'))
     .join('');
-  return oval(1, 0, Rb + 2.5, ryb + 1.5, 'fill="#6b4a3a" opacity="0.18"') +
-    pfad(korpus, 'fill="#d9825b"') +
-    pfad(`M0,${f(-H + ry)}A${R},${f(ry)} 0 0 0 ${R},${-H}L${f(Rb)},0A${f(Rb)},${f(ryb)} 0 0 1 0,${f(ryb)}Z`, 'fill="#b8643f"') +
-    pfad(`M${f(-R + 3)},${f(-H + 5)}L${f(-Rb + 3)},-4`, 'fill="none" stroke="#eba47f" stroke-width="2" stroke-linecap="round" opacity="0.8"') +
+  // Wenige helle Punkte als feine Tonstruktur auf dem Koerper
+  const punkte = [[-0.45, -0.4], [0.3, -0.62], [0.05, -0.2], [0.55, -0.32]]
+    .map(([x, y]) => kreis(x * R, y * H, Math.max(0.5, R * 0.05), 'fill="#f5c4a4" opacity="0.5"'))
+    .join('');
+  const defs = '<defs>' +
+    `<linearGradient id="${u}-korpus" gradientUnits="userSpaceOnUse" x1="${f(-R)}" y1="0" x2="${R}" y2="0">` +
+    '<stop offset="0" stop-color="#e39a72"/><stop offset="1" stop-color="#b8643f"/></linearGradient>' +
+    `<linearGradient id="${u}-tiefe" gradientUnits="userSpaceOnUse" x1="0" y1="${-H}" x2="0" y2="0">` +
+    '<stop offset="0" stop-color="#5a2f1c" stop-opacity="0"/><stop offset="1" stop-color="#5a2f1c" stop-opacity="0.3"/></linearGradient>' +
+    `<linearGradient id="${u}-rand" gradientUnits="userSpaceOnUse" x1="${f(-R)}" y1="${-H}" x2="${R}" y2="${-H}">` +
+    '<stop offset="0" stop-color="#f2b692"/><stop offset="0.6" stop-color="#d9825b"/><stop offset="1" stop-color="#b8643f"/></linearGradient>' +
+    `<radialGradient id="${u}-kontakt">` +
+    '<stop offset="0" stop-color="#6b4a3a" stop-opacity="0.34"/>' +
+    '<stop offset="0.6" stop-color="#6b4a3a" stop-opacity="0.14"/>' +
+    '<stop offset="1" stop-color="#6b4a3a" stop-opacity="0"/></radialGradient>' +
+    '</defs>';
+  return defs +
+    oval(1, 0, Rb + 3, ryb + 1.8, `fill="url(#${u}-kontakt)"`) +
+    pfad(korpus, `fill="url(#${u}-korpus)"`) +
+    pfad(korpus, `fill="url(#${u}-tiefe)"`) +
+    punkte +
+    pfad(`M${f(-R + 1.6)},${f(-H + 3)}L${f(-Rb + 1.6)},-3`, 'fill="none" stroke="#f3b996" stroke-width="1.6" stroke-linecap="round" opacity="0.85"') +
     pfad(korpus, `fill="none" ${KON_TOPF}`) +
-    oval(0, -H, R, ry, 'fill="#eba47f"') +
-    pfad(`M0,${f(-H - ry)}A${R},${f(ry)} 0 0 1 0,${f(-H + ry)}Z`, 'fill="#d9825b"') +
+    oval(0, -H, R, ry, `fill="url(#${u}-rand)"`) +
     oval(0, -H, R - 2.4, ry - 1.2, 'fill="#a85a38"') +
     oval(0, -H + 0.8, R - 3.4, ry - 1.7, 'fill="#7a5238"') +
     krumen +
@@ -140,22 +161,6 @@ function stern(x, y, ro, c, n = 5) {
     pts.push([x + r * Math.cos(a), y + r * Math.sin(a)]);
   }
   return poly(pts, `fill="${c}" stroke="#7a5a1a" stroke-width="0.3" stroke-linejoin="round"`);
-}
-
-// Blaetter an langen, bogigen Stielen aus der Erde (Ursprung = Erdoberflaeche).
-// eintraege: [winkel, stiellaenge, blattlaenge, ...]. welk: Stiele kuerzer, Blaetter haengen.
-function stielBlaetter(eintraege, welk, blattFn) {
-  let stiele = '', blaetter = '';
-  eintraege.forEach((eintrag, i) => {
-    const [a0, S] = eintrag;
-    const a = welk ? a0 * 1.25 : a0;
-    const ex = S * Math.sin(a * RAD), ey = -S * Math.cos(a * RAD) * (welk ? 0.45 : 1);
-    const C = welk ? [ex * 0.5, ey * 0.1] : [ex * 0.1, ey * 0.75];
-    stiele += stiel(`M0,0Q${f(C[0])},${f(C[1])} ${f(ex)},${f(ey)}`, welk);
-    const rot = welk ? (a0 < 0 ? -150 : 150) : a * 0.8;
-    blaetter += an(ex, ey, rot, blattFn(eintrag, i));
-  });
-  return stiele + blaetter;
 }
 
 // ---------- Monstera ----------
@@ -343,42 +348,83 @@ function monstera(s, welk) {
 }
 
 // ---------- Goldkugelkaktus ----------
+// Kugel mit Radialverlauf (Licht oben links), Rippen als gebogene Baender mit Licht und Schatten,
+// Areolen als helle Punkte mit goldgelben Dornenbuescheln, Wollschopf oben, ab Stufe 4 gelbe Bluete.
+// Welk: blasser und leicht eingefallen (Stauchung zum Boden hin). Ids mit Zaehler.
+let KAKTUS_UID = 0;
 function kaktus(s, welk) {
+  const u = 'kk' + (++KAKTUS_UID);
   const r = [6, 8, 10, 12][s - 1];
   const cy = -r; // Kugel sitzt auf der Erde
-  const hell = welk ? '#b5c48a' : '#8fc98a';
-  const schatten = welk ? '#a8a36a' : '#6fb06a';
-  const rippe = welk ? '#8c8650' : '#4f8a4a';
-  const dorn = welk ? '#d9c27a' : '#ffd23f';
-  const wy = cy - r * 0.75; // Wollscheitel nahe dem oberen Pol
-  let out = kreis(0, cy, r, `fill="${hell}"`) +
-    pfad(`M0,${f(cy - r)}A${f(r)},${f(r)} 0 0 1 0,${f(cy + r)}Z`, `fill="${schatten}" opacity="0.8"`);
+  const [k0, k1, k2] = welk ? ['#d6dcaa', '#b5c48a', '#8c8650'] : ['#c9ecb6', '#8fc98a', '#4f8a4a'];
+  const rippeHell = welk ? '#e4e6bd' : '#d8f2c4';
+  const rippeSchatt = welk ? '#7d7a48' : '#3f7d4a';
+  const dorn = welk ? '#cbb880' : '#f2d27a';
+  const HALB = 6 * RAD; // halbe Rippenbreite (Bogenmass)
+  const zug = (pts, zu = false) => 'M' + pts.map(p2).join('L') + (zu ? 'Z' : '');
+  // Punkt auf der Kugel: Laengen-Winkel lam, Breiten-Winkel phi (Projektion mit Ursprung am Boden)
+  const pt = (lam, phi) => [r * Math.cos(phi) * Math.sin(lam), cy - r * Math.sin(phi)];
+  // Streifen einer Rippe zwischen den Faktoren a und b der halben Breite (schmaler zu den Polen)
+  const kkStreifen = (lam, a, b, fill, op) => {
+    const links = [], rechts = [];
+    for (let k = 0; k <= 24; k++) {
+      const phi = (-80 + 160 * k / 24) * RAD;
+      const w = 0.45 + 0.55 * Math.cos(phi);
+      links.push(pt(lam + a * HALB * w, phi));
+      rechts.push(pt(lam + b * HALB * w, phi));
+    }
+    return pfad(zug(links.concat(rechts.reverse()), true), `fill="${fill}" opacity="${op}"`);
+  };
+  let rippen = '';
   for (let i = 0; i < 11; i++) {
     const lam = (i - 5) * 16 * RAD;
-    const sw = Math.sin(lam) >= 0 ? 1 : 0;
-    out += pfad(`M0,${f(cy - r)}A${f(r * Math.abs(Math.sin(lam)))},${f(r)} 0 0 ${sw} 0,${f(cy + r)}`,
-      `fill="none" stroke="${rippe}" stroke-width="1" stroke-linecap="round"`);
+    rippen += kkStreifen(lam, -1, 1, rippeHell, 0.22) +       // Rippe, leicht beleuchtet
+      kkStreifen(lam, 0.35, 1, rippeSchatt, 0.45) +           // Schattenseite rechts
+      kkStreifen(lam, -0.8, -0.35, rippeHell, 0.85);          // Glanzstreifen links
   }
-  // Dornen als feine Sternchen auf den Rippenkanten
+  // Areolen mit Dornenbueschel, sitzen auf den Rippenmitten
+  const dornBusch = (x, y) => {
+    const L = Math.max(1.2, r * 0.16);
+    return [-165, -125, -90, -55, -15]
+      .map((a) => linie([x, y], [x + L * Math.cos(a * RAD), y + L * Math.sin(a * RAD)], `stroke="${dorn}" stroke-width="0.6" stroke-linecap="round"`))
+      .join('');
+  };
   const lats = s === 1 ? [0] : s === 2 ? [-20, 20] : [-40, -12, 16, 42];
+  let areolen = '';
   for (const lat of lats) {
     for (let i = 0; i < 11; i++) {
       if (s === 1 && i % 3) continue;
       const lam = (i - 5) * 16 * RAD, phi = lat * RAD;
-      out += stern(r * Math.cos(phi) * Math.sin(lam), cy - r * Math.sin(phi), Math.max(0.7, r * 0.1), dorn, 4);
+      if (Math.cos(phi) * Math.cos(lam) < 0.2) continue; // nur sichtbare Seite
+      const [x, y] = pt(lam, phi);
+      areolen += dornBusch(x, y) + kreis(x, y, Math.max(0.55, r * 0.07), `fill="#f4f0c8" stroke="${dorn}" stroke-width="0.3"`);
     }
   }
-  out += oval(0, wy, r * 0.36, r * 0.2, 'fill="#f7f0dc" stroke="#b9ad8f" stroke-width="0.6"');
+  // Wollschopf auf dem oberen Pol
+  const wolle = welk ? '#e8e0c4' : '#fbf6e4';
+  const wollPos = [[-0.18, 0], [0.08, -0.06], [0.22, 0.04], [-0.05, 0.1], [0.14, 0.12]];
+  const wollSchopf = wollPos
+    .map(([dx, dy]) => kreis(dx * r, cy - r * 0.9 + dy * r, Math.max(0.6, r * 0.13), `fill="${wolle}" stroke="#b9ad8f" stroke-width="0.35"`))
+    .join('');
+  // Bluete (ab Stufe 4) auf dem Scheitel
+  let bluete = '';
   if (s === 4) {
-    for (const deg of [200, 250, 290, 340]) {
-      const a = deg * RAD;
-      const x = r * 0.5 * Math.cos(a), y = wy + r * 0.28 * Math.sin(a);
-      out += kreis(x, y, r * 0.2, `fill="${welk ? '#9c8b7a' : '#ffe08a'}" ${kontur(welk)}`) +
-        kreis(x, y, r * 0.08, `fill="${welk ? '#6b5a4a' : '#f5c518'}"`);
+    const bx = r * 0.18, by = cy - r * 0.98;
+    const blatt = welk ? '#9c8b7a' : '#ffd23f';
+    const rand = welk ? '#6b5a4a' : '#b8860b';
+    for (let k = 0; k < 8; k++) {
+      const a = k * 45;
+      const px = bx + r * 0.2 * Math.cos(a * RAD), py = by + r * 0.2 * Math.sin(a * RAD);
+      bluete += oval(px, py, r * 0.2, r * 0.07, `fill="${blatt}" stroke="${rand}" stroke-width="0.4" transform="rotate(${a} ${f(px)} ${f(py)})"`);
     }
+    bluete += kreis(bx, by, r * 0.1, `fill="${welk ? '#6b5a4a' : '#f5a623'}"`);
   }
-  out += kreis(0, cy, r, `fill="none" ${kontur(welk)}`);
-  return out;
+  const defs = `<defs><radialGradient id="${u}-kugel" cx="0.36" cy="0.32" r="0.72" fx="0.3" fy="0.26">` +
+    `<stop offset="0" stop-color="${k0}"/><stop offset="0.5" stop-color="${k1}"/><stop offset="1" stop-color="${k2}"/>` +
+    '</radialGradient></defs>';
+  const koerper = kreis(0, cy, r, `fill="url(#${u}-kugel)"`) + rippen + areolen + wollSchopf + bluete +
+    kreis(0, cy, r, `fill="none" ${kontur(welk)}`);
+  return defs + (welk ? gruppe('transform="scale(1,0.9)"', koerper) : koerper);
 }
 
 // ---------- Sonnenblume ----------
@@ -500,7 +546,9 @@ function tomate(s, welk) {
 }
 
 // ---------- Efeutute ----------
-// Gruen mit gelblicher Panaschierung (Streifen)
+// Herzblaetter mit Verlauf (Licht oben links), cremegelbe Panaschierung, Mittelrippe, Adern, Glanzpunkt.
+// Hintere Blaetter dunkler und leicht blaeulich, vordere waermer. Ranken haengen ueber den Topfrand,
+// Blaetter werden zur Spitze hin kleiner. Ids mit Zaehler.
 const EF_R = 10;
 const EF_AUF = {
   1: [[-36, 8, 9], [6, 9, 10], [40, 7, 8]],
@@ -510,46 +558,120 @@ const EF_AUF = {
 };
 // [Richtung (+1 rechts, -1 links), Fall in Pflanzenkoordinaten (Erdoberflaeche = 0)]
 const EF_RANKEN = { 1: [], 2: [[1, 14]], 3: [[1, 26], [-1, 20]], 4: [[1, 40], [-1, 36], [1, 22]] };
+let EF_UID = 0;
 
-function streifen(L, W) {
-  const st = 'fill="none" stroke="#e8e29a" stroke-linecap="round"';
-  return pfad(`M${f(W * 0.12)},${f(-L * 0.28)}Q${f(W * 0.3)},${f(-L * 0.45)} ${f(W * 0.22)},${f(-L * 0.62)}`, `${st} stroke-width="1.4"`) +
-    pfad(`M${f(-W * 0.15)},${f(-L * 0.2)}Q${f(-W * 0.3)},${f(-L * 0.4)} ${f(-W * 0.28)},${f(-L * 0.5)}`, `${st} stroke-width="1.1"`);
+// Herzform, rechte Kante von Grund (0,0) mit kleiner Einbuchtung zur Spitze (0,-L)
+function efHerz(L, W) {
+  const A = [[0, 0], [0.28 * W, 0.16 * L], [0.6 * W, 0.04 * L], [0.52 * W, -0.42 * L]];
+  const B = [[0.52 * W, -0.42 * L], [0.46 * W, -0.8 * L], [0.2 * W, -0.95 * L], [0, -L]];
+  const pts = [];
+  for (let i = 0; i <= 20; i++) pts.push(bez(A, i / 20));
+  for (let i = 1; i <= 20; i++) pts.push(bez(B, i / 20));
+  return pts;
 }
 
-function efeuBlatt(L, welk, i) {
+// Geschlossener Umriss: rechte Kante, danach gespiegelte linke Kante
+const efUmriss = (R) => R.concat(R.slice().reverse().map(([x, y]) => [-x, y]));
+const efZug = (pts) => 'M' + pts.map(p2).join('L') + 'Z';
+
+// Ein Herzblatt in lokalen Koordinaten (Grund (0,0), Spitze (0,-L)). Verlaeufe kommen aus efDefs.
+function efBlatt(L, welk, hinten, u, i) {
   const W = 0.8 * L;
-  let out = blatt(herzKante(L, W, false), { L, W, ...farben(i, welk) });
-  if (!welk) out += streifen(L, W);
+  const R = efHerz(L, W);
+  const D = efUmriss(R);
+  const g = welk ? 'welk' : hinten ? 'hinten' : 'vorn';
+  const rippe = welk ? '#e6dca0' : hinten ? '#9fc4b2' : '#d7efb8';
+  let out = pfad(D, `fill="url(#${u}-${g})"`) +
+    pfad(efZug(R), `fill="#24473a" opacity="${welk ? 0.1 : 0.2}"`); // Schattenhaelfte rechts
+  // Panaschierung: unregelmaessige cremegelbe Streifen, innerhalb des Blatts beschnitten
+  if (!welk) {
+    const rnd = zufall(4001 + i * 97 + (hinten ? 13 : 0) + Math.round(L * 7));
+    let streifen = '';
+    const n = hinten ? 2 : 4;
+    for (let k = 0; k < n; k++) {
+      const x0 = (rnd() * 2 - 1) * 0.3 * W, y0 = -L * (0.12 + rnd() * 0.2);
+      const x1 = x0 + (rnd() * 2 - 1) * 0.22 * W, y1 = -L * (0.6 + rnd() * 0.35);
+      const cx = x0 + (rnd() * 2 - 1) * 0.15 * W, cy = (y0 + y1) / 2;
+      const w = 1 + rnd() * 1.6;
+      streifen += pfad(`M${f(x0)},${f(y0)}Q${f(cx)},${f(cy)} ${f(x1)},${f(y1)}`,
+        `fill="none" stroke="#f0e6a0" stroke-width="${f(w)}" stroke-linecap="round" opacity="${hinten ? 0.6 : 0.9}"`);
+    }
+    const id = `${u}-k${i}`;
+    out += `<clipPath id="${id}">${pfad(D, '')}</clipPath>` + gruppe(`clip-path="url(#${id})"`, streifen);
+  }
+  // Mittelrippe und Seitenadern
+  out += linie([0, -0.03 * L], [0, -0.9 * L], `stroke="${rippe}" stroke-width="0.9" stroke-linecap="round" opacity="0.85"`);
+  for (const t of [0.3, 0.5, 0.7]) {
+    for (const sg of [-1, 1]) {
+      out += linie([0, -L * t], [sg * W * 0.38, -L * (t + 0.13)], `stroke="${rippe}" stroke-width="0.5" stroke-linecap="round" opacity="0.4"`);
+    }
+  }
+  // Glanzpunkt auf der Lichtseite
+  out += oval(-0.2 * W, -0.6 * L, 0.1 * W, 0.045 * L,
+    `fill="#ffffff" opacity="${hinten ? 0.3 : 0.5}" transform="rotate(-30 ${f(-0.2 * W)} ${f(-0.6 * L)})"`);
+  if (welk) out += pfad(D, 'fill="none" stroke="#a6845a" stroke-width="1.2" opacity="0.6"'); // braeunlicher Rand
+  out += pfad(D, `fill="none" ${welk ? KON_WELK : KON_GRUEN}`);
   return out;
 }
 
-// Ranke: startet an der Erde, zieht ueber den Topfrand und haengt nach unten. Blaetter entlang der Ranke.
-function ranke(sg, fall, welk, ebene, s) {
+// Verlaeufe eines Pflanzenexemplars: Licht oben links, Schatten unten rechts
+function efDefs(u) {
+  const grad = (id, hell, mitte, dunkel) =>
+    `<linearGradient id="${u}-${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${hell}"/>` +
+    `<stop offset="0.55" stop-color="${mitte}"/><stop offset="1" stop-color="${dunkel}"/></linearGradient>`;
+  return '<defs>' +
+    grad('vorn', '#8fc77a', '#5f9f58', '#3f7d4a') +
+    grad('hinten', '#7aa893', '#4f7f72', '#2f5e5a') +
+    grad('welk', '#c4c98f', '#b5b87c', '#a8a36a') +
+    '</defs>';
+}
+
+// Stiel mit dunkler Kontur, Farbkern und feiner Glanzlinie
+function efStiel(d, welk, w = 2.2) {
+  const [rand, aussen, innen] = welk ? ['#7d6a45', '#a8a36a', '#c4c98f'] : ['#2f5a30', '#4f8a4a', '#9ccc7a'];
+  return pfad(d, `fill="none" stroke="${rand}" stroke-width="${f(w + 1.2)}" stroke-linecap="round"`) +
+    pfad(d, `fill="none" stroke="${aussen}" stroke-width="${w}" stroke-linecap="round"`) +
+    pfad(d, `fill="none" stroke="${innen}" stroke-width="${f(w * 0.45)}" stroke-linecap="round" opacity="0.8"`);
+}
+
+// Ranke: startet am Topfrand, zieht ueber den Rand und haengt nach unten. Blaetter werden zur Spitze kleiner.
+function efRanke(sg, fall, welk, ebene, s, u, nr) {
   const bre = ebene === 'brett';
   const S = [sg * 2, 0];
   const C = [sg * (EF_R + (bre ? 13 : 8)), -3];
   const E = [sg * (EF_R + (bre ? 9 : 3)), fall * (bre ? 1.1 : 1)];
   const d = `M${f(S[0])},${f(S[1])}Q${f(C[0])},${f(C[1])} ${f(E[0])},${f(E[1])}`;
-  let out = pfad(d, 'fill="none" stroke="#3a6b3a" stroke-width="2.4" stroke-linecap="round"') +
-    pfad(d, 'fill="none" stroke="#7fb069" stroke-width="1.2" stroke-linecap="round"');
+  let out = efStiel(d, welk, 2);
   const anz = Math.max(2, Math.round(fall / 9));
+  const L0 = s >= 3 ? 8 : 7;
   for (let k = 0; k < anz; k++) {
     const t = 0.2 + 0.75 * k / (anz - 1);
     const [x, y] = qb(S, C, E, t);
+    const L = L0 * (1 - 0.45 * t);
     const rot = sg * (welk ? 150 : 60 + (k % 2) * 35);
-    out += an(x, y, rot, efeuBlatt(s >= 3 ? 8 : 7, welk, k));
+    out += an(x, y, rot, efBlatt(L, welk, !welk && k % 2 === 0, u, nr * 10 + k));
   }
   return out;
 }
 
 function efeutute(s, welk, ebene) {
-  const blaetter = stielBlaetter(EF_AUF[s], welk, ([a0, S, L], i) => efeuBlatt(L, welk, i));
-  const rankenSvg = EF_RANKEN[s].map(([sg, fall]) => ranke(sg, fall, welk, ebene, s)).join('');
-  return blaetter + rankenSvg;
+  const u = 'ef' + (++EF_UID);
+  let stiele = '', hinten = '', vorn = '', ranken = '';
+  EF_AUF[s].forEach(([a0, S, L], i) => {
+    const a = welk ? a0 * 1.25 : a0;
+    const ex = S * Math.sin(a * RAD), ey = -S * Math.cos(a * RAD) * (welk ? 0.45 : 1);
+    const C = welk ? [ex * 0.5, ey * 0.1] : [ex * 0.1, ey * 0.75];
+    stiele += efStiel(`M0,0Q${f(C[0])},${f(C[1])} ${f(ex)},${f(ey)}`, welk);
+    const rot = welk ? (a0 < 0 ? -150 : 150) : a * 0.8;
+    const dahinter = !welk && i % 2 === 0;
+    const bl = an(ex, ey, rot, efBlatt(L, welk, dahinter, u, i));
+    if (dahinter) hinten += bl; else vorn += bl;
+  });
+  EF_RANKEN[s].forEach(([sg, fall], j) => { ranken += efRanke(sg, fall, welk, ebene, s, u, j); });
+  return efDefs(u) + stiele + hinten + ranken + vorn;
 }
 
-// ---------- Gemeinsame Hilfen der neuen Pflanzen ----------
+// ---------- Gemeinsame Hilfen der neuen Pflanzen// ---------- Gemeinsame Hilfen der neuen Pflanzen ----------
 // Glatter geschlossener Pfad durch Punkte (Catmull-Rom als kubische Beziers), lokal kopiert aus szene.js
 function glattGeschlossen(pts) {
   const n = pts.length;

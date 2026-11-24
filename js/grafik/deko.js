@@ -129,44 +129,124 @@ function kissen() {
   return kissenKlein(-6.6, 14.8, 10, '#f2b8b5', '#d99a97') + kissenKlein(5.8, 14.8, -12, '#b9d3a8', '#98b889');
 }
 
-// Mid-Century-Bank: Teak (Grund #b8743d, Licht #d99a5b, Schatten #8a5228) und Messingkappen #c9a14a
-const TEAK = { links: '#b8743d', rechts: '#8a5228', oben: '#d99a5b' };
-const MESSING = { links: '#c9a14a', rechts: '#9c7a33', oben: '#e6c674' };
+// Mid-Century-Bank: Teakflaechen mit Verlaeufen (Licht links oben), Beine und Kappen aus Messing.
+// Alle Verlaufs-Ids tragen den Zaehler der Bank, damit mehrere Banken in einer Szene sich nicht stoeren.
+// Die Ausgabe wird mit scale(2) gezeichnet und die Strichstaerken halbiert (siehe Ende von bank()).
+const KISSEN_VERLAUF = (id, hell, dunkel) =>
+  `<radialGradient id="${id}" cx="0.38" cy="0.32" r="0.8" fx="0.38" fy="0.32">` +
+  `<stop offset="0" stop-color="${hell}"/><stop offset="1" stop-color="${dunkel}"/></radialGradient>`;
 
-// Schraegstehendes Bein: oben auf Sitzhoehe (z 9) bei (x, y), unten um (dx, dy) ausgestellt, nach unten spitz zulaufend.
-// Sichtbar sind die Flaechen links (+y) und rechts (+x); unten eine Messingkappe.
-function schraegesBein(x, y, dx, dy) {
-  const o = 0.9, u = 0.35; // halbe Breite oben und unten
-  const fx = x + dx, fy = y + dy, fz = 0.6;
-  const seite = (pa, pb, pc, pd, farbe) =>
-    flaeche([[pa[0], pa[1], 9], [pb[0], pb[1], 9], [pc[0], pc[1], fz], [pd[0], pd[1], fz]], `fill="${farbe}" ${KB}`);
-  return seite([x - o, y + o], [x + o, y + o], [fx + u, fy + u], [fx - u, fy + u], TEAK.links) +
-    seite([x + o, y - o], [x + o, y + o], [fx + u, fy + u], [fx + u, fy - u], TEAK.rechts) +
-    quader(fx - u - 0.15, fx + u + 0.15, fy - u - 0.15, fy + u + 0.15, 0, 1.4, MESSING, KB);
+// Linearer Verlauf innerhalb der jeweiligen Flaeche (objectBoundingBox): oben/links zuerst
+const LINEAR = (id, stopps, horizontal = false) =>
+  `<linearGradient id="${id}" x1="0" y1="0" x2="${horizontal ? 1 : 0}" y2="${horizontal ? 0 : 1}">` +
+  stopps.map(([o, c]) => `<stop offset="${o}" stop-color="${c}"/>`).join('') + `</linearGradient>`;
+
+// Kissen an der Lehne: weicher Radialverlauf (Mitte heller), Knopf mit Vertiefung, Schatten auf der Lehne
+function kissenBank(cx, cz, drehung, verlaufId, dunkel) {
+  const a = 4.4, hh = 3.6; // Halbbreite und Halbhoehe
+  const T = drehung * Math.PI / 180;
+  const cT = Math.cos(T), sT = Math.sin(T);
+  const punkt = (u, v, w = 0) => P(cx + u * cT, KISSEN_EBENE_Y + u * sT - 0.3 * v + w, cz + v);
+  const rand = [];
+  for (let k = 0; k < 24; k++) {
+    const phi = k * 15 * Math.PI / 180;
+    const r = 1 - 0.1 * Math.cos(4 * phi);
+    rand.push(punkt(a * r * Math.cos(phi), hh * r * Math.sin(phi)));
+  }
+  const koerper = rand.map(([x, y]) => [x - 1.1, y - 1.4]);
+  const schatten = rand.map(([x, y]) => [x + 1.4, y + 1.6]);
+  const knopf = punkt(0, 0, 0.9);
+  const glanz = punkt(-0.45 * a, 0.5 * hh, 0.6);
+  return pfad(glatt(schatten), 'fill="#4a2b15" opacity="0.22"') +
+    pfad(glatt(rand), `fill="${dunkel}" ${KB}`) +
+    pfad(glatt(koerper), `fill="url(#${verlaufId})" ${KB}`) +
+    oval(glanz[0], glanz[1], 1.6, 0.9, `fill="#ffffff" opacity="0.5" transform="rotate(-25 ${f(glanz[0])} ${f(glanz[1])})"`) +
+    // Vertiefung: dunkler Kern, heller Rand darunter
+    oval(knopf[0], knopf[1], 2.2, 1.2, `fill="${dunkel}" opacity="0.45"`) +
+    oval(knopf[0], knopf[1] + 0.5, 1.7, 0.8, 'fill="#ffffff" opacity="0.2"') +
+    kreis(knopf[0], knopf[1], 0.6, `fill="${dunkel}"`);
 }
 
 function bank() {
-  // Maserung auf der Oberflaeche: feine Linie in dunklerem Teakton
-  const maser = (y, z) => linie(P(-15, y, z), P(15, y, z), 'stroke="#d99a5b" stroke-width="0.6" stroke-linecap="round" opacity="0.7"');
-  // Schraege Beine: hinten (y -4) zuerst, vorne (y 4) danach; jeweils nach aussen ausgestellt
-  const beineHinten = [[-13, -4], [13, -4]].map(([x, y]) => schraegesBein(x, y, Math.sign(x) * 2.2, -1)).join('');
-  const beineVorne = [[-13, 4], [13, 4]].map(([x, y]) => schraegesBein(x, y, Math.sign(x) * 2.2, 1)).join('');
-  // Niedrige Rueckenlehne: zwei Latten, getragen von zwei Pfosten an den Enden (Oberkante z 17)
-  const lehne = quader(-16, 16, -5, -3.6, 13.2, 14.5, TEAK, KB) + quader(-16, 16, -5, -3.6, 15.7, 17, TEAK, KB) +
-    maser(-4.3, 13.9) + maser(-4.3, 16.4) +
-    quader(-16, -14.4, -5, -3.6, 11, 17, TEAK, KB) + quader(14.4, 16, -5, -3.6, 11, 17, TEAK, KB);
-  // Sitz: drei Latten mit Fugen, vorne (+y) sichtbar
-  let sitz = '';
-  for (const y0 of [-5, -1.6, 1.8]) {
-    sitz += quader(-16, 16, y0, y0 + 3.2, 9, 11, TEAK, KB) + maser(y0 + 0.9, 11) + maser(y0 + 2.4, 11);
-  }
-  // Zwei Kissen an der Lehne: senf links, petrol rechts
-  const kissenPaar = kissenKlein(-7, 14, 6, '#e8b754', '#c0892c') + kissenKlein(6.2, 14, -8, '#3d8c90', '#25575a');
+  const id = eindeutig('bank');
+  const u = (name) => `url(#${id}-${name})`;
 
-  const svg = oval(0, 0, 21, 10.5, 'fill="#6b4a3a" opacity="0.18"') +
-    beineHinten + lehne + beineVorne + sitz + kissenPaar;
+  // Verlaeufe: Oberseiten warm hell, Vorderseiten mittel, Seiten dunkel, Hirnholz noch dunkler
+  const defs = `<defs>` +
+    LINEAR(`${id}-oben`, [[0, '#f2c891'], [1, '#d99a5b']]) +
+    LINEAR(`${id}-vorne`, [[0, '#cf8f52'], [1, '#a86b3c']]) +
+    LINEAR(`${id}-seite`, [[0, '#9c6034'], [1, '#7a4a26']]) +
+    LINEAR(`${id}-hirn`, [[0, '#8a5228'], [1, '#5e3819']]) +
+    LINEAR(`${id}-bein`, [[0, '#8a5228'], [0.35, '#d99a5b'], [1, '#7a4a26']], true) +
+    LINEAR(`${id}-beinseite`, [[0, '#6e4020'], [1, '#8a5228']], true) +
+    LINEAR(`${id}-messing`, [[0, '#e6c674'], [1, '#b8903e']]) +
+    LINEAR(`${id}-messingseite`, [[0, '#a8843a'], [1, '#7d5f25']]) +
+    `<radialGradient id="${id}-schatten"><stop offset="0" stop-color="#6b4a3a" stop-opacity="0.38"/>` +
+    `<stop offset="0.55" stop-color="#6b4a3a" stop-opacity="0.2"/><stop offset="1" stop-color="#6b4a3a" stop-opacity="0"/></radialGradient>` +
+    KISSEN_VERLAUF(`${id}-k-senf`, '#f0c76a', '#c0892c') +
+    KISSEN_VERLAUF(`${id}-k-petrol`, '#5aa9ad', '#25575a') +
+    `</defs>`;
+
+  // Latte als Quader: vorne (links im Bild) mit Verlauf, Stirnseite rechts (Hirnholz), Oberseite hell.
+  // Dazu feine Maserung (opacity 0.4), helle Lichtkante vorne oben und dunkle Unterkante.
+  const latte = (x0, x1, y0, y1, z0, z1, stirn = 'hirn') => {
+    const yy = (t) => y0 + (y1 - y0) * t;
+    const zz = (t) => z0 + (z1 - z0) * t;
+    const lang = x1 - x0 > 4; // Maserung nur auf langen Latten, Pfosten bekommen keine Linien
+    const maserung = lang
+      ? linie(P(x0 + 1, yy(0.3), z1), P(x1 - 1, yy(0.3), z1), 'stroke="#f7d9ae" stroke-width="0.6" stroke-linecap="round" opacity="0.4"') +
+        linie(P(x0 + 1, yy(0.72), z1), P(x1 - 1, yy(0.72), z1), 'stroke="#f7d9ae" stroke-width="0.6" stroke-linecap="round" opacity="0.4"') +
+        linie(P(x0 + 1, y1, zz(0.35)), P(x1 - 1, y1, zz(0.35)), 'stroke="#6e4020" stroke-width="0.6" stroke-linecap="round" opacity="0.4"')
+      : '';
+    return flaeche([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], `fill="${u('vorne')}" ${KB}`) +
+      flaeche([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], `fill="${u(stirn)}" ${KB}`) +
+      flaeche([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], `fill="${u('oben')}" ${KB}`) +
+      maserung +
+      linie(P(x0, y1, z1), P(x1, y1, z1), 'stroke="#ffe6bf" stroke-width="1" stroke-linecap="round" opacity="0.75"') +
+      linie(P(x0, y1, z0), P(x1, y1, z0), 'stroke="#4a2b15" stroke-width="0.8" stroke-linecap="round" opacity="0.45"');
+  };
+
+  // Schraeg stehendes Bein mit zylindrischem Verlauf und Messingkappe mit Glanzpunkt
+  const bein = (x, y, dx, dy) => {
+    const o = 0.9, s = 0.35; // halbe Breite oben und unten
+    const fx = x + dx, fy = y + dy, fz = 1.4; // Bein endet in der Kappe
+    const seite = (pa, pb, pc, pd, farbe) =>
+      flaeche([[pa[0], pa[1], 9], [pb[0], pb[1], 9], [pc[0], pc[1], fz], [pd[0], pd[1], fz]], `fill="${farbe}" ${KB}`);
+    const glanz = P(fx, fy, 1.4);
+    // Kappe zuerst (enge Huelse), das Bein steckt darin
+    return quader(fx - s - 0.12, fx + s + 0.12, fy - s - 0.12, fy + s + 0.12, 0, 1.4,
+        { links: u('messing'), rechts: u('messingseite'), oben: u('messing') }, KB) +
+      oval(glanz[0] - 0.9, glanz[1] + 0.5, 0.35, 0.25, 'fill="#fff6d8" opacity="0.8"') +
+      seite([x - o, y + o], [x + o, y + o], [fx + s, fy + s], [fx - s, fy + s], u('bein')) +
+      seite([x + o, y - o], [x + o, y + o], [fx + s, fy + s], [fx + s, fy - s], u('beinseite'));
+  };
+
+  // Schatten am Boden: weicher Radialverlauf statt einer einfarbigen Ellipse
+  const kontakt = oval(0, 0, 22, 11, `fill="url(#${id}-schatten)"`);
+
+  // Schraege Beine: hinten (y -4) zuerst, vorne (y 4) danach; jeweils nach aussen ausgestellt
+  const beineHinten = [[-13, -4], [13, -4]].map(([x, y]) => bein(x, y, Math.sign(x) * 2.2, -1)).join('');
+  const beineVorne = [[-13, 4], [13, 4]].map(([x, y]) => bein(x, y, Math.sign(x) * 2.2, 1)).join('');
+
+  // Niedrige Rueckenlehne: zwei Latten, getragen von zwei Pfosten an den Enden (Oberkante z 17).
+  // Pfosten zuerst, damit die Stirnseiten der Latten (Hirnholz) sichtbar darueber liegen.
+  const lehne = latte(-16, -14.4, -5, -3.6, 11, 17, 'seite') + latte(14.4, 16, -5, -3.6, 11, 17, 'seite') +
+    latte(-16, 16, -5, -3.6, 13.2, 14.5) + latte(-16, 16, -5, -3.6, 15.7, 17);
+
+  // Sitz: drei Latten mit Fugen. Dunkle Flaeche in der Fuge (Umgebungsverdeckung), sichtbar nur zwischen den Latten.
+  let sitz = flaeche([[-16, -3.6, 11], [16, -3.6, 11], [16, 5, 11], [-16, 5, 11]], 'fill="#4a2b15"');
+  for (const y0 of [-5, -1.6, 1.8]) {
+    sitz += latte(-16, 16, y0, y0 + 3.2, 9, 11);
+  }
+
+  // Zwei Kissen an der Lehne: senf links, petrol rechts; jeweils mit Schatten auf der Lehne
+  const kissenPaar = kissenBank(-7, 14, 6, `${id}-k-senf`, '#c0892c') +
+    kissenBank(6.2, 14, -8, `${id}-k-petrol`, '#25575a');
+
+  const svg = defs + kontakt + beineHinten + lehne + beineVorne + sitz + kissenPaar;
   // Doppelte Größe, damit Sitzhöhe und Länge zum Pflanzentisch passen (zwei Felder breit).
   // Strichstärken halbiert, damit die Konturen so fein bleiben wie bei allen anderen Teilen.
+  // Nur stroke-width-Attribute werden geändert, Verläufe bleiben unberührt.
   return `<g transform="scale(2)">${svg.replace(/stroke-width="([\d.]+)"/g, (m, v) => `stroke-width="${f(v / 2)}"`)}</g>`;
 }
 

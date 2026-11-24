@@ -46,9 +46,41 @@ function platzVon(m, n) {
 }
 // Grobe Hoehen einer Pflanze (Einheiten vor Skalierung) je Groessenklasse und Stufe 1..4, fuer Plaetze mit hoehe
 const PFLANZEN_HOEHE = { klein: [18, 26, 34, 42], gross: [30, 44, 58, 72] };
+// Gemessene Hoehe (Bounding Box, ohne Skalierung) der Topfpflanzen je Stufe 1 bis 4, fuer Plaetze mit lichter Hoehe
+const GEMESSENE_HOEHE = {
+  monstera: [48, 57, 77, 85],
+  kaktus: [29, 33, 37, 45],
+  sonnenblume: [35, 71, 99, 121],
+  tomate: [58, 82, 105, 122],
+  efeutute: [35, 37, 40, 42],
+  bogenhanf: [34, 42, 51, 58],
+  aloe: [29, 32, 36, 58],
+  gruenlilie: [30, 34, 37, 42],
+  gluecksfeder: [56, 70, 76, 78],
+  echeverie: [22, 24, 24, 52],
+  geigenfeige: [55, 72, 87, 102],
+  orchidee: [23, 42, 48, 52],
+  calathea: [36, 42, 46, 51],
+  bostonfarn: [31, 34, 36, 37],
+  lavendel: [23, 34, 49, 57],
+  basilikum: [32, 35, 39, 41],
+  erdbeere: [34, 36, 38, 38],
+  zitrone: [50, 57, 63, 67],
+  bonsai: [30, 36, 40, 44],
+  kletterrose: [92, 92, 92, 92],
+  strelitzie: [52, 65, 74, 89],
+  alocasia: [53, 68, 77, 91],
+  olivenbaum: [50, 60, 70, 82],
+  kentia: [50, 53, 58, 64],
+  feigenbaum: [68, 82, 90, 101],
+  kannenpflanze: [34, 40, 43, 46],
+  bananenstaude: [58, 72, 81, 90],
+  hoya: [28, 28, 28, 28]
+};
 // Geschaetzte Hoehe: Feld hoehe der Grafik (Hoehe bei Stufe 4, Zwischenstufen anteilig), sonst die Tabelle
 function geschaetzteHoehe(o, def) {
   const stufe = Math.min(4, Math.max(1, Math.round(o.stufe) || 1));
+  if (!o.saat && !o.rar && Object.prototype.hasOwnProperty.call(GEMESSENE_HOEHE, o.typ)) return GEMESSENE_HOEHE[o.typ][stufe - 1];
   const tab = PFLANZEN_HOEHE[def.groesse || (o.saat ? 'klein' : 'gross')] || PFLANZEN_HOEHE.gross;
   if (Number.isFinite(def.hoehe)) return def.hoehe * tab[stufe - 1] / tab[3];
   return tab[stufe - 1];
@@ -975,13 +1007,17 @@ function lichtbahn(uid, G, phase, ruhig) {
   for (const s of [s0, s1]) {
     for (const z of [30, 220]) pts.push(raumPunkt(w, 0, s, z), raumPunkt(w, z * k, s, 0));
   }
-  const a = raumPunkt(w, 0, mitte, 190), e = raumPunkt(w, 220 * k, mitte, 0);
-  const deck = b.mond ? 0.4 : 0.78;
+  // Verlauf vom oberen Ende (z 220 an der Wand) zum Boden: oben weich eingeblendet, unten ausgeblendet
+  const a = raumPunkt(w, 0, mitte, 220), e = raumPunkt(w, 220 * k, mitte, 0);
+  const deck = b.mond ? 0.4 : 0.7;
   const grad = `<linearGradient id="${uid}-strahl" gradientUnits="userSpaceOnUse" x1="${f(a[0])}" y1="${f(a[1])}" x2="${f(e[0])}" y2="${f(e[1])}">` +
-    `<stop offset="0" stop-color="${b.farbe}" stop-opacity="${deck}"/>` +
+    `<stop offset="0" stop-color="${b.farbe}" stop-opacity="0"/>` +
+    `<stop offset="0.22" stop-color="${b.farbe}" stop-opacity="${deck}"/>` +
     `<stop offset="0.6" stop-color="${b.farbe}" stop-opacity="${f(deck * 0.4)}"/>` +
     `<stop offset="1" stop-color="${b.farbe}" stop-opacity="0"/></linearGradient>`;
-  let s = `<defs>${grad}</defs>` + poly(huelle(pts), `fill="url(#${uid}-strahl)"`);
+  // Weiche Raender: Unschaerfe auf der ganzen Lichtbahn
+  const weich = `<filter id="${uid}-strahlweich" x="-25%" y="-25%" width="150%" height="150%"><feGaussianBlur stdDeviation="9"/></filter>`;
+  let s = `<defs>${grad}${weich}</defs>` + poly(huelle(pts), `fill="url(#${uid}-strahl)" filter="url(#${uid}-strahlweich)"`);
   if (b.mond) return `<g pointer-events="none">${s}</g>`;
   const r = zufall(7741);
   for (let n = 0; n < 12; n++) {
@@ -1104,6 +1140,45 @@ function feldMarke(pts, attr, k) {
   return `<polygon points="${liste}" fill="${MARKE_FARBE}" fill-opacity="0.45" stroke="#fff" stroke-width="3" stroke-linejoin="round" ${attr}/>` +
     `<polygon points="${liste}" fill="none" stroke="#6b4a3a" stroke-width="1.6" stroke-dasharray="6 4" stroke-linejoin="round" pointer-events="none">` +
     `<animate attributeName="stroke-dashoffset" from="0" to="-10" dur="0.8s" begin="${markeVersatz(k)}" repeatCount="indefinite"/></polygon>`;
+}
+
+// Alles oberhalb der beiden vorderen Bodenkanten: Kontaktschatten ragen nicht über den Zaun hinaus
+function vorderkanteClip(uid, G) {
+  const L = iso(0, G), B = iso(G, G), R = iso(G, 0);
+  const pts = [[L[0] - 2000, L[1]], L, B, R, [R[0] + 2000, R[1]], [R[0] + 2000, -4000], [L[0] - 2000, -4000]];
+  return `<defs><clipPath id="${uid}-vorn"><polygon points="${pts.map((p) => f(p[0]) + ',' + f(p[1])).join(' ')}"/></clipPath></defs>`;
+}
+
+// Zeichenreihenfolge nach Grundflaechen (r = [x0, x1, y0, y1] in Feldern): A liegt vor B, wenn A ganz auf der
+// +x-Seite oder ganz auf der +y-Seite von B steht (und nicht zugleich dahinter auf der anderen Achse).
+// Topologisch sortiert; bei Gleichstand bzw. ohne Beziehung entscheidet die Mitte (Summe der Schwerpunkte).
+export function tiefenOrdnung(liste) {
+  const n = liste.length;
+  const mitte = (o) => (o.r[0] + o.r[1] + o.r[2] + o.r[3]) / 2;
+  const E = 1e-6;
+  const vor = (a, b) => {
+    const x = a.r[0] >= b.r[1] - E, y = a.r[2] >= b.r[3] - E;
+    const xh = a.r[1] <= b.r[0] + E, yh = a.r[3] <= b.r[2] + E;
+    return (x || y) && !(xh || yh);
+  };
+  const nach = Array.from({ length: n }, () => []);
+  const grad = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    if (i !== j && vor(liste[j], liste[i])) { nach[i].push(j); grad[j]++; }
+  }
+  const fertig = new Array(n).fill(false);
+  const aus = [];
+  const wert = (i) => mitte(liste[i]) + liste[i].key * 1e-3;
+  for (let k = 0; k < n; k++) {
+    let best = -1;
+    for (let i = 0; i < n; i++) if (!fertig[i] && grad[i] === 0 && (best < 0 || wert(i) < wert(best))) best = i;
+    // Kreis (sollte bei getrennten Flaechen nicht vorkommen): das hinterste Objekt nehmen
+    if (best < 0) for (let i = 0; i < n; i++) if (!fertig[i] && (best < 0 || wert(i) < wert(best))) best = i;
+    fertig[best] = true;
+    aus.push(liste[best]);
+    for (const j of nach[best]) grad[j]--;
+  }
+  return aus;
 }
 
 // Markierungen: Rauten fuer Bodenfelder und Moebel-Grundflaechen, Kreise fuer Stellplaetze und Haken.
@@ -1276,7 +1351,8 @@ export function zeichneSzene(container, zustand) {
   for (const m of z.moebel || []) {
     const def = hat(MOEBEL_ALLE, m.typ);
     if (!def || moebelById.has(m.id)) continue;
-    const e = { key: m.gx + m.gy, m, def, aufsatz: [] };
+    const [w, h] = m.drehung === 90 ? [def.tiefe || 1, def.breite || 1] : [def.breite || 1, def.tiefe || 1];
+    const e = { key: m.gx + m.gy, r: [m.gx, m.gx + w, m.gy, m.gy + h], m, def, aufsatz: [] };
     moebelById.set(m.id, e);
     moebelEintraege.push(e);
   }
@@ -1317,7 +1393,7 @@ export function zeichneSzene(container, zustand) {
     if (def.haengend) {
       // Haengende Deko sitzt am Haken und wird nach allen Objekten mit gleicher oder kleinerer Tiefe gezeichnet
       const h = Object.prototype.hasOwnProperty.call(hk, o.ort.haken) ? hk[o.ort.haken] : null;
-      if (h) bodenEintraege.push({ key: h.gx + h.gy + 1e-6, svg: platziert(iso(h.gx, h.gy, HAKEN_Z), inhalt, attr) });
+      if (h) bodenEintraege.push({ key: h.gx + h.gy + 1e-6, r: [h.gx - 0.05, h.gx + 0.05, h.gy - 0.05, h.gy + 0.05], svg: platziert(iso(h.gx, h.gy, HAKEN_Z), inhalt, attr) });
       continue;
     }
     if (aufMoebel) {
@@ -1341,7 +1417,7 @@ export function zeichneSzene(container, zustand) {
       const svg = platziert(fuss, inhalt, attr, skala);
       if (def.bodenbelag) belagEintraege.push({ key: gx + gy, svg });
       else if (istLicht) lichtEintraege.push({ key: gx + gy + 1, svg: lampenSchein(uid, o.typ, fuss) + svg });
-      else bodenEintraege.push({ key: gx + gy + breit, svg });
+      else bodenEintraege.push({ key: gx + gy + breit, r: [gx, gx + breit, gy, gy + 1], svg });
     }
   }
 
@@ -1349,11 +1425,11 @@ export function zeichneSzene(container, zustand) {
   const alle = moebelEintraege
     .map((e) => ({
       key: e.key,
+      r: e.r,
       svg: `<g data-art="moebel" data-id="${escAttr(e.m.id)}">` + moebelInhalt(e) + '</g>'
     }))
     .concat(bodenEintraege);
-  alle.sort((a, b) => a.key - b.key);
-  const inhalt = belagEintraege.sort((a, b) => a.key - b.key).map((o) => o.svg).join('') + alle.map((o) => o.svg).join('');
+  const inhalt = belagEintraege.sort((a, b) => a.key - b.key).map((o) => o.svg).join('') + tiefenOrdnung(alle).map((o) => o.svg).join('');
 
   // Markierungen liegen ganz oben (ueber Pflanzen, Moebeln, Zaun), antippbar
   const marken = markierungenSvg(z.markierungen, z.moebel, hk);
@@ -1382,7 +1458,7 @@ export function zeichneSzene(container, zustand) {
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${breite} ${hoehe}" width="100%">` +
     defs(uid) + (saison ? TEILCHEN_STIL : '') + `<rect x="${x0}" y="${y0}" width="${breite}" height="${hoehe}" fill="#a9d3a5"/>` +
-    hinten + inhalt + '<g pointer-events="none">' + strahl + stimmung + lichter + '</g>' + '<g pointer-events="none">' + vorn + '</g>' + marken + '</svg>';
+    hinten + '<g pointer-events="none">' + strahl + '</g>' + vorderkanteClip(uid, G) + `<g clip-path="url(#${uid}-vorn)">` + inhalt + '</g>' + '<g pointer-events="none">' + stimmung + lichter + '</g>' + '<g pointer-events="none">' + vorn + '</g>' + marken + '</svg>';
 
   container.innerHTML = '';
   container.insertAdjacentHTML('beforeend', svg);

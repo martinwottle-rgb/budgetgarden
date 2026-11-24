@@ -55,3 +55,14 @@ abend 18 bis 21, nacht 21 bis 5). Die bisherige `tageszeit` (morgen, tag, abend,
 ## 6. „Gestern im Budget“ (Koordinator)
 Am ersten Öffnen des Tages zeigt die App das Ergebnis von gestern: im Budget (+10 Samen, Serie, Beetpflanzen gewachsen) oder darüber
 (keine Samen, Serie verloren, Pflanzen welken nicht, solange heute gut läuft). Dazu eine Zeile auf der Startseite unter der Wochenkarte.
+
+## 7. Phase 2: Teile plastischer (Start: Pflanzentisch, Teakregal, Bank, Efeutute, Goldkugelkaktus)
+Vorbild: die Referenzzimmer (weiche Verläufe, runde Kanten, warmes Licht). Für jedes Teil:
+- Flächen mit Verläufen statt Volltönen: Oberseiten hell und warm (Licht von links oben), linke Seiten mittel, rechte Seiten dunkel,
+  jeweils leichter Verlauf innerhalb der Fläche (oben heller als unten).
+- Kanten abgerundet bzw. gefast: schmale helle Lichtkante an Oberkanten, dunklere Schattenkante an Unterkanten.
+- Holz: feine Maserung (2 bis 3 Töne, dezent), Hirnholz an Schnittkanten etwas dunkler, kleine Glanzlichter.
+- Umgebungsverdeckung: dunklerer Übergang, wo Teile aufeinandertreffen (Bein unter Platte, Brett an Seitenwange), weicher Kontaktschatten.
+- Pflanzen: Blätter mit Verlauf (Lichtseite hell, Schattenseite dunkel), Mittelrippe und Adern, Glanzpunkt, hintere Blätter dunkler
+  und leicht bläulich (Tiefe), vordere wärmer; Übergänge statt harter Kanten.
+- Maße, Grundfläche, Stellplätze (plaetze), Höhen, Ursprung und Schnittstellen bleiben exakt gleich.

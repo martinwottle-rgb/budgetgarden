@@ -222,7 +222,17 @@ function haarnadel(m, u, zSpitze) {
 
 // Schraeg ausgestelltes Teak-Standbein unter der Platte: oben bei (u, v), Fuss um (du, dv) nach aussen, Messingkappe
 function standBein(m, u, v, du, dv, zOben) {
-  return bein(m, [u, v, zOben], [u + du, v + dv, 0], 0.05, 0.02, TEAK) + beschlag(m, u + du, v + dv, 0.04, 0, 3);
+  // Kappe zuerst, das Bein endet in ihr (sonst liegt die Kappe als Scheibe vor dem Bein)
+  return beschlag(m, u + du, v + dv, KAPPE_R, 0, KAPPE_H) +
+    bein(m, [u, v, zOben], kappenAnsatz([u, v, zOben], [u + du, v + dv]), 0.05, 0.022, TEAK);
+}
+
+// Messingkappe am Beinende: enge Huelse, Hoehe KAPPE_H
+const KAPPE_R = 0.03, KAPPE_H = 4.5;
+// Punkt auf der Beinachse in Kappenhoehe (Bein von oben nach Fuss bei z 0)
+function kappenAnsatz(oben, fuss) {
+  const t = KAPPE_H / oben[2];
+  return [fuss[0] + (oben[0] - fuss[0]) * t, fuss[1] + (oben[1] - fuss[1]) * t, KAPPE_H];
 }
 
 // Sprenkel (Splitter, Poren) auf den Sichtflaechen eines Quaders. anteilOben: Anteil auf der Deckflaeche.
@@ -329,28 +339,172 @@ function korb(cx, cy, r, z0, z1) {
 const gesamtSvg = (r) => r.teile.map((t) => t[1]).join('');
 const schichtenSvg = (r) => r.zs.map((z, k) => ({ z, svg: r.teile.filter((t) => t[0] === k).map((t) => t[1]).join('') }));
 
-// Pflanzentisch Teak: Platte mit abgerundeten Ecken, vier schraeg ausgestellte Beine mit Messingkappen
-// Platte und Füße bleiben innerhalb der 3 x 1 Felder (vorher 3,6 Felder lang, die Beine ragten seitlich hinaus)
+// ---------- Pflanzentisch Teak und Teakregal: plastische Fassung (nur diese beiden Moebel) ----------
+// Lokale Helfer mit eigenen Verlaufs-Ids (Zaehler). Licht von links oben: Oberseite, linke und rechte Seite als Verlauf.
+let teakZaehler = 0;
+const TEAK_VERLAUF = {
+  oben: ['#e3a96a', '#d39457'],
+  links: ['#b8743d', '#a8672f'],
+  rechts: ['#8a5228', '#774520'],
+};
+const TEAK_MASER = ['#9c5f2e', '#7a4520', '#c07a40'];
+const TEAK_LICHT = '#f0c08a';
+const TEAK_FUGE = '#3d2412';
+
+// Drei Flaechenverlaeufe fuer ein Teil. fv.oben/links/rechts sind fill-Werte url(#id), fv.defs das zugehoerige <defs>.
+function teakVerlaeufe() {
+  const n = ++teakZaehler;
+  const defs = [];
+  const fv = {};
+  for (const seite of ['oben', 'links', 'rechts']) {
+    const [hell, dunkel] = TEAK_VERLAUF[seite];
+    const id = `teak-${n}-${seite}`;
+    defs.push(`<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hell}"/><stop offset="1" stop-color="${dunkel}"/></linearGradient>`);
+    fv[seite] = `url(#${id})`;
+  }
+  fv.defs = `<defs>${defs.join('')}</defs>`;
+  return fv;
+}
+
+// Weicher Fleck (Kontaktschatten, Umgebungsverdeckung) mit radialem Verlauf statt einfarbiger Ellipse
+function teakWeich(ox, oy, rx, ry, farbe, deckkraft) {
+  const id = `teak-${++teakZaehler}-weich`;
+  return `<defs><radialGradient id="${id}">` +
+    `<stop offset="0" stop-color="${farbe}" stop-opacity="${deckkraft.toFixed(3)}"/>` +
+    `<stop offset="0.55" stop-color="${farbe}" stop-opacity="${(deckkraft * 0.45).toFixed(3)}"/>` +
+    `<stop offset="1" stop-color="${farbe}" stop-opacity="0"/></radialGradient></defs>` +
+    oval(ox, oy, rx, ry, `fill="url(#${id})"`);
+}
+
+// Kontaktschatten am Boden unter einer Grundflaeche b x t (Felder)
+function teakSchatten(m, b, t) {
+  const [x, y] = feldPunkt(m.gx, m.gy, m.drehung, b / 2, t / 2);
+  const [ox, oy] = iso(x, y, 0);
+  return teakWeich(ox, oy, 22 * (b + t), 11 * (b + t), '#6b4a3a', 0.4);
+}
+
+// Schraeg verjuengter Teakstab mit Verlauf quer zur Laengsrichtung (Mitte heller = zylindrisch)
+function teakBein(m, oben, unten, rO, rU) {
+  const n = ++teakZaehler;
+  const ecken = (c, r) => [[-r, -r], [r, -r], [r, r], [-r, r]].map(([du, dv]) => pkt(m, c[0] + du, c[1] + dv, c[2]));
+  const huelle = konvex([...ecken(oben, rO), ...ecken(unten, rU)]);
+  const a = pkt(m, oben[0], oben[1], oben[2]), b = pkt(m, unten[0], unten[1], unten[2]);
+  const id = `teak-${n}-bein`;
+  const verlauf = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop offset="0" stop-color="#6e4020"/><stop offset="0.3" stop-color="#e3a96a"/>` +
+    `<stop offset="0.55" stop-color="#b8743d"/><stop offset="1" stop-color="#5e3418"/></linearGradient></defs>`;
+  return verlauf + poly(huelle, `fill="url(#${id})" ${KON12}`) +
+    linie([a[0] - 0.9, a[1]], [b[0] - 0.5, b[1]], `stroke="${TEAK_LICHT}" stroke-width="1" stroke-linecap="round" opacity="0.85"`) +
+    linie([a[0] + 1.3, a[1]], [b[0] + 0.7, b[1]], `stroke="${TEAK_FUGE}" stroke-width="0.8" stroke-linecap="round" opacity="0.5"`);
+}
+
+// Messingkappe mit Glanzpunkt auf der Oberseite
+function teakKappe(m, u, v) {
+  const [cx, cy] = feldPunkt(m.gx, m.gy, m.drehung, u, v);
+  const [ox, oy] = iso(cx, cy, KAPPE_H);
+  return beschlag(m, u, v, KAPPE_R, 0, KAPPE_H) + oval(ox - 0.7, oy - 0.3, 0.5, 0.3, 'fill="#fff6d6" opacity="0.9"');
+}
+
+// Teak-Standbein: oben bei (u, v) in der Hoehe zOben, Fuss um (du, dv) nach aussen, Messingkappe
+function teakStandBein(m, u, v, du, dv, zOben) {
+  return teakKappe(m, u + du, v + dv) + teakBein(m, [u, v, zOben], kappenAnsatz([u, v, zOben], [u + du, v + dv]), 0.05, 0.022);
+}
+
+// Konvexer Koerper mit Verlaeufen: Sichtflaechen, helle Lichtkante an den vorderen Oberkanten, dunkle Kante unten
+function teakKoerper(grund, z0, z1, fv) {
+  const n = grund.length;
+  const cx = grund.reduce((s, p) => s + p[0], 0) / n, cy = grund.reduce((s, p) => s + p[1], 0) / n;
+  let s = '', kanten = '';
+  for (let i = 0; i < n; i++) {
+    const p = grund[i], q = grund[(i + 1) % n];
+    let nx = q[1] - p[1], ny = -(q[0] - p[0]);
+    const mx = (p[0] + q[0]) / 2 - cx, my = (p[1] + q[1]) / 2 - cy;
+    if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+    if (nx + ny <= 0) continue;
+    const farbe = Math.abs(nx) > Math.abs(ny) ? fv.rechts : fv.links;
+    s += poly([iso(p[0], p[1], z0), iso(q[0], q[1], z0), iso(q[0], q[1], z1), iso(p[0], p[1], z1)], `fill="${farbe}" ${KON12}`);
+    kanten += linie(iso(p[0], p[1], z1), iso(q[0], q[1], z1), `stroke="${TEAK_LICHT}" stroke-width="1" stroke-linecap="round" opacity="0.9"`) +
+      linie(iso(p[0], p[1], z0), iso(q[0], q[1], z0), `stroke="${TEAK_FUGE}" stroke-width="1" stroke-linecap="round" opacity="0.55"`);
+  }
+  return s + poly(grund.map(([x, y]) => iso(x, y, z1)), `fill="${fv.oben}" ${KON12}`) + kanten;
+}
+
+// Fein geschwungene Maserung auf einer Oberflaeche (2 bis 3 Toene, Deckkraft 0.35 bis 0.5)
+function teakMaser(m, u0, u1, v0, v1, z, n, seed) {
+  const rnd = zufall(seed);
+  let s = '';
+  for (let k = 0; k < n; k++) {
+    const t = (k + 1) / (n + 1) + (rnd() - 0.5) * 0.08;
+    const v = v0 + (v1 - v0) * t;
+    const amp = 0.015 + rnd() * 0.015, ph = rnd() * Math.PI * 2, per = 1.5 + rnd() * 1.5;
+    const pts = [];
+    for (let j = 0; j <= 12; j++) {
+      const u = u0 + ((u1 - u0) * j) / 12;
+      pts.push(pkt(m, u, v + amp * Math.sin(ph + (per * Math.PI * j) / 6), z));
+    }
+    const farbe = TEAK_MASER[Math.floor(rnd() * TEAK_MASER.length)];
+    const op = (0.35 + rnd() * 0.15).toFixed(2), w = (0.6 + rnd() * 0.3).toFixed(2);
+    s += linienzug(pts, `stroke="${farbe}" stroke-width="${w}" stroke-linecap="round" opacity="${op}"`);
+  }
+  return s;
+}
+
+// Hirnholz an einem Ende (Band von ua bis ub auf der Oberseite) mit Jahresring-Andeutung
+function teakHirnholz(m, ua, ub, v0, v1, z) {
+  let s = poly([pkt(m, ua, v0, z), pkt(m, ub, v0, z), pkt(m, ub, v1, z), pkt(m, ua, v1, z)], 'fill="#6e4020" opacity="0.35"');
+  for (const t of [0.3, 0.62]) {
+    const u = ua + (ub - ua) * t;
+    s += linienzug([pkt(m, u, v0 + 0.03, z), pkt(m, u + 0.02, (v0 + v1) / 2, z), pkt(m, u, v1 - 0.03, z)],
+      'stroke="#5a3418" stroke-width="0.6" stroke-linecap="round" opacity="0.5"');
+  }
+  return s;
+}
+
+// Pflanzentisch Teak: Platte mit abgerundeten Ecken, vier schraeg ausgestellte Beine mit Messingkappen, Zarge darunter.
+// Platte und Fuesse bleiben innerhalb der 3 x 1 Felder (vorher 3,6 Felder lang, die Beine ragten seitlich hinaus)
 function tischZeichnen(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 3, 1);
-  for (const [u, v] of [[0.28, 0.22], [2.72, 0.22], [0.28, 0.78], [2.72, 0.78]]) {
-    s += standBein(m, u, v, u < 1.5 ? -0.12 : 0.12, v < 0.5 ? -0.07 : 0.07, 62);
+  const fv = teakVerlaeufe();
+  const beine = [[0.28, 0.22], [2.72, 0.22], [0.28, 0.78], [2.72, 0.78]];
+  let s = fv.defs + teakSchatten(m, 3, 1);
+  for (const [u, v] of beine) s += teakStandBein(m, u, v, u < 1.5 ? -0.12 : 0.12, v < 0.5 ? -0.07 : 0.07, 62);
+  // Zarge unter der Platte, dunkler weicher Streifen direkt unter der Platte
+  s += teakKoerper(platte(m, 0.3, 2.7, 0.2, 0.8, 0.03), 55, 62, fv);
+  s += linie(pkt(m, 0.3, 0.8, 60.5), pkt(m, 2.7, 0.8, 60.5), `stroke="${TEAK_FUGE}" stroke-width="3" stroke-linecap="round" opacity="0.28"`);
+  // Umgebungsverdeckung am Beinansatz
+  for (const [u, v] of beine) {
+    const [ax, ay] = pkt(m, u, v, 61);
+    s += teakWeich(ax, ay, 7, 3.5, '#3a220f', 0.45);
   }
-  s += koerper(platte(m, 0.06, 2.94, 0.12, 0.88, 0.1), 62, 68, TEAK);
-  for (const v of [0.38, 0.62]) s += linie(pkt(m, 0.3, v, 68), pkt(m, 2.7, v, 68), MASER);
+  s += teakKoerper(platte(m, 0.06, 2.94, 0.12, 0.88, 0.1), 62, 68, fv);
+  s += teakMaser(m, 0.16, 2.84, 0.2, 0.8, 68, 3, 11);
+  s += teakHirnholz(m, 0.06, 0.16, 0.12, 0.88, 68) + teakHirnholz(m, 2.84, 2.94, 0.12, 0.88, 68);
   return s;
 }
 
 // Teakregal: offenes Regal, Seitenwangen schraeg nach unten breiter mit runden Ecken oben, Boeden in Teak, Rueckseite offen
+// Ebenen und Stellhoehen unveraendert: teile/zs wie bisher (Ebene 0 = unten, zs = Oberkanten der Bretter)
 function regalTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  const wange = [[0.02, 0], [0.62, 0], ...bogen(0.48, 116, 0.08, 14, 0, 90), ...bogen(0.18, 116, 0.08, 14, 90, 180)];
-  const T = [[0, schatten(m, 3, 0.6)], [0, prisma(m, 0, 0.1, wange, TEAK)]];
+  const fv = teakVerlaeufe();
+  const wange = [[0.02, 0], [0.88, 0], ...bogen(0.74, 116, 0.08, 14, 0, 90), ...bogen(0.18, 116, 0.08, 14, 90, 180)];
+  const T = [[0, fv.defs + teakSchatten(m, 3, 1)], [0, prisma(m, 0, 0.1, wange, fv)]];
   [0, 61, 126].forEach((z, k) => {
-    T.push([k, koerper(platte(m, 0.1, 2.9, 0.1, 0.55, 0.04), z, z + 4, TEAK) + maser(m, 0.1, 2.9, 0.1, 0.55, z, z + 4, 2)]);
+    let b = teakKoerper(platte(m, 0.1, 2.9, 0.1, 0.8, 0.04), z, z + 4, fv);
+    b += teakMaser(m, 0.2, 2.8, 0.18, 0.73, z + 4, 2, 21 + k);
+    b += teakHirnholz(m, 0.1, 0.2, 0.14, 0.76, z + 4) + teakHirnholz(m, 2.8, 2.9, 0.14, 0.76, z + 4);
+    // Dunkle Fugen, wo Brett und Seitenwange aufeinandertreffen
+    for (const u of [0.1, 2.9]) {
+      b += linie(pkt(m, u, 0.8, z), pkt(m, u, 0.8, z + 4), `stroke="${TEAK_FUGE}" stroke-width="1.2" stroke-linecap="round" opacity="0.8"`);
+    }
+    // Leichter Schatten des Bretts darueber auf die Oberseite des Bretts darunter (nur bei Brettern, die ein Brett darueber haben)
+    if (k < 2) {
+      b += poly([pkt(m, 0.25, 0.2, z + 4), pkt(m, 2.9, 0.2, z + 4), pkt(m, 2.9, 0.6, z + 4), pkt(m, 0.25, 0.6, z + 4)],
+        'fill="#3a220f" opacity="0.16"');
+    }
+    T.push([k, b]);
   });
-  T.push([2, prisma(m, 2.9, 3, wange, TEAK)]);
+  T.push([2, prisma(m, 2.9, 3, wange, fv)]);
   return { teile: T, zs: [4, 65, 130] };
 }
 
@@ -395,8 +549,8 @@ function hockerZeichnen(gx, gy) {
   for (const w of [210, 330, 90]) {
     const a = w * Math.PI / 180;
     const c = Math.cos(a), sn = Math.sin(a);
-    s += bein(m, [0.5 + 0.3 * c, 0.5 + 0.3 * sn, 41], [0.5 + 0.46 * c, 0.5 + 0.46 * sn, 0], 0.05, 0.02, TEAK);
-    s += beschlag(m, 0.5 + 0.46 * c, 0.5 + 0.46 * sn, 0.04, 0, 3);
+    s += beschlag(m, 0.5 + 0.46 * c, 0.5 + 0.46 * sn, KAPPE_R, 0, KAPPE_H);
+    s += bein(m, [0.5 + 0.3 * c, 0.5 + 0.3 * sn, 41], kappenAnsatz([0.5 + 0.3 * c, 0.5 + 0.3 * sn, 41], [0.5 + 0.46 * c, 0.5 + 0.46 * sn]), 0.05, 0.022, TEAK);
   }
   // Sitzflaeche als runde Teakscheibe
   s += zylinder(cx, cy, 0.42, 41, 45, TEAK);
@@ -529,8 +683,8 @@ export const MOEBEL = {
     tiefe: 1,
     plaetze: [
       { dx: 0.4, dy: 0.5, z: 130 }, { dx: 1.6, dy: 0.5, z: 130 }, { dx: 2.7, dy: 0.5, z: 130 },
-      { dx: 0.4, dy: 0.5, z: 4, hoehe: 57 }, { dx: 1.6, dy: 0.5, z: 4, hoehe: 57 }, { dx: 2.7, dy: 0.5, z: 4, hoehe: 57 },
-      { dx: 0.4, dy: 0.5, z: 65, hoehe: 61 }, { dx: 1.6, dy: 0.5, z: 65, hoehe: 61 }, { dx: 2.7, dy: 0.5, z: 65, hoehe: 61 },
+      { dx: 0.4, dy: 0.5, z: 4, hoehe: 44 }, { dx: 1.6, dy: 0.5, z: 4, hoehe: 44 }, { dx: 2.7, dy: 0.5, z: 4, hoehe: 44 },
+      { dx: 0.4, dy: 0.5, z: 65, hoehe: 48 }, { dx: 1.6, dy: 0.5, z: 65, hoehe: 48 }, { dx: 2.7, dy: 0.5, z: 65, hoehe: 48 },
     ],
     zeichne: (gx, gy, drehung = 0) => gesamtSvg(regalTeile(gx, gy, drehung)),
     schichten: (gx, gy, drehung = 0) => schichtenSvg(regalTeile(gx, gy, drehung)),
