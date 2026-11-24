@@ -226,13 +226,17 @@ const MON_WELK = { links: '#c4c98f', rechts: '#a8a36a', mittel: '#e4e3b4', glanz
 
 // Monsterablatt: Ansatz bei (0,0), Winkel dreht das Blatt um den Ansatz, persp staucht es in Laengsrichtung
 // (schraeg gestellt, perspektivisch verkuerzt). schlitze: Einschnitte je Seite, loecher: Anzahl ovaler Loecher,
-// ton: 'gruen' oder 'welk'. Schlitze und Loecher liegen ueber eine <mask>, damit der Umriss sauber ausgeschnitten ist.
-function monsteraBlatt(L, winkel, schlitze, loecher, ton, persp = 1, tief = 0.3) {
+// ton: 'gruen' oder 'welk'. Linke Haelfte hell, rechte dunkel (eigener Verlauf je Blatt), hinten bluelich-dunkler.
+// Schlitze und Loecher liegen ueber eine <mask>, damit der Umriss sauber ausgeschnitten ist.
+function monsteraBlatt(L, winkel, schlitze, loecher, ton, persp = 1, tief = 0.3, hinten = false) {
   const welk = ton === 'welk';
   const T = welk ? MON_WELK : MON_GRUEN;
   const kon = kontur(welk);
   const U = monsteraUmriss(L);
-  const id = `mon${Math.round(L)}s${schlitze}h${loecher}t${Math.round(tief * 100)}`;
+  const u = vlId('mo'); // eindeutige Id je Blatt (Maske und Verlaeufe)
+  const G = welk ? { h: '#d6d6a0', m: '#c4c98f', d: '#a8a36a' }
+    : hinten ? { h: '#86bd8e', m: '#4f8a63', d: '#2c5e47' }
+      : { h: '#8fd084', m: '#58995b', d: '#2f6b40' };
   const ys = schlitze === 0 ? [] : Array.from({ length: schlitze }, (_, k) =>
     (schlitze === 1 ? -0.5 : -(0.15 + 0.7 * k / (schlitze - 1))) * L);
 
@@ -265,9 +269,10 @@ function monsteraBlatt(L, winkel, schlitze, loecher, ton, persp = 1, tief = 0.3)
         `fill="none" stroke="${T.ader}" stroke-width="0.6" stroke-linecap="round" opacity="0.7"`);
     }
   }
-
-  const innen = pfad(U.halbRechts, `fill="${T.rechts}"`) +
-    pfad(U.halbLinks, `fill="${T.links}"`) +
+  // Verlauf: linke Haelfte von hell (oben links) nach mittel, rechte Haelfte von mittel nach dunkel
+  const verlauf = vlLin(`${u}-l`, [G.h, G.m, G.m]) + vlLin(`${u}-r`, [G.m, G.d, G.d]);
+  const innen = pfad(U.halbRechts, `fill="${vref(u + '-r')}"`) +
+    pfad(U.halbLinks, `fill="${vref(u + '-l')}"`) +
     adern +
     linie([0, 0], [0, -0.92 * L], `stroke="${T.mittel}" stroke-width="1" stroke-linecap="round"`) +
     linie([-0.22 * L, -0.25 * L], [-0.3 * L, -0.5 * L], `stroke="${T.glanz}" stroke-width="1.2" stroke-linecap="round" opacity="0.55"`) +
@@ -276,8 +281,8 @@ function monsteraBlatt(L, winkel, schlitze, loecher, ton, persp = 1, tief = 0.3)
 
   const sc = persp === 1 ? '' : ` scale(1,${f(persp)})`;
   return gruppe(`transform="rotate(${f(winkel)})${sc}"`,
-    `<defs><mask id="${id}" maskUnits="userSpaceOnUse" x="${f(-1.5 * L)}" y="${f(-1.5 * L)}" width="${f(3 * L)}" height="${f(3 * L)}">${maske}</mask></defs>` +
-    `<g mask="url(#${id})">${innen}</g>` + kanten + lochKontur);
+    `<defs><mask id="${u}" maskUnits="userSpaceOnUse" x="${f(-1.5 * L)}" y="${f(-1.5 * L)}" width="${f(3 * L)}" height="${f(3 * L)}">${maske}</mask>${verlauf}</defs>` +
+    `<g mask="url(#${u})">${innen}</g>` + kanten + lochKontur);
 }
 
 // Monstera-Stufen: [Winkel, Stiellaenge, Blattlaenge, Schlitze je Seite, Loecher, Verkuerzung (1 = flach von vorn)]
@@ -295,24 +300,28 @@ const MONSTERA_ROLLE = { 4: [14, 34, 13] };
 // Welk: Blaetter haengen nach aussen und unten
 const welkWinkel = (a0) => (a0 < 0 ? -120 : 120) + a0 * 0.2;
 
-// Junges, eingerolltes Blatt: schmale, hellgruene Spindel mit Rolllinie
+// Junges, eingerolltes Blatt: schmale Spindel mit Verlauf und Rolllinie
 function monsteraRolle(L, winkel) {
   const R = ovalKante(L, 1.6, false);
+  const u = vlId('mr');
   return gruppe(`transform="rotate(${f(winkel)})"`,
-    zweiseitig(R, '#c8e8a8', '#8cc47a') +
+    vlDefs(vlLin(`${u}-g`, ['#e4f5d2', '#b5dc96', '#7fb46a'], 1, 0)) +
+    pfad(p2pfad(umriss(R)), `fill="${vref(u + '-g')}"`) +
     linie([0.3, -L * 0.2], [0.8, -L * 0.75], 'stroke="#5e9a52" stroke-width="0.6" stroke-linecap="round" opacity="0.8"') +
     pfad(p2pfad(umriss(R)), `fill="none" ${KON_GRUEN}`));
 }
 
-// Moosstab (braun-gruen, 2.5 breit) mit einer Luftwurzel, nur Stufe 4
+// Moosstab (braun-gruen, 2.5 breit) mit einer Luftwurzel, nur Stufe 4. Holz mit Verlauf, Moospolster mit Glanz.
 function monsteraStab(welk) {
-  const holz = welk ? '#9c9466' : '#8a7f4e';
-  const moos = welk ? '#a8a36a' : '#5e9a52';
-  const moos2 = welk ? '#c4c98f' : '#8cc47a';
-  let out = rechteck(-1.25, -44, 2.5, 44, 1.2, `fill="${holz}" ${KON_TOPF}`) +
+  const u = vlId('ms');
+  const holz = welk ? ['#b8b280', '#9c9466', '#7d7752'] : ['#a09a62', '#8a7f4e', '#6d6440'];
+  const moos = welk ? ['#c4c98f', '#a8a36a', '#7d7752'] : ['#9fd48a', '#5e9a52', '#3a6b3a'];
+  const moos2 = welk ? ['#dcdcb0', '#c4c98f', '#8c8650'] : ['#c4e8b0', '#8cc47a', '#4f8a4a'];
+  let out = vlDefs(vlLin(`${u}-h`, holz, 1, 0), vlRad(`${u}-m1`, moos), vlRad(`${u}-m2`, moos2)) +
+    rechteck(-1.25, -44, 2.5, 44, 1.2, `fill="${vref(u + '-h')}" ${KON_TOPF}`) +
     linie([-0.6, -42], [-0.6, -3], 'stroke="#b3a774" stroke-width="0.5" stroke-linecap="round" opacity="0.7"');
   for (let k = 0; k < 7; k++) {
-    out += oval(k % 2 ? -0.6 : 0.6, -6 - k * 6, 2.2, 1.3, `fill="${k % 2 ? moos2 : moos}" stroke="#3a6b3a" stroke-width="0.5"`);
+    out += oval(k % 2 ? -0.6 : 0.6, -6 - k * 6, 2.2, 1.3, `fill="${vref(u + (k % 2 ? '-m2' : '-m1'))}" stroke="#3a6b3a" stroke-width="0.5"`);
   }
   // Eine Luftwurzel: vom Stab nach unten Richtung Topfrand
   out += pfad('M1.2,-26Q5,-21 3.6,-6', 'fill="none" stroke="#a86b43" stroke-width="0.9" stroke-linecap="round"') +
@@ -329,7 +338,7 @@ function monstera(s, welk) {
   const ansatz = [...tab, ...(rolle ? [rolle] : [])].map((b) => {
     const ex = b.S * Math.sin(b.a0 * RAD) * (welk ? 0.8 : 1);
     const ey = -b.S * Math.cos(b.a0 * RAD) * (welk ? 0.7 : 1);
-    stiele += stiel(`M0,0Q${f(ex * 0.1)},${f(ey * 0.75)} ${f(ex)},${f(ey)}`, welk, 2.2);
+    stiele += vlStiel(`M0,0Q${f(ex * 0.1)},${f(ey * 0.75)} ${f(ex)},${f(ey)}`, welk, 2.2);
     return [ex, ey];
   });
   // Hintere (weit aussen) zuerst, die mittleren Blaetter liegen oben
@@ -338,7 +347,7 @@ function monstera(s, welk) {
   for (const { b, i } of reihe) {
     const [ex, ey] = ansatz[i];
     const winkel = welk ? welkWinkel(b.a0) : b.a0;
-    blaetter += an(ex, ey, 0, monsteraBlatt(b.L, winkel, b.schlitze, b.loecher, ton, b.persp, s === 3 ? 0.45 : 0.3));
+    blaetter += an(ex, ey, 0, monsteraBlatt(b.L, winkel, b.schlitze, b.loecher, ton, b.persp, s === 3 ? 0.45 : 0.3, Math.abs(b.a0) >= 60));
   }
   if (rolle) {
     const [ex, ey] = ansatz[tab.length];
@@ -428,59 +437,75 @@ function kaktus(s, welk) {
 }
 
 // ---------- Sonnenblume ----------
+// Blaetter, Stiel und Bluete mit Verlauf (Licht oben links). Hintere Blaetter (rechte Seite) sind dunkler und
+// bluelich und werden zuerst gezeichnet, vordere zuletzt. Bluetenblaetter mit senkrechtem Verlauf (Spitze hell),
+// Scheibe mit radialem Glanz.
 function sonnenblume(s, welk) {
+  const u = vlId('sb');
+  const v = welk ? VL_WELK : ['#a9d98a', '#6fae62', '#3f7d45'];
+  const h = welk ? VL_WELK_H : ['#8fbf86', '#5a9058', '#356b44'];
+  const kn = welk ? ['#d6dcaa', '#b5c48a', '#8c8650'] : ['#b5dc96', '#7fb069', '#4f8a4a'];
+  const C = welk
+    ? { aussen: ['#e0c08a', '#c9a46a', '#9c7a4a'], innen: ['#e8cc96', '#d8b97a', '#b89a64'], scheibe: ['#8a7a6a', '#6b5a4a', '#4a3a2a'], punkt: '#4a3a2a' }
+    : { aussen: ['#ffd24a', '#e8a90c', '#b97f08'], innen: ['#fff08a', '#f5c518', '#d9a30a'], scheibe: ['#9a6038', '#7a4a2a', '#4a2c18'], punkt: '#4a2c18' };
+  const defs = vlDefs(
+    vlLin(`${u}-v`, v), vlLin(`${u}-h`, h), vlLin(`${u}-k`, kn),
+    vlLin(`${u}-pa`, C.aussen, 0, 1), vlLin(`${u}-pi`, C.innen, 0, 1), vlRad(`${u}-sc`, C.scheibe));
   if (s === 1) {
     const dreh = welk ? 70 : 28;
-    const cot = (sg) => oval(sg * 4.2, -11, 4.6, 2.6,
-      `transform="rotate(${sg * dreh} ${sg * 4.2} -11)" fill="${welk ? '#b5c48a' : '#7fb069'}" ${kontur(welk)}`);
-    return stiel('M0,0L0,-10', welk, 2.8) + cot(-1) + cot(1);
+    const cot = (sg) => gruppe(`transform="rotate(${sg * dreh} ${sg * 4.2} -11)"`,
+      oval(sg * 4.2, -11, 4.6, 2.6, `fill="${vref(u + '-v')}" ${kontur(welk)}`) +
+      linie([sg * 4.2 - 3.6, -11], [sg * 4.2 + 3.6, -11], `stroke="${welk ? '#7d7a48' : '#3a6b3a'}" stroke-width="0.5" stroke-linecap="round" opacity="0.6"`));
+    return defs + vlStiel('M0,0L0,-10', welk, 2.8) + cot(-1) + cot(1);
   }
   const H = [0, 40, 66, 72][s - 1];
   const X = s === 4 ? 5 : 0;
   const P = (t) => qb([0, 0], [2, -H / 2], [X, -H], t);
-  let out = stiel(`M0,0Q2,${f(-H / 2)} ${X},${-H}`, welk);
+  let out = vlStiel(`M0,0Q2,${f(-H / 2)} ${X},${-H}`, welk);
   const L = [0, 17, 19, 20][s - 1];
   const blaetter = s === 2 ? [[0.3, -1], [0.5, 1], [0.7, -1], [0.9, 1]]
     : s === 3 ? [[0.22, -1], [0.42, 1], [0.62, -1]]
       : [[0.2, -1], [0.4, 1], [0.6, -1]];
-  blaetter.forEach(([t, sd], i) => {
+  // Hintere Blaetter (rechte Seite, sd = 1) zuerst, die vorderen (linke Seite) zuletzt
+  const reihe = blaetter.map(([t, sd], i) => ({ t, sd, i })).sort((p, q) => (q.sd - p.sd) || p.i - q.i);
+  for (const { t, sd } of reihe) {
     const [x, y] = P(t);
-    out += an(x, y, sd * (welk ? 125 : 55), blatt(herzKante(L, 0.7 * L, true), { L, W: 0.7 * L, ...farben(i, welk) }));
-  });
+    const hinten = sd > 0;
+    out += an(x, y, sd * (welk ? 125 : 55),
+      vlBlatt(herzKante(L, 0.7 * L, true), L, 0.7 * L, vref(u + (hinten ? '-h' : '-v')), vlOpt(welk, hinten)));
+  }
   if (s === 3) {
     // Geschlossene gruene Knospe mit Kelchblaettern
-    out += an(X, -H + 2, -28, blatt(ovalKante(15, 4.5, true), { L: 15, W: 4.5, ...farben(0, welk) })) +
-      an(X, -H + 2, 28, blatt(ovalKante(15, 4.5, true), { L: 15, W: 4.5, ...farben(1, welk) })) +
-      oval(X, -H - 6, 5.5, 7, `fill="${welk ? '#a8a36a' : '#7fb069'}" ${kontur(welk)}`) +
+    out += an(X, -H + 2, -28, vlBlatt(ovalKante(15, 4.5, true), 15, 4.5, vref(u + '-v'), vlOpt(welk, false))) +
+      an(X, -H + 2, 28, vlBlatt(ovalKante(15, 4.5, true), 15, 4.5, vref(u + '-h'), vlOpt(welk, true))) +
+      oval(X, -H - 6, 5.5, 7, `fill="${vref(u + '-k')}" ${kontur(welk)}`) +
       linie([X - 2, -H - 9], [X - 1, -H - 2], `stroke="${welk ? '#c4c98f' : '#9ccc7a'}" stroke-width="1" stroke-linecap="round"`);
   }
   if (s === 4) {
-    const C = welk
-      ? { aussen: '#c9a46a', innen: '#d8b97a', scheibe: '#6b5a4a', punkt: '#4a3a2a' }
-      : { aussen: '#e8a90c', innen: '#f5c518', scheibe: '#7a4a2a', punkt: '#4a2c18' };
     let kopf = '';
-    for (let i = 0; i < 16; i++) kopf += oval(0, -15, 3.8, 7.6, `transform="rotate(${i * 22.5})" fill="${C.aussen}" ${kontur(welk)}`);
-    for (let i = 0; i < 16; i++) kopf += oval(0, -11.8, 3.4, 6, `transform="rotate(${i * 22.5 + 11.25})" fill="${C.innen}" ${kontur(welk)}`);
-    kopf += kreis(0, 0, 8.6, `fill="${C.scheibe}" ${kontur(welk)}`);
+    for (let i = 0; i < 16; i++) kopf += oval(0, -15, 3.8, 7.6, `transform="rotate(${i * 22.5})" fill="${vref(u + '-pa')}" ${kontur(welk)}`);
+    for (let i = 0; i < 16; i++) kopf += oval(0, -11.8, 3.4, 6, `transform="rotate(${i * 22.5 + 11.25})" fill="${vref(u + '-pi')}" ${kontur(welk)}`);
+    kopf += kreis(0, 0, 8.6, `fill="${vref(u + '-sc')}" ${kontur(welk)}`);
     for (const [rr, n] of [[2.8, 6], [5, 12], [6.9, 18]]) {
       for (let i = 0; i < n; i++) {
         const a = (i + rr * 0.3) * 2 * Math.PI / n;
         kopf += kreis(rr * Math.cos(a), rr * Math.sin(a), 0.75, `fill="${C.punkt}"`);
       }
     }
-    kopf += oval(-2.6, -3.2, 2.6, 1.6, 'fill="#ffffff" opacity="0.2"');
+    kopf += oval(-2.6, -3.2, 2.6, 1.6, 'fill="#ffffff" opacity="0.25"');
     out += an(X, -H, welk ? 150 : 22, kopf);
   }
-  return out;
+  return defs + out;
 }
 
 // ---------- Tomate ----------
 // Fiederblatt: Spindel nach oben, je zwei Fiederblaettchen paarweise und ein Endblaettchen (5 pro Blatt),
-// dafuer groessere Blaettchen und weniger Blaetter je Pflanze.
-function tomatenBlatt(len, welk, i) {
-  const col = welk ? WELK : GRUEN[i % 2];
-  let out = linie([0, 0], [0, -len], `stroke="${welk ? '#a8a36a' : '#477d43'}" stroke-width="1" stroke-linecap="round"`);
-  const blaettchen = (x, y, rot, L) => an(x, y, rot, blatt(ovalKante(L, 0.5 * L, true), { L, W: 0.5 * L, ...col }));
+// dafuer groessere Blaettchen und weniger Blaetter je Pflanze. Blaettchen mit Verlauf, hintere (rechte) dunkler.
+function tomatenBlatt(len, welk, u, hinten) {
+  const g = vref(u + (hinten ? '-h' : '-v'));
+  const o = vlOpt(welk, hinten);
+  let out = vlStiel(`M0,0L0,${f(-len)}`, welk, 1.2);
+  const blaettchen = (x, y, rot, L) => an(x, y, rot, vlBlatt(ovalKante(L, 0.5 * L, true), L, 0.5 * L, g, o));
   for (const fr of [0.4, 0.7]) {
     for (const sd of [-1, 1]) out += blaettchen(0, -len * fr, sd * 55, len * 0.55);
   }
@@ -488,61 +513,72 @@ function tomatenBlatt(len, welk, i) {
   return out;
 }
 
-// Tomatenfrucht mit Glanzpunkt und gruenem Kelch-Stern
-function frucht(x, y, r) {
-  return kreis(x, y, r, 'fill="#b8362e"') +
-    kreis(x - r * 0.22, y - r * 0.22, r * 0.9, 'fill="#e0533d"') +
-    kreis(x - r * 0.4, y - r * 0.42, r * 0.22, 'fill="#ffffff" opacity="0.75"') +
+// Tomatenfrucht: radialer Verlauf mit Glanzzentrum oben links, zwei Glanzpunkte, gruener Kelch-Stern
+function frucht(x, y, r, g) {
+  return kreis(x, y, r, `fill="${g}"`) +
+    kreis(x - r * 0.4, y - r * 0.42, r * 0.2, 'fill="#ffffff" opacity="0.8"') +
+    kreis(x - r * 0.12, y - r * 0.66, r * 0.07, 'fill="#ffffff" opacity="0.5"') +
     kreis(x, y, r, `fill="none" ${KON_GRUEN}`) +
     stern(x, y - r * 0.9, r * 0.5, '#5e9a52', 5);
 }
 
-function blume(x, y) {
+// Bluete mit fuenf Blattkreisen (radialer Verlauf, Glanz oben links) und Mitte
+function blume(x, y, u) {
   let out = '';
   for (let i = 0; i < 5; i++) {
     const a = (i * 72 - 90) * RAD;
-    out += kreis(x + 2.3 * Math.cos(a), y + 2.3 * Math.sin(a), 1.7, `fill="#ffd23f" ${KON_GRUEN}`);
+    out += kreis(x + 2.3 * Math.cos(a), y + 2.3 * Math.sin(a), 1.7, `fill="${vref(u + '-bl')}" ${KON_GRUEN}`);
   }
-  return out + kreis(x, y, 1.1, 'fill="#f5c518"');
+  return out + kreis(x, y, 1.1, `fill="${vref(u + '-bc')}"`) + kreis(x - 0.4, y - 0.4, 0.4, 'fill="#ffffff" opacity="0.7"');
 }
 
 function tomate(s, welk) {
+  const u = vlId('tm');
   const H = [24, 48, 70, 88][s - 1];
   const P = (t) => qb([2, 0], [6, -H / 2], [4, -H], t);
   const SH = H + 14;
-  // Holzstab mit Licht, Schatten und Maserung
-  let out = rechteck(-5, -SH, 4, SH, 1.5, `fill="#c98f5a" ${KON_TOPF}`) +
+  const v = welk ? VL_WELK : ['#a9d98a', '#6fae62', '#3f7d45'];
+  const h = welk ? VL_WELK_H : ['#8fbf86', '#5a9058', '#356b44'];
+  const defs = vlDefs(
+    vlLin(`${u}-s`, ['#e2b07c', '#c98f5a', '#a86b43'], 1, 0),
+    vlLin(`${u}-v`, v), vlLin(`${u}-h`, h),
+    vlRad(`${u}-fr`, ['#f47a63', '#d9402e', '#8f231c']),
+    vlRad(`${u}-bl`, ['#fff3a0', '#ffd23f', '#d9a300']),
+    vlRad(`${u}-bc`, ['#ffe680', '#f5c518', '#b8860b']));
+  // Holzstab: Licht von links, Schatten rechts, feine Maserung
+  let out = rechteck(-5, -SH, 4, SH, 1.5, `fill="${vref(u + '-s')}" ${KON_TOPF}`) +
     linie([-4.2, -SH + 2], [-4.2, -2], 'stroke="#e2b07c" stroke-width="1" stroke-linecap="round"') +
     linie([-1.6, -SH + 2], [-1.6, -2], 'stroke="#a86b43" stroke-width="1"') +
     linie([-3, -SH * 0.6], [-2.6, -SH * 0.4], 'stroke="#a86b43" stroke-width="0.5"') +
     linie([-3.4, -SH * 0.25], [-3, -SH * 0.1], 'stroke="#a86b43" stroke-width="0.5"');
-  out += stiel(`M2,0Q6,${f(-H / 2)} 4,${-H}`, welk, 3);
+  out += vlStiel(`M2,0Q6,${f(-H / 2)} 4,${-H}`, welk, 3);
   for (const t of [0.3, 0.55, 0.8]) {
     const [x, y] = P(t);
     out += linie([-3.5, y + 1.6], [x + 0.5, y - 1.4], 'stroke="#e8c48a" stroke-width="1.6" stroke-linecap="round"');
   }
   const T = { 1: [0.55, 0.8], 2: [0.35, 0.75], 3: [0.3, 0.6, 0.85], 4: [0.25, 0.5, 0.78] }[s];
   const LEN = [11, 14, 17, 18][s - 1];
-  T.forEach((t, i) => {
+  // Hintere Blaettchen (rechte Seite) zuerst, vordere zuletzt
+  const reihe = T.map((t, i) => ({ t, i, sd: i % 2 ? 1 : -1 })).sort((p, q) => (q.sd - p.sd) || p.i - q.i);
+  for (const { t, sd } of reihe) {
     const [x, y] = P(t);
-    const sd = i % 2 ? 1 : -1;
-    out += an(x, y, sd * (welk ? 110 : 52), tomatenBlatt(LEN, welk, i));
-  });
+    out += an(x, y, sd * (welk ? 110 : 52), tomatenBlatt(LEN, welk, u, sd > 0));
+  }
   if (s === 3) {
     const [gx, gy] = P(0.55), [hx, hy] = P(0.4);
     out += linie([gx, gy], [-6, -H * 0.6 + 6], 'stroke="#5e9a52" stroke-width="1" stroke-linecap="round"') +
       kreis(-6, -H * 0.6 + 6, 2.6, `fill="#9ccc7a" ${KON_GRUEN}`) +
       linie([hx, hy], [8, -H * 0.55], 'stroke="#5e9a52" stroke-width="1" stroke-linecap="round"') +
       kreis(8, -H * 0.55, 2.4, `fill="#9ccc7a" ${KON_GRUEN}`);
-    out += blume(1, -H - 3) + blume(-5, -H + 2) + blume(9, -H + 5);
+    out += blume(1, -H - 3, u) + blume(-5, -H + 2, u) + blume(9, -H + 5, u);
   }
   if (s === 4) {
     const [px, py] = P(0.6);
     for (const [x, y, r] of [[-6, -52, 5.4], [9, -54, 4.6], [1, -40, 5.6], [11, -37, 4.2]]) {
-      out += linie([px, py], [x, y - r], 'stroke="#5e9a52" stroke-width="1" stroke-linecap="round"') + frucht(x, y, r);
+      out += linie([px, py], [x, y - r], 'stroke="#5e9a52" stroke-width="1" stroke-linecap="round"') + frucht(x, y, r, vref(u + '-fr'));
     }
   }
-  return out;
+  return defs + out;
 }
 
 // ---------- Efeutute ----------
@@ -575,10 +611,11 @@ const efUmriss = (R) => R.concat(R.slice().reverse().map(([x, y]) => [-x, y]));
 const efZug = (pts) => 'M' + pts.map(p2).join('L') + 'Z';
 
 // Ein Herzblatt in lokalen Koordinaten (Grund (0,0), Spitze (0,-L)). Verlaeufe kommen aus efDefs.
+let efClipZaehler = 0;
 function efBlatt(L, welk, hinten, u, i) {
   const W = 0.8 * L;
   const R = efHerz(L, W);
-  const D = efUmriss(R);
+  const D = efZug(efUmriss(R)); // als Pfad (M...L...Z), sonst zeichnet der Browser das Blatt nicht
   const g = welk ? 'welk' : hinten ? 'hinten' : 'vorn';
   const rippe = welk ? '#e6dca0' : hinten ? '#9fc4b2' : '#d7efb8';
   let out = pfad(D, `fill="url(#${u}-${g})"`) +
@@ -596,7 +633,7 @@ function efBlatt(L, welk, hinten, u, i) {
       streifen += pfad(`M${f(x0)},${f(y0)}Q${f(cx)},${f(cy)} ${f(x1)},${f(y1)}`,
         `fill="none" stroke="#f0e6a0" stroke-width="${f(w)}" stroke-linecap="round" opacity="${hinten ? 0.6 : 0.9}"`);
     }
-    const id = `${u}-k${i}`;
+    const id = `${u}-k${i}-${++efClipZaehler}`; // eigener Zaehler: i allein ist zwischen Ranken und Blaettern nicht eindeutig
     out += `<clipPath id="${id}">${pfad(D, '')}</clipPath>` + gruppe(`clip-path="url(#${id})"`, streifen);
   }
   // Mittelrippe und Seitenadern
@@ -712,6 +749,58 @@ function zweiseitig(R, hell, dunkel) {
     pfad(p2pfad(R.map(([x, y]) => [-x, y]).reverse()), `fill="${hell}"`);
 }
 
+// ---------- Verlaeufe und Plastik der Phase-2-Pflanzen ----------
+// Verlaufs-Ids mit Zaehler: jede Zeichnung bekommt eigene Ids, damit sich Pflanzen auf der Seite nicht ueberschreiben.
+let VL_UID = 0;
+const vlId = (p) => `${p}${++VL_UID}`;
+const vref = (id) => `url(#${id})`;
+// Welk-Toene fuer Blaetter (vorn, hinten)
+const VL_WELK = ['#d2d59a', '#b5b87c', '#9c9a5e'];
+const VL_WELK_H = ['#bdbd8a', '#a8a36a', '#8c8650'];
+// Linearer Verlauf mit drei Stopps [hell, mitte, dunkel]. Standard (1,1) diagonal, (1,0) waagerecht (Licht links),
+// (0,1) senkrecht (Licht oben). objectBoundingBox: der Verlauf gilt je Element.
+const vlLin = (id, [a, b, c], x2 = 1, y2 = 1) =>
+  `<linearGradient id="${id}" x1="0" y1="0" x2="${x2}" y2="${y2}"><stop offset="0" stop-color="${a}"/>` +
+  `<stop offset="0.55" stop-color="${b}"/><stop offset="1" stop-color="${c}"/></linearGradient>`;
+// Radialer Verlauf mit Glanzzentrum oben links (fuer Kreise, Kugeln und Fruechte)
+const vlRad = (id, [a, b, c]) =>
+  `<radialGradient id="${id}" cx="0.35" cy="0.3" r="0.8" fx="0.3" fy="0.25"><stop offset="0" stop-color="${a}"/>` +
+  `<stop offset="0.6" stop-color="${b}"/><stop offset="1" stop-color="${c}"/></radialGradient>`;
+const vlDefs = (...teile) => '<defs>' + teile.join('') + '</defs>';
+// Farben je Blatt: rechte Haelfte im Schatten, Mittelrippe und Adern hell, Glanzpunkt auf der Lichtseite.
+// hinten: dunkler und leicht blaeulich (Tiefe), kein warmer Ton.
+const vlOpt = (welk, hinten) => welk
+  ? { rippe: '#e6dca0', glanz: '#f5f3d0', kontur: KON_WELK, schatten: '#7d6a45' }
+  : hinten
+    ? { rippe: '#9fc4b2', glanz: '#d9ecdf', kontur: KON_GRUEN, schatten: '#24473a' }
+    : { rippe: '#d7efb8', glanz: '#ffffff', kontur: KON_GRUEN, schatten: '#24473a' };
+
+// Blatt mit Verlauf. R: rechte Kante (Grund (0,0), Spitze (0,-L)), W: halbe Breite, g: Verweis auf den Verlauf,
+// o: Farben aus vlOpt. Mittelrippe, Seitenadern und ein kleiner Glanzpunkt, Kontur am Schluss.
+function vlBlatt(R, L, W, g, o) {
+  const D = p2pfad(umriss(R));
+  let out = pfad(D, `fill="${g}"`) +
+    pfad(p2pfad(R), `fill="${o.schatten}" opacity="0.14"`) +
+    linie([0, -0.02 * L], [0, -0.9 * L], `stroke="${o.rippe}" stroke-width="0.8" stroke-linecap="round" opacity="0.85"`);
+  for (const t of [0.3, 0.5, 0.7]) {
+    for (const sd of [-1, 1]) {
+      out += linie([0, -L * t], [sd * W * 0.4, -L * (t + 0.12)], `stroke="${o.rippe}" stroke-width="0.45" stroke-linecap="round" opacity="0.45"`);
+    }
+  }
+  out += oval(-0.3 * W, -0.55 * L, 0.12 * W + 0.3, 0.035 * L + 0.2,
+    `fill="${o.glanz}" opacity="0.5" transform="rotate(-30 ${f(-0.3 * W)} ${f(-0.55 * L)})"`);
+  return out + pfad(D, `fill="none" ${o.kontur}`);
+}
+
+// Stiel mit Verlauf: dunkle Kontur, Mittelton, dunkle Schattenkante rechts und heller Lichtstreifen links
+function vlStiel(d, welk, w = 3.2) {
+  const [rand, mitte, licht] = welk ? ['#7d6a45', '#a8a36a', '#dcdcb0'] : ['#2f5a30', '#4f8a4a', '#b5dd9a'];
+  return pfad(d, `fill="none" stroke="${rand}" stroke-width="${f(w + 1.4)}" stroke-linecap="round"`) +
+    pfad(d, `fill="none" stroke="${mitte}" stroke-width="${w}" stroke-linecap="round"`) +
+    pfad(d, `fill="none" stroke="${welk ? '#7d7a48' : '#3a6b3a'}" stroke-width="${f(w * 0.45)}" stroke-linecap="round" opacity="0.5" transform="translate(${f(w * 0.3)},0)"`) +
+    pfad(d, `fill="none" stroke="${licht}" stroke-width="${f(w * 0.4)}" stroke-linecap="round" opacity="0.75" transform="translate(${f(-w * 0.18)},0)"`);
+}
+
 // ---------- Bogenhanf (Sansevieria) ----------
 // Steife, schwertfoermige Blaetter, dunkelgruen mit hellen Zickzack-Baendern und breitem gelbem Rand.
 // Licht von links: linke Haelfte heller. Hintere Blaetter dunkler.
@@ -733,13 +822,14 @@ function bogKanten(L, W, bieg) {
   return { mitte, rechts, links };
 }
 
-function bogBlatt(L, W, welk, hinten, bieg) {
+function bogBlatt(L, W, welk, hinten, bieg, u) {
   const T = welk ? BOG_WELK : (hinten ? BOG_HINTEN : BOG);
+  const g = vref(u + (welk ? '-w' : (hinten ? '-h' : '-v')));
   const au = bogKanten(L, W, bieg);          // aeussere Kontur (gelber Rand)
-  const innen = bogKanten(L, W * 0.68, bieg); // dunkler Koerper innerhalb des Randes
+  const innen = bogKanten(L, W * 0.68, bieg); // Koerper innerhalb des Randes mit Verlauf von links nach rechts
   let out = pfad(p2pfad([...au.rechts, ...au.links.slice().reverse()]), `fill="${T.rand}"`) +
-    pfad(p2pfad([...innen.mitte, ...innen.links.slice().reverse()]), `fill="${T.hell}"`) +
-    pfad(p2pfad([...innen.rechts, ...innen.mitte.slice().reverse()]), `fill="${T.gruen}"`);
+    pfad(p2pfad([...innen.rechts, ...innen.links.slice().reverse()]), `fill="${g}"`) +
+    pfad(p2pfad([...innen.rechts, ...innen.mitte.slice().reverse()]), 'fill="#1f3a2a" opacity="0.16"'); // Schattenseite rechts
   // Querbaender als Zickzack-Linien ueber die ganze Blattbreite
   const n = Math.max(3, Math.round(L / 7));
   for (let k = 0; k < n; k++) {
@@ -770,24 +860,30 @@ const BOG_STUFE = {
 };
 
 function bogenhanf(s, welk) {
+  const u = vlId('bo');
   const B = BOG_STUFE[s];
   const r = zufall(23 + s);
   const liste = [];
   for (let i = 0; i < B.n; i++) {
-    const u = B.n === 1 ? 0 : (2 * i) / (B.n - 1) - 1; // -1 ganz links bis 1 ganz rechts
-    const a = u * B.faecher + (r() - 0.5) * 4;
-    const L = B.L * (1 - 0.15 * Math.abs(u)) * (0.94 + 0.12 * r());
+    const u0 = B.n === 1 ? 0 : (2 * i) / (B.n - 1) - 1; // -1 ganz links bis 1 ganz rechts
+    const a = u0 * B.faecher + (r() - 0.5) * 4;
+    const L = B.L * (1 - 0.15 * Math.abs(u0)) * (0.94 + 0.12 * r());
     const W = B.W * (0.94 + 0.12 * r());
-    liste.push({ a, L, W, dx: u * 2.5, hinten: Math.abs(u) > 0.6 });
+    liste.push({ a, L, W, dx: u0 * 2.5, hinten: Math.abs(u0) > 0.6 });
   }
   // Hintere (aeussere) Blaetter zuerst, die mittleren liegen davor
   liste.sort((p, q) => Number(q.hinten) - Number(p.hinten));
+  // Schwerter mit waagerechtem Verlauf (Licht links): vorn, hinten (bluelich-dunkler) und welk
+  const defs = vlDefs(
+    vlLin(`${u}-v`, ['#5f9a68', '#3f6b45', '#2b4d33'], 1, 0),
+    vlLin(`${u}-h`, ['#5a8a68', '#3d6650', '#26473a'], 1, 0),
+    vlLin(`${u}-w`, VL_WELK, 1, 0));
   let out = '';
   for (const { a, L, W, dx, hinten } of liste) {
     const rot = welk ? a * 1.4 + Math.sign(a) * 30 : a;
-    out += an(dx, 1, rot, bogBlatt(welk ? L * 0.75 : L, W, welk, hinten, 0.04 * L * Math.sign(a)));
+    out += an(dx, 1, rot, bogBlatt(welk ? L * 0.75 : L, W, welk, hinten, 0.04 * L * Math.sign(a), u));
   }
-  return out;
+  return defs + out;
 }
 
 // ---------- Aloe vera ----------
@@ -810,17 +906,20 @@ function aloeKante(L, W) {
   return pts;
 }
 
-function aloeBlatt(L, W, welk) {
+// Blatt mit Verlauf (Licht links), rechte Haelfte im Schatten, Zaehnchen am Rand, weisse Punkte
+function aloeBlatt(L, W, welk, g, hinten) {
   const T = welk ? ALOE_WELK : ALOE;
   const R = aloeKante(L, W);
-  let out = zweiseitig(R, T.hell, T.dunkel) +
+  const o = vlOpt(welk, hinten);
+  let out = pfad(p2pfad(umriss(R)), `fill="${g}"`) +
+    pfad(p2pfad(R), `fill="${o.schatten}" opacity="0.14"`) +
     linie([0, -L * 0.04], [0, -L * 0.9], `stroke="${T.rippe}" stroke-width="1" stroke-linecap="round" opacity="0.7"`);
   // Weisse Punkte, abwechselnd links und rechts der Mittelrippe
   for (let j = 0; j < 7; j++) {
     const t = 0.18 + j * 0.1, sd = j % 2 ? 1 : -1;
     out += kreis(sd * aloeBreite(W, t) * 0.45, -L * t, 0.6, `fill="${T.punkt}" opacity="0.9"`);
   }
-  out += linie([-W * 0.4, -L * 0.2], [-W * 0.35, -L * 0.5], 'stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.4"');
+  out += linie([-W * 0.4, -L * 0.2], [-W * 0.35, -L * 0.5], 'stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.5"');
   const rand = welk ? 'fill="none" stroke="#a6845a" stroke-width="1" stroke-linejoin="round"' : `fill="none" ${KON_GRUEN}`;
   return out + pfad(p2pfad(umriss(R)), rand);
 }
@@ -834,25 +933,33 @@ const ALOE_BLAETTER = {
 };
 
 function aloe(s, welk) {
+  const u = vlId('al');
+  const FL = welk ? ['#c9a46a', '#e0c08a'] : ['#f0863a', '#ffc27a'];
+  const FLD = welk ? '#9c7a4a' : '#c8602a';
+  const defs = vlDefs(
+    vlLin(`${u}-v`, welk ? ['#d6d6a0', '#c4c98f', '#a8a36a'] : ['#a9c79f', '#8fb08a', '#5f8a64'], 1, 0),
+    vlLin(`${u}-h`, welk ? ['#c9cba0', '#b5b87c', '#9c9a5e'] : ['#93b394', '#6f9675', '#4f7357'], 1, 0),
+    vlRad(`${u}-fl`, [FL[1], FL[0], FLD]));
+  // Rosette: aeussere Blaetter zuerst (liegen hinten, bluelich-dunkler)
   const tab = ALOE_BLAETTER[s].slice().sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]));
   let out = '';
   for (const [a, L, W] of tab) {
     const rot = welk ? a * 1.3 : a;
-    out += an(0, 1, rot, aloeBlatt(welk ? L * 0.8 : L, W, welk));
+    const hinten = Math.abs(a) >= 40;
+    out += an(0, 1, rot, aloeBlatt(welk ? L * 0.8 : L, W, welk, vref(u + (hinten ? '-h' : '-v')), hinten));
   }
   if (s === 4) {
     // Hoher Bluetenstiel mit orangen Roehrenbluten
-    const FL = welk ? ['#c9a46a', '#e0c08a'] : ['#f0863a', '#ffc27a'];
-    out += stiel('M0,0Q2,-22 6,-40', welk, 2.2);
+    out += vlStiel('M0,0Q2,-22 6,-40', welk, 2.2);
     for (let j = 0; j < 6; j++) {
       const t = 0.62 + j * 0.07, sd = j % 2 ? 1 : -1;
       const [x, y] = qb([0, 0], [2, -22], [6, -40], t);
       const bx = x + sd * 1.6;
-      out += oval(bx, y, 1.5, 3, `transform="rotate(${sd * 25} ${f(bx)} ${f(y)})" fill="${FL[0]}" ${kontur(welk)}`) +
+      out += oval(bx, y, 1.5, 3, `transform="rotate(${sd * 25} ${f(bx)} ${f(y)})" fill="${vref(u + '-fl')}" ${kontur(welk)}`) +
         kreis(bx - sd * 0.3, y - 0.9, 0.6, `fill="${FL[1]}"`);
     }
   }
-  return out;
+  return defs + out;
 }
 
 // ---------- Gruenlilie (Chlorophytum) ----------
@@ -862,26 +969,22 @@ const GRL = { hell: '#6fae6a', schatten: '#4f8a4c', streifen: '#f5f0dc', ader: '
 const GRL_HINTEN = { hell: '#5c9c58', schatten: '#3f7a40', streifen: '#e6e1c0', ader: '#2f5f32' };
 const GRL_WELK = { hell: '#c4c98f', schatten: '#a8a36a', streifen: '#e4e3b4', ader: '#8c8650', spitze: '#a6845a' };
 
-// Blatt als Band (Mittellinie a bis d, Breite W) mit cremefarbenem Mittelstreifen.
-// Die Kante mit dem kleineren x liegt im Licht (von links oben), die andere im Schatten.
-function grlBlatt(a, c1, c2, d, W, welk, hinten = false) {
+// Blatt als Band (Mittellinie a bis d, Breite W) mit Verlauf von links (Licht) nach rechts und cremefarbenem
+// Mittelstreifen. Hintere Blaetter dunkler und bluelich. Feine Laengsadern beidseits der Mittellinie.
+function grlBlatt(a, c1, c2, d, W, welk, hinten, u) {
   const T = welk ? GRL_WELK : (hinten ? GRL_HINTEN : GRL);
+  const g = vref(u + (welk ? '-w' : (hinten ? '-h' : '-v')));
   const b = blattBand(a, c1, c2, d, W, 12);
   const sn = blattBand(a, c1, c2, d, W * 0.5, 12);
-  const mitteX = (pts) => pts.reduce((s, p) => s + p[0], 0) / pts.length;
-  const [licht, dunkel] = mitteX(b.L) <= mitteX(b.R) ? [b.L, b.R] : [b.R, b.L];
   const form = glattGeschlossen([...b.L, ...b.R.slice().reverse()]);
-  const lichtFlaeche = glattGeschlossen([...b.M, ...licht.slice().reverse()]);
   const streifen = glattGeschlossen([...sn.L, ...sn.R.slice().reverse()]);
-  // Feine Laengsadern auf beiden Seiten, parallel zur Mittellinie
   let adern = '';
-  for (const kante of [licht, dunkel]) {
+  for (const kante of [b.L, b.R]) {
     const pts = b.M.map((m, i) => [m[0] + (kante[i][0] - m[0]) * 0.55, m[1] + (kante[i][1] - m[1]) * 0.55]);
     adern += pfad('M' + pts.slice(1, -1).map(p2).join('L'), `fill="none" stroke="${T.ader}" stroke-width="0.35" stroke-linecap="round" opacity="0.6"`);
   }
-  let out = pfad(form, `fill="${T.schatten}"`) +
-    pfad(lichtFlaeche, `fill="${T.hell}"`) +
-    pfad(streifen, `fill="${T.streifen}"`) +
+  let out = pfad(form, `fill="${g}"`) +
+    pfad(streifen, `fill="${T.streifen}" opacity="0.9"`) +
     adern;
   // Welk: braune Blattspitze
   if (welk) out += pfad(glattGeschlossen([...b.L.slice(9), ...b.R.slice(9).reverse()]), `fill="${T.spitze}" opacity="0.8"`);
@@ -910,10 +1013,6 @@ const GRL_AUSLAEUFER = {
   4: [[1, 27, 16, 16, -18], [-1, -25, 17, -16, -18], [1, 12, 28, 15, 6]],
 };
 
-// Duenner gelblichgruener Stängel (keine Roehre), Strichstaerke 1.2
-function grlAusl(d, welk) {
-  return pfad(d, `fill="none" stroke="${welk ? '#a8a36a' : '#b9c76a'}" stroke-width="1.2" stroke-linecap="round"`);
-}
 
 // Winzige weisse Sternbluete
 function grlSternbluete(x, y, r) {
@@ -926,35 +1025,39 @@ function grlSternbluete(x, y, r) {
 }
 
 // Kindel: kleine Tochterrosette mit Wurzelansatz am Auslaeuferende und einer Sternbluete
-function kindel(E, welk) {
-  // Kindel: Rosette aus sechs kurzen, gestreiften Blaettchen, Wurzelansatz am Auslaeuferende
+function kindel(E, welk, u) {
   let out = linie(E, [E[0] - 0.8, E[1] + 2.5], `stroke="${welk ? '#a6845a' : '#c9b48a'}" stroke-width="0.5" stroke-linecap="round"`);
   for (const [dx, dy, W] of [[-3.5, -2.5, 1.8], [-2, -5.5, 1.9], [0, -6.8, 1.9], [2, -5.5, 1.9], [3.8, -3, 1.8], [0.5, -4, 1.5]]) {
-    out += grlBlatt(E, [E[0] + dx * 0.2, E[1] - 1.5], [E[0] + dx * 0.8, E[1] + dy * 0.8], [E[0] + dx, E[1] + dy], W, welk);
+    out += grlBlatt(E, [E[0] + dx * 0.2, E[1] - 1.5], [E[0] + dx * 0.8, E[1] + dy * 0.8], [E[0] + dx, E[1] + dy], W, welk, false, u);
   }
   if (!welk) out += grlSternbluete(E[0] + 0.5, E[1] - 9, 1.3);
   return out;
 }
 
 function gruenlilie(s, welk) {
+  const u = vlId('gl');
+  const defs = vlDefs(
+    vlLin(`${u}-v`, ['#8fd08a', '#5c9c58', '#3f7a40'], 1, 0),
+    vlLin(`${u}-h`, ['#7fb49a', '#4f8068', '#2f5f4a'], 1, 0),
+    vlLin(`${u}-w`, VL_WELK, 1, 0));
   let ausl = '', kindeln = '', bluete = '';
   for (const [sg, x, y, cx, cy] of GRL_AUSLAEUFER[s]) {
     const E = [x, y];
-    ausl += grlAusl(`M${sp([sg * 4, -1])}Q${sp([cx, cy])} ${sp(E)}`, welk);
-    kindeln += kindel(E, welk);
+    ausl += vlStiel(`M${sp([sg * 4, -1])}Q${sp([cx, cy])} ${sp(E)}`, welk, 1.2);
+    kindeln += kindel(E, welk, u);
   }
   // Blaetter nach Schicht sortieren: hinten zuerst, vorn zuletzt
   const schichten = [[], [], []];
   for (const [xt, bogen, yt, W, schicht] of GRL_BLAETTER[s]) {
     const yE = welk ? yt + 8 : yt, hoehe = welk ? bogen * 0.7 : bogen;
-    schichten[schicht].push(grlBlatt([0, 0], [xt * 0.15, -hoehe * 1.1], [xt * 0.9, -hoehe * 0.75], [xt, yE], W, welk, schicht === 0));
+    schichten[schicht].push(grlBlatt([0, 0], [xt * 0.15, -hoehe * 1.1], [xt * 0.9, -hoehe * 0.75], [xt, yE], W, welk, schicht === 0, u));
   }
   if (s === 4 && !welk) {
     // Bluetenstiel aus der Rosette mit drei winzigen Sternbluete
-    ausl += grlAusl('M0,-1Q-1,-14 -5,-24', welk);
+    ausl += vlStiel('M0,-1Q-1,-14 -5,-24', welk, 1.2);
     bluete = grlSternbluete(-5, -24, 1.8) + grlSternbluete(-8, -20, 1.5) + grlSternbluete(-2.5, -21, 1.5);
   }
-  return ausl + schichten.flat().join('') + kindeln + bluete;
+  return defs + ausl + schichten.flat().join('') + kindeln + bluete;
 }
 
 // ---------- Gluecksfeder (Zamioculcas) ----------
@@ -962,12 +1065,14 @@ function gruenlilie(s, welk) {
 const GLF = { gruen: '#3f7a3c', hell: '#4f8c48', glanz: '#9ccc7a' };
 const GLF_WELK = { gruen: '#a8a36a', hell: '#c4c98f', glanz: '#d8d6a0' };
 
-function glfBlaettchen(L, welk) {
-  const T = welk ? GLF_WELK : GLF;
+// Glaenzendes Fiederblaettchen mit Verlauf, Mittelader und Glanzpunkt auf der Lichtseite
+function glfBlaettchen(L, welk, g, hinten) {
   const R = ovalKante(L, 0.3 * L, false);
-  return zweiseitig(R, T.hell, T.gruen) +
-    linie([0, -L * 0.08], [0, -L * 0.85], `stroke="${welk ? '#7d6a45' : '#2f5a30'}" stroke-width="0.4" opacity="0.5"`) +
-    oval(-0.16 * L, -0.55 * L, 0.1 * L + 0.4, 0.14 * L, `fill="${T.glanz}" opacity="0.9"`) +
+  const o = vlOpt(welk, hinten);
+  return pfad(p2pfad(umriss(R)), `fill="${g}"`) +
+    pfad(p2pfad(R), `fill="${o.schatten}" opacity="0.16"`) +
+    linie([0, -L * 0.08], [0, -L * 0.85], `stroke="${o.rippe}" stroke-width="0.5" opacity="0.6"`) +
+    oval(-0.16 * L, -0.55 * L, 0.1 * L + 0.4, 0.14 * L, `fill="${o.glanz}" opacity="0.45"`) +
     pfad(p2pfad(umriss(R)), `fill="none" ${kontur(welk)}`);
 }
 
@@ -980,20 +1085,27 @@ const GLF_STIELE = {
 };
 
 function gluecksfeder(s, welk) {
-  let stiele = '', blaettchen = '';
+  const u = vlId('gf');
+  const defs = vlDefs(
+    vlLin(`${u}-v`, welk ? VL_WELK : ['#a4dc8a', '#4f8c48', '#2f6236'], 1, 0),
+    vlLin(`${u}-h`, welk ? VL_WELK_H : ['#7fb49a', '#3f7a58', '#27553f'], 1, 0));
+  let stiele = '', hinten = '', vorn = '';
   for (const [a0, S] of GLF_STIELE[s]) {
     const a = welk ? a0 * 1.25 : a0;
     const E = [S * Math.sin(a * RAD) * (welk ? 0.8 : 1), -S * Math.cos(a * RAD) * (welk ? 0.6 : 1)];
     const C = [E[0] * 0.12, E[1] * 0.7];
-    stiele += stiel(`M0,0Q${sp(C)} ${sp(E)}`, welk, 3.8);
-    // Zwei Fiederpaare im oberen Stielbereich, Endblaettchen an der Spitze (Stiele bleiben sichtbar)
+    stiele += vlStiel(`M0,0Q${sp(C)} ${sp(E)}`, welk, 3.8);
+    // Zwei Fiederpaare im oberen Stielbereich (rechte Seite hinten), Endblaettchen an der Spitze
     for (const t of [0.55, 0.8]) {
       const [x, y] = qb([0, 0], C, E, t);
-      for (const sd of [-1, 1]) blaettchen += an(x, y, a + sd * (welk ? 75 : 60), glfBlaettchen(8, welk));
+      for (const sd of [-1, 1]) {
+        const bl = an(x, y, a + sd * (welk ? 75 : 60), glfBlaettchen(8, welk, vref(u + (sd > 0 ? '-h' : '-v')), sd > 0));
+        if (sd > 0) hinten += bl; else vorn += bl;
+      }
     }
-    blaettchen += an(E[0], E[1], a, glfBlaettchen(10, welk));
+    vorn += an(E[0], E[1], a, glfBlaettchen(10, welk, vref(u + '-v'), false));
   }
-  return stiele + blaettchen;
+  return defs + stiele + hinten + vorn;
 }
 
 // ---------- Echeverie ----------
@@ -1014,13 +1126,15 @@ function loeffelKante(L, W) {
   return pts;
 }
 
-function echBlatt(L, W, welk) {
+function echBlatt(L, W, welk, g, hinten) {
   const T = welk ? ECH_WELK : ECH;
   const R = loeffelKante(L, W);
-  return zweiseitig(R, T.hell, T.dunkel) +
+  const o = vlOpt(welk, hinten);
+  return pfad(p2pfad(umriss(R)), `fill="${g}"`) +
+    pfad(p2pfad(R), `fill="${o.schatten}" opacity="0.14"`) +
     pfad(p2pfad(umriss(R.slice(32))), `fill="${T.spitze}" opacity="0.85"`) +
-    linie([0, -L * 0.1], [0, -L * 0.7], `stroke="${T.dunkel}" stroke-width="0.4" opacity="0.6"`) +
-    linie([-W * 0.4, -L * 0.3], [-W * 0.35, -L * 0.6], 'stroke="#ffffff" stroke-width="0.9" stroke-linecap="round" opacity="0.45"') +
+    linie([0, -L * 0.1], [0, -L * 0.7], `stroke="${o.rippe}" stroke-width="0.5" opacity="0.6"`) +
+    linie([-W * 0.4, -L * 0.3], [-W * 0.35, -L * 0.6], 'stroke="#ffffff" stroke-width="0.9" stroke-linecap="round" opacity="0.5"') +
     pfad(p2pfad(umriss(R)), `fill="none" ${kontur(welk)}`);
 }
 
@@ -1033,29 +1147,36 @@ const ECH_RINGE = {
 };
 
 function echeverie(s, welk) {
+  const u = vlId('ec');
+  const defs = vlDefs(
+    vlLin(`${u}-v`, welk ? VL_WELK : ['#c3e0d6', '#a9c8bf', '#6f9a8e']),
+    vlLin(`${u}-h`, welk ? VL_WELK_H : ['#9ab9b0', '#7da398', '#557c72']),
+    vlRad(`${u}-gl`, welk ? ['#d8c0a0', '#b99a7a', '#8a6a50'] : ['#ffc0b0', '#f08a7a', '#c0503f']));
   let blaetter = '';
   const ringe = ECH_RINGE[s];
+  // Aeusserer Ring zuerst (liegt unten), die aeusseren Ringe sind hinten
   for (let r = ringe.length - 1; r >= 0; r--) {
     const [n, L, W, off] = ringe[r];
+    const hinten = r > 0;
     for (let i = 0; i < n; i++) {
       // Blatt liegt flach auf der Rosette, Spitze zeigt radial nach aussen (Drehung um 90 Grad)
-      blaetter += an(0, 0, off + i * 360 / n + 90, echBlatt(L, W, welk));
+      blaetter += an(0, 0, off + i * 360 / n + 90, echBlatt(L, W, welk, vref(u + (hinten ? '-h' : '-v')), hinten));
     }
   }
   let out = gruppe(`transform="translate(0,-2) scale(1,${welk ? 0.45 : 0.55})"`, blaetter);
   if (s === 4) {
     // Gebogener Bluetenstiel mit korallfarbenen Gloeckchen
-    const G = welk ? '#b99a7a' : '#f08a7a', GH = welk ? '#d8c0a0' : '#ffc0b0';
-    out += stiel('M0,-2Q3,-18 7,-34', welk, 1.8);
+    const GH = welk ? '#d8c0a0' : '#ffc0b0';
+    out += vlStiel('M0,-2Q3,-18 7,-34', welk, 1.8);
     for (let j = 0; j < 5; j++) {
       const t = 0.55 + j * 0.11, sd = j % 2 ? 1 : -1;
       const [x, y] = qb([0, -2], [3, -18], [7, -34], t);
       const bx = x + sd * 1.8;
-      out += oval(bx, y, 1.6, 2.3, `transform="rotate(${sd * 30} ${f(bx)} ${f(y)})" fill="${G}" ${kontur(welk)}`) +
+      out += oval(bx, y, 1.6, 2.3, `transform="rotate(${sd * 30} ${f(bx)} ${f(y)})" fill="${vref(u + '-gl')}" ${kontur(welk)}`) +
         kreis(bx - 0.4, y - 0.8, 0.5, `fill="${GH}"`);
     }
   }
-  return out;
+  return defs + out;
 }
 
 // ---------- Geigenfeige (Ficus lyrata) ----------
@@ -1091,19 +1212,22 @@ function geigenKante(L, W) {
   return pts;
 }
 
-function geigenBlatt(L, T, welk) {
+// Geigenblatt mit Verlauf (Licht links), rechte Haelfte im Schatten, Mittelader, Seitenadern, Glanzpunkt
+function geigenBlatt(L, g, welk, hinten) {
   const W = 0.33 * L;
   const R = geigenKante(L, W);
-  let out = zweiseitig(R, T.hell, T.dunkel) +
-    linie([0, -L * 0.02], [0, -L * 0.94], `stroke="${T.ader}" stroke-width="1" stroke-linecap="round" opacity="0.95"`);
+  const o = vlOpt(welk, hinten);
+  let out = pfad(p2pfad(umriss(R)), `fill="${g}"`) +
+    pfad(p2pfad(R), `fill="${o.schatten}" opacity="0.14"`) +
+    linie([0, -L * 0.02], [0, -L * 0.94], `stroke="${o.rippe}" stroke-width="1" stroke-linecap="round" opacity="0.95"`);
   // Helle Seitenadern, je drei pro Seite, von der Mittelader schraeg zum Rand
   for (const t of [0.3, 0.5, 0.7]) {
     const [ex, ey] = R[Math.round(t * 40)];
     for (const sd of [-1, 1]) {
-      out += linie([0, ey], [sd * ex * 0.8, ey - L * 0.1], `stroke="${T.ader}" stroke-width="0.6" stroke-linecap="round" opacity="0.8"`);
+      out += linie([0, ey], [sd * ex * 0.8, ey - L * 0.1], `stroke="${o.rippe}" stroke-width="0.6" stroke-linecap="round" opacity="0.8"`);
     }
   }
-  out += linie([-W * 0.45, -L * 0.42], [-W * 0.5, -L * 0.7], 'stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.4"');
+  out += linie([-W * 0.45, -L * 0.42], [-W * 0.5, -L * 0.7], `stroke="${o.glanz}" stroke-width="1.2" stroke-linecap="round" opacity="0.45"`);
   return out + pfad(p2pfad(umriss(R)), `fill="none" ${kontur(welk)}`);
 }
 
@@ -1127,21 +1251,31 @@ const GEI_STUFE = {
 };
 
 function geigenfeige(s, welk) {
+  const u = vlId('gy');
   const G = GEI_STUFE[s];
+  const defs = vlDefs(
+    vlLin(`${u}-v`, welk ? VL_WELK : ['#8fca7a', '#5e9a52', '#33663a']),
+    vlLin(`${u}-h`, welk ? VL_WELK_H : ['#6f9e88', '#4f7f6a', '#2b5448']),
+    vlLin(`${u}-j`, welk ? VL_WELK : ['#b5e09a', '#7fb069', '#4a8a4a']));
   let out = geigenStamm(G.H, welk);
+  // Blaetter: hintere (rechte Seite) zuerst, vordere danach. Stiel und Blatt je Paar.
+  let hinten = '', vorn = '';
   for (const [t, sd, ang, L0] of G.blaetter) {
     const L = welk ? L0 * 0.8 : L0;
     const y = -G.H * t;
     const qx = sd * (welk ? 3 : 4), qy = y - (welk ? 1 : 2.5);
-    out += stiel(`M0,${f(y)}L${f(qx)},${f(qy)}`, welk, 1.4);
-    out += an(qx, qy, welk ? sd * 125 : sd * ang, geigenBlatt(L, welk ? GEI_WELK : GEI, welk));
+    const istHinten = sd > 0;
+    const teil = vlStiel(`M0,${f(y)}L${f(qx)},${f(qy)}`, welk, 1.4) +
+      an(qx, qy, welk ? sd * 125 : sd * ang, geigenBlatt(L, vref(u + (istHinten ? '-h' : '-v')), welk, istHinten));
+    if (istHinten) hinten += teil; else vorn += teil;
   }
+  out += hinten + vorn;
   // Schopf: junge, hellere Blaetter am Stammende
   for (const a of [-20, 0, 20]) {
     const L = G.schopf * (a === 0 ? 1 : 0.8);
-    out += an(0, -G.H, welk ? a * 3 : a, geigenBlatt(L, welk ? GEI_WELK : GEI_JUNG, welk));
+    out += an(0, -G.H, welk ? a * 3 : a, geigenBlatt(L, vref(u + '-j'), welk, false));
   }
-  return out;
+  return defs + out;
 }
 
 // ---------- Orchidee (Phalaenopsis) ----------

@@ -54,14 +54,6 @@ function grenzen(m, u0, u1, v0, v1) {
   return [Math.min(a[0], b[0]), Math.max(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[1], b[1])];
 }
 
-// Quader in lokalen Koordinaten mit drei Sichtflaechen
-function quader(m, u0, u1, v0, v1, z0, z1, farben) {
-  const [x0, x1, y0, y1] = grenzen(m, u0, u1, v0, v1);
-  return poly([iso(x0, y1, z0), iso(x1, y1, z0), iso(x1, y1, z1), iso(x0, y1, z1)], `fill="${farben.links}" ${KON12}`) +
-    poly([iso(x1, y0, z0), iso(x1, y1, z0), iso(x1, y1, z1), iso(x1, y0, z1)], `fill="${farben.rechts}" ${KON12}`) +
-    poly([iso(x0, y0, z1), iso(x1, y0, z1), iso(x1, y1, z1), iso(x0, y1, z1)], `fill="${farben.oben}" ${KON12}`);
-}
-
 // Kreisbogen (ellipsenfoermig) um (ca, cb) mit Radien ra, rb von Winkel g0 bis g1 in Grad
 function bogen(ca, cb, ra, rb, g0, g1, n = 3) {
   const pts = [];
@@ -105,30 +97,6 @@ function koerper(grund, z0, z1, farben) {
 // Linienzug aus Bildschirmpunkten
 function linienzug(pts, attr) {
   return pfad(pts.map((p, i) => (i ? 'L' : 'M') + p2(p)).join(''), `fill="none" ${attr}`);
-}
-
-// Maserung: Linien entlang der langen Seite auf der Deckflaeche, bei hohen Teilen auch waagerecht auf den Sichtflaechen
-function maser(m, u0, u1, v0, v1, z0, z1, n = 2) {
-  const [x0, x1, y0, y1] = grenzen(m, u0, u1, v0, v1);
-  const lang = x1 - x0 >= y1 - y0;
-  let s = '';
-  for (let k = 1; k <= n; k++) {
-    const t = k / (n + 1);
-    if (lang) {
-      const y = y0 + (y1 - y0) * t;
-      s += linie(iso(x0 + 0.08, y, z1), iso(x1 - 0.08, y, z1), MASER);
-    } else {
-      const x = x0 + (x1 - x0) * t;
-      s += linie(iso(x, y0 + 0.08, z1), iso(x, y1 - 0.08, z1), MASER);
-    }
-  }
-  if (z1 - z0 >= 10) {
-    for (const t of [1 / 3, 2 / 3]) {
-      const z = z0 + (z1 - z0) * t;
-      s += linie(iso(x0, y1, z), iso(x1, y1, z), MASER) + linie(iso(x1, y0, z), iso(x1, y1, z), MASER);
-    }
-  }
-  return s;
 }
 
 // Prisma: Profil [v, z] in der Ebene senkrecht zu u, von u0 bis u1 extrudiert (fuer Seitenwangen und Winkel).
@@ -214,12 +182,6 @@ function beschlag(m, u, v, r, z0, z1) {
   return zylinder(cx, cy, r, z0, z1, MESSING, false);
 }
 
-// Haarnadel-Stuetze in der Ebene u = const: zwei schwarze Staebe von den Fuessen (v 0.1 und 0.9) zur Spitze bei v 0.5
-function haarnadel(m, u, zSpitze) {
-  return bein(m, [u, 0.5, zSpitze], [u, 0.1, 0], 0.022, 0.016, HAARNADEL) +
-    bein(m, [u, 0.5, zSpitze], [u, 0.9, 0], 0.022, 0.016, HAARNADEL);
-}
-
 // Schraeg ausgestelltes Teak-Standbein unter der Platte: oben bei (u, v), Fuss um (du, dv) nach aussen, Messingkappe
 function standBein(m, u, v, du, dv, zOben) {
   // Kappe zuerst, das Bein endet in ihr (sonst liegt die Kappe als Scheibe vor dem Bein)
@@ -284,49 +246,43 @@ function kurveRadius(keys, z) {
 // Geschwungene Teakstrebe aussen an den Koerben: Winkel a (Grad), Radius folgt der Kurve keys. Fuss mit Messingkappe.
 function strebe(m, winkel, keys) {
   const a = (winkel * Math.PI) / 180;
-  const N = 48, zUnten = keys[0][0], zOben = keys[keys.length - 1][0];
+  // Die Strebe endet oben in der Messingkappe (Kappe zuerst gezeichnet, Strebe beginnt auf deren Oberkante)
+  const N = 48, zUnten = KAPPE_H, zOben = keys[keys.length - 1][0];
   const pts = [];
   for (let k = 0; k <= N; k++) {
     const z = zUnten + ((zOben - zUnten) * k) / N;
     const R = kurveRadius(keys, z);
     pts.push(pkt(m, 0.5 + R * Math.cos(a), 0.5 + R * Math.sin(a), z));
   }
-  const R0 = keys[0][1];
-  return rohr(pts, 2.6, TEAK, '', '#6b4a3a') + beschlag(m, 0.5 + R0 * Math.cos(a), 0.5 + R0 * Math.sin(a), 0.05, 0, 3);
-}
-
-// Gebogenes Rohr entlang von Bildschirmpunkten: Kontur, Koerper in farben.links, Glanzlinie in farben.oben
-function rohr(punkte, dicke, farben, zusatz = '', kontur = '#2b3f33') {
-  const d = punkte.map((p, i) => (i ? 'L' : 'M') + p2(p)).join('');
-  const hell = punkte.map((p, i) => (i ? 'L' : 'M') + p2([p[0] - dicke * 0.25, p[1]])).join('');
-  return pfad(d, `fill="none" stroke="${kontur}" stroke-width="${f(dicke + 1.4)}" stroke-linejoin="round" stroke-linecap="round"`) +
-    pfad(d, `fill="none" stroke="${farben.links}" stroke-width="${dicke}" stroke-linejoin="round" stroke-linecap="round"`) +
-    zusatz +
-    pfad(hell, `fill="none" stroke="${farben.oben}" stroke-width="${f(dicke * 0.3)}" stroke-linecap="round" opacity="0.9"`);
+  const R0 = kurveRadius(keys, KAPPE_H);
+  return messingKappe(m, 0.5 + R0 * Math.cos(a), 0.5 + R0 * Math.sin(a), KAPPE_R, 0, KAPPE_H) + rohrVerlauf(pts, 2.6);
 }
 
 // Flacher Korb (runde Ablage): Wand mit schraeger Kreuzschraffur, oberer Rand als Band, Oeffnung mit Boden
 function korb(cx, cy, r, z0, z1) {
   const id = 'rattan-' + (++musterZaehler);
+  const rat = verlaeufe('rattan', PAL.rattan.oben, PAL.rattan.links, PAL.rattan.rechts);
   const [ox, oy] = iso(cx, cy, 0);
   const rx = 48 * Math.SQRT2 * r, ry = 24 * Math.SQRT2 * r;
   const yT = oy - z1, yB = oy - z0;
   const seite = `M${p2([ox - rx, yT])}A${f(rx)},${f(ry)} 0 0 0 ${p2([ox + rx, yT])}L${p2([ox + rx, yB])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox - rx, yB])}Z`;
   const schattenseite = `M${p2([ox, yT - ry])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox, yT + ry])}L${p2([ox, yB + ry])}A${f(rx)},${f(ry)} 0 0 0 ${p2([ox, yB - ry])}Z`;
+  const unterkante = `M${p2([ox + rx, yB])}A${f(rx)},${f(ry)} 0 0 1 ${p2([ox - rx, yB])}`;
   const rxi = rx * 0.8, ryi = ry * 0.8, tiefe = ry * 0.18;
-  let s = `<defs><pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse">` +
-    `<path d="M0,0 L5,5 M5,0 L0,5" stroke="${RATTAN.rechts}" stroke-width="0.9" fill="none" opacity="0.9"/></pattern>` +
+  let s = rat.defs + `<defs><pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse">` +
+    `<path d="M0,0 L5,5 M5,0 L0,5" stroke="${RATTAN.rechts}" stroke-width="0.9" fill="none" opacity="0.55"/></pattern>` +
     `<clipPath id="${id}-oeff"><ellipse cx="${f(ox)}" cy="${f(yT)}" rx="${f(rxi)}" ry="${f(ryi)}"/></clipPath></defs>`;
-  // Wand: Licht links, Schatten rechts, darueber die Kreuzschraffur
-  s += pfad(seite, `fill="${RATTAN.links}"`) + pfad(schattenseite, `fill="${RATTAN.rechts}"`);
+  // Wand: Verlauf links (Licht) und rechts (Schatten), Geflecht darueber, dunkle Unterkante
+  s += pfad(seite, `fill="${rat.links}"`) + pfad(schattenseite, `fill="${rat.rechts}"`);
   s += pfad(seite, `fill="url(#${id})"`) + pfad(seite, `fill="none" ${KON12}`);
-  // Oberseite: Rand als dunkleres Band mit Schraffur
-  s += oval(ox, yT, rx, ry, `fill="${RATTAN.rechts}" ${KON12}`);
+  s += pfad(unterkante, 'fill="none" stroke="#5e3418" stroke-width="1" stroke-linecap="round" opacity="0.6"');
+  // Oberseite: Rand mit Verlauf und Geflecht
+  s += oval(ox, yT, rx, ry, `fill="${rat.oben}" ${KON12}`);
   s += oval(ox, yT, rx, ry, `fill="url(#${id})"`);
   // Oeffnung: dunkles Inneres, der Boden liegt etwas tiefer und ist abgeschnitten
-  s += oval(ox, yT, rxi, ryi, 'fill="#8f5a35" stroke="#6b4a3a" stroke-width="0.8"');
+  s += oval(ox, yT, rxi, ryi, 'fill="#7a4a2a" stroke="#6b4a3a" stroke-width="0.8"');
   s += `<g clip-path="url(#${id}-oeff)">` +
-    oval(ox, yT + tiefe, rxi, ryi, `fill="${RATTAN.rechts}"`) +
+    oval(ox, yT + tiefe, rxi, ryi, `fill="${rat.rechts}"`) +
     oval(ox, yT + tiefe, rxi, ryi, `fill="url(#${id})"`) + `</g>`;
   return s;
 }
@@ -523,20 +479,120 @@ function tischWeissTeile(gx, gy, drehung) {
   return { teile: T, zs: [17, 76] };
 }
 
-// Leiterregal: zwei schraege Teak-Holme (hinten hoeher), drei Stufenbretter mit Messingbeschlaegen
+// ---------- Phase 2 Rest: Verlaeufe, Metall, Stein, Rattan (eigene Zaehler, eindeutige Ids) ----------
+let verlaufZaehler = 0;
+
+// Drei Verlaeufe (oben, links, rechts) fuer eine Flaeche; je Seite [helle Farbe oben, dunkle Farbe unten].
+// Liefert fill-Werte url(#id) und das zugehoerige <defs> (in fv.defs), Ids sind durch den Zaehler eindeutig.
+function verlaeufe(name, oben, links, rechts) {
+  const n = ++verlaufZaehler;
+  const defs = [];
+  const fv = {};
+  for (const [seite, paar] of [['oben', oben], ['links', links], ['rechts', rechts]]) {
+    const id = `mo-${n}-${name}-${seite}`;
+    defs.push(`<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${paar[0]}"/><stop offset="1" stop-color="${paar[1]}"/></linearGradient>`);
+    fv[seite] = `url(#${id})`;
+  }
+  fv.defs = `<defs>${defs.join('')}</defs>`;
+  return fv;
+}
+
+// Farbpaare fuer die neuen Teile (Licht von links oben: oben hell, links mittel, rechts dunkel)
+const PAL = {
+  stein: { oben: ['#f8f0e0', '#ebdfc6'], links: ['#e6d8ba', '#d2bf9a'], rechts: ['#c0a882', '#a88f66'] },
+  beton: { oben: ['#d4d4cf', '#bfbfb9'], links: ['#b6b6b0', '#9d9d97'], rechts: ['#8c8c86', '#76766f'] },
+  messing: { oben: ['#f6e6a8', '#dbb860'], links: ['#dfbc62', '#b98f3a'], rechts: ['#a27a2c', '#7b5c20'] },
+  rattan: { oben: ['#f4d6a2', '#e2b074'], links: ['#e0b078', '#c48d55'], rechts: ['#a86f3c', '#84562a'] },
+  petrol: { oben: ['#76bcbf', '#5aa3a7'], links: ['#4a8f93', '#2f6f73'], rechts: ['#225a5d', '#1a4a4d'] },
+  dunkel: { oben: ['#b06f3e', '#9a5f33'], links: ['#8a5228', '#744420'], rechts: ['#653b1a', '#4e2d13'] },
+  senf: { oben: ['#f1cd7e', '#e2aa4c'], links: ['#dca640', '#c18b2d'], rechts: ['#a57824', '#86611e'] },
+};
+
+// Quaderkoerper mit Verlaeufen, Lichtkante oben vorn, dunkle Fuge unten (wie teakKoerper, Farben einstellbar)
+function plastKoerper(grund, z0, z1, fv, licht = '#fff6e2', fuge = '#3d2412') {
+  const n = grund.length;
+  const cx = grund.reduce((s, p) => s + p[0], 0) / n, cy = grund.reduce((s, p) => s + p[1], 0) / n;
+  let s = '', kanten = '';
+  for (let i = 0; i < n; i++) {
+    const p = grund[i], q = grund[(i + 1) % n];
+    let nx = q[1] - p[1], ny = -(q[0] - p[0]);
+    const mx = (p[0] + q[0]) / 2 - cx, my = (p[1] + q[1]) / 2 - cy;
+    if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+    if (nx + ny <= 0) continue;
+    const farbe = Math.abs(nx) > Math.abs(ny) ? fv.rechts : fv.links;
+    s += poly([iso(p[0], p[1], z0), iso(q[0], q[1], z0), iso(q[0], q[1], z1), iso(p[0], p[1], z1)], `fill="${farbe}" ${KON12}`);
+    kanten += linie(iso(p[0], p[1], z1), iso(q[0], q[1], z1), `stroke="${licht}" stroke-width="1" stroke-linecap="round" opacity="0.85"`) +
+      linie(iso(p[0], p[1], z0), iso(q[0], q[1], z0), `stroke="${fuge}" stroke-width="1" stroke-linecap="round" opacity="0.5"`);
+  }
+  return s + poly(grund.map(([x, y]) => iso(x, y, z1)), `fill="${fv.oben}" ${KON12}`) + kanten;
+}
+
+// Rechteck in lokalen Koordinaten (u0 bis u1, v0 bis v1) als Grundflaeche in Feldpunkten
+function viereck(m, u0, u1, v0, v1) {
+  return [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => feldPunkt(m.gx, m.gy, m.drehung, u, v));
+}
+
+// Messingkappe mit Verlauf (eigene defs), Zylinder um (u, v) von z0 bis z1
+function messingKappe(m, u, v, r, z0, z1) {
+  const fv = verlaeufe('messing', PAL.messing.oben, PAL.messing.links, PAL.messing.rechts);
+  const [cx, cy] = feldPunkt(m.gx, m.gy, m.drehung, u, v);
+  return fv.defs + zylinder(cx, cy, r, z0, z1, fv, false);
+}
+
+// Metallstab von oben (Punkt mit z) zum Fuss: Verlauf quer zur Laenge, helle Glanzlinie links
+function stabMetall(m, oben, unten, rO, rU) {
+  const n = ++verlaufZaehler;
+  const ecken = (c, r) => [[-r, -r], [r, -r], [r, r], [-r, r]].map(([du, dv]) => pkt(m, c[0] + du, c[1] + dv, c[2]));
+  const huelle = konvex([...ecken(oben, rO), ...ecken(unten, rU)]);
+  const xs = huelle.map((p) => p[0]);
+  const id = `mo-${n}-stab`;
+  const defs = `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${f(Math.min(...xs))}" y1="0" x2="${f(Math.max(...xs))}" y2="0">` +
+    '<stop offset="0" stop-color="#2a2d33"/><stop offset="0.3" stop-color="#7d838d"/><stop offset="0.62" stop-color="#4a4f58"/><stop offset="1" stop-color="#1c1e23"/></linearGradient></defs>';
+  const a = pkt(m, oben[0], oben[1], oben[2]), b = pkt(m, unten[0], unten[1], unten[2]);
+  return defs + poly(huelle, `fill="url(#${id})" ${KON12}`) +
+    linie([a[0] - 0.8, a[1]], [b[0] - 0.4, b[1]], 'stroke="#d5dae2" stroke-width="0.8" stroke-linecap="round" opacity="0.7"');
+}
+
+// Haarnadel-Stuetze aus Metall in der Ebene u: Spitze bei (u, 0.5, zSpitze), Fuesse bei v 0.1 und 0.9 mit Messingkappen.
+// Erst beide Kappen, dann die Beine, die in den Kappen enden (kappenAnsatz)
+function haarnadelMetall(m, u, zSpitze) {
+  const oben = [u, 0.5, zSpitze];
+  let s = messingKappe(m, u, 0.1, KAPPE_R, 0, KAPPE_H) + messingKappe(m, u, 0.9, KAPPE_R, 0, KAPPE_H);
+  for (const v of [0.1, 0.9]) s += stabMetall(m, oben, kappenAnsatz(oben, [u, v]), 0.022, 0.02);
+  return s;
+}
+
+// Gebogenes Rohr mit Verlauf quer zur Laengsrichtung (Licht links, Schatten rechts), Ton im userSpaceOnUse
+function rohrVerlauf(punkte, dicke) {
+  const n = ++verlaufZaehler;
+  const d = punkte.map((p, i) => (i ? 'L' : 'M') + p2(p)).join('');
+  const xs = punkte.map((p) => p[0]);
+  const id = `mo-${n}-rohr`;
+  const defs = `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${f(Math.min(...xs) - dicke)}" y1="0" x2="${f(Math.max(...xs) + dicke)}" y2="0">` +
+    '<stop offset="0" stop-color="#b8743d"/><stop offset="0.35" stop-color="#e3a96a"/><stop offset="0.7" stop-color="#b8743d"/><stop offset="1" stop-color="#6e4020"/></linearGradient></defs>';
+  return defs + pfad(d, `fill="none" stroke="#6b4a3a" stroke-width="${f(dicke + 1.4)}" stroke-linejoin="round" stroke-linecap="round"`) +
+    pfad(d, `fill="none" stroke="url(#${id})" stroke-width="${dicke}" stroke-linejoin="round" stroke-linecap="round"`);
+}
+
+// Leiterregal: zwei schraege Teak-Holme (hinten hoeher), drei Stufenbretter mit Messingbeschlaegen.
+// Die Stufen sind so tief, dass die Pflanzen (dy plus/minus 0.3) ganz auf dem Brett stehen. Vorn ragen sie etwas ueber den Holm.
 function leiterTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
+  const fv = teakVerlaeufe();
   const vf = (z) => 0.95 - 0.55 * z / 150; // Vorderkante der Holme je Hoehe: lehnt nach hinten
   const holm = [[vf(0), 0], [vf(150), 150], [vf(150) - 0.1, 150], [vf(0) - 0.1, 0]];
-  const T = [[0, schatten(m, 1, 1)], [0, prisma(m, 0, 0.1, holm, TEAK)]];
-  // Stufen von hinten (oben) nach vorn (unten): Vorderkante buendig an den Holmen, Tiefe nimmt nach oben ab
-  for (const [zk, D, k] of [[130, 0.46, 2], [85, 0.52, 1], [40, 0.62, 0]]) {
-    const vn = vf(zk), vm = vn - D / 2;
-    let b = koerper(platte(m, 0.1, 0.9, vn - D, vn, 0.03), zk, zk + 4, TEAK) + maser(m, 0.1, 0.9, vn - D, vn, zk, zk + 4, 2);
-    for (const u of [0.22, 0.78]) b += beschlag(m, u, vm, 0.03, zk + 4, zk + 5.5);
+  const T = [[0, fv.defs + teakSchatten(m, 1, 1)], [0, prisma(m, 0, 0.1, holm, fv)]];
+  // Stufen von hinten (oben) nach vorn (unten): [Hoehe, hintere Kante, vordere Kante, Ebene]
+  for (const [zk, hinten, vorn, k] of [[130, 0, 0.543, 2], [85, 0.06, 0.68, 1], [40, 0.183, 0.803, 0]]) {
+    let b = plastKoerper(platte(m, 0.1, 0.9, hinten, vorn, 0.03), zk, zk + 4, fv);
+    b += teakMaser(m, 0.16, 0.84, hinten + 0.05, vorn - 0.05, zk + 4, 2, 50 + k);
+    // Dunkle Fuge, wo die Stufe an die Holme stoesst
+    for (const u of [0.1, 0.9]) b += linie(pkt(m, u, (hinten + vorn) / 2, zk), pkt(m, u, (hinten + vorn) / 2, zk + 4), `stroke="${TEAK_FUGE}" stroke-width="1.2" stroke-linecap="round" opacity="0.8"`);
+    // Messingbeschlaege vorn auf der Stufe
+    for (const u of [0.22, 0.78]) b += messingKappe(m, u, vorn - 0.06, 0.03, zk + 4, zk + 5.5);
     T.push([k, b]);
   }
-  T.push([2, prisma(m, 0.9, 1, holm, TEAK)]);
+  T.push([2, prisma(m, 0.9, 1, holm, fv)]);
   return { teile: T, zs: [44, 89, 134] };
 }
 
@@ -544,38 +600,44 @@ function leiterTeile(gx, gy, drehung) {
 function hockerZeichnen(gx, gy) {
   const m = { gx, gy, drehung: 0 };
   const cx = gx + 0.5, cy = gy + 0.5;
-  let s = gruppe(tr(iso(cx, cy, 0)), bodenschatten(34, 17));
-  // Beine: hinten zuerst, das vordere (90 Grad) zuletzt
-  for (const w of [210, 330, 90]) {
+  const fv = teakVerlaeufe();
+  // Bein je Winkel: oben bei Radius 0.3 unter der Sitzflaeche, Fuss bei Radius 0.46 (mit Messingkappe)
+  const bein = (w) => {
     const a = w * Math.PI / 180;
     const c = Math.cos(a), sn = Math.sin(a);
-    s += beschlag(m, 0.5 + 0.46 * c, 0.5 + 0.46 * sn, KAPPE_R, 0, KAPPE_H);
-    s += bein(m, [0.5 + 0.3 * c, 0.5 + 0.3 * sn, 41], kappenAnsatz([0.5 + 0.3 * c, 0.5 + 0.3 * sn, 41], [0.5 + 0.46 * c, 0.5 + 0.46 * sn]), 0.05, 0.022, TEAK);
-  }
-  // Sitzflaeche als runde Teakscheibe
-  s += zylinder(cx, cy, 0.42, 41, 45, TEAK);
+    return teakStandBein(m, 0.5 + 0.3 * c, 0.5 + 0.3 * sn, 0.16 * c, 0.16 * sn, 41);
+  };
+  // Kontaktschatten, Beine (hinten zuerst), Sitzflaeche zuletzt: die Beine enden unter der Platte
+  let s = fv.defs + teakSchatten(m, 1, 1);
+  s += bein(210) + bein(330) + bein(90);
+  s += zylinder(cx, cy, 0.42, 41, 45, fv);
   return s;
 }
 
 // Teakkiste: niedrige Kiste mit abgerundeten Kanten, senffarbenes Band in der Mitte, flacher Deckel
 function kisteZeichnen(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 1, 1);
-  s += koerper(platte(m, 0.04, 0.96, 0.04, 0.96, 0.1), 0, 12, TEAK);
-  s += koerper(platte(m, 0.04, 0.96, 0.04, 0.96, 0.1), 12, 16, SENF);
-  s += koerper(platte(m, 0.04, 0.96, 0.04, 0.96, 0.1), 16, 27, TEAK);
-  s += koerper(platte(m, 0, 1, 0, 1, 0.08), 27, 31, TEAK) + maser(m, 0.1, 0.9, 0.1, 0.9, 27, 31, 2);
+  const fv = teakVerlaeufe();
+  const senf = verlaeufe('senf', PAL.senf.oben, PAL.senf.links, PAL.senf.rechts);
+  let s = fv.defs + senf.defs + teakSchatten(m, 1, 1);
+  // Unterteil, senffarbenes Band, Oberteil, flacher Deckel mit Maserung (Platz oben auf dem Deckel)
+  s += teakKoerper(platte(m, 0.04, 0.96, 0.04, 0.96, 0.1), 0, 12, fv);
+  s += teakKoerper(platte(m, 0.04, 0.96, 0.04, 0.96, 0.1), 12, 16, senf);
+  s += teakKoerper(platte(m, 0.04, 0.96, 0.04, 0.96, 0.1), 16, 27, fv);
+  s += teakKoerper(platte(m, 0, 1, 0, 1, 0.08), 27, 31, fv) + teakMaser(m, 0.12, 0.88, 0.12, 0.88, 31, 2, 41);
   return s;
 }
 
 // Terrazzo-Sockel: Sockel und Saeule aus Terrazzo (Creme mit Splittern in Senf, Petrol, Orange, Grau)
 function steinZeichnen(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 1, 1);
-  s += koerper(platte(m, 0, 1, 0, 1, 0.04), 0, 4, TERRAZZO);
-  s += koerper(platte(m, 0.08, 0.92, 0.08, 0.92, 0.1), 4, 52, TERRAZZO);
+  const stein = verlaeufe('stein', PAL.stein.oben, PAL.stein.links, PAL.stein.rechts);
+  const licht = '#fffaf0', fuge = '#8a7a60';
+  let s = stein.defs + teakSchatten(m, 1, 1);
+  s += plastKoerper(platte(m, 0, 1, 0, 1, 0.04), 0, 4, stein, licht, fuge);
+  s += plastKoerper(platte(m, 0.08, 0.92, 0.08, 0.92, 0.1), 4, 52, stein, licht, fuge);
   s += sprenkel(m, 0.08, 0.92, 0.08, 0.92, 4, 52, 34, 31, 0, SPLITTER, 1.4);
-  s += koerper(platte(m, 0, 1, 0, 1, 0.06), 52, 56, TERRAZZO);
+  s += plastKoerper(platte(m, 0, 1, 0, 1, 0.06), 52, 56, stein, licht, fuge);
   s += sprenkel(m, 0.02, 0.98, 0.02, 0.98, 56, 56, 8, 37, 1, SPLITTER, 1.1);
   return s;
 }
@@ -583,47 +645,58 @@ function steinZeichnen(gx, gy, drehung) {
 // Haarnadel-Regal: Teakbretter auf schwarzen Haarnadel-Stuetzen an beiden Enden
 function metallTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
+  const fv = teakVerlaeufe();
   const zb = [18, 76, 134]; // Unterkanten der Bretter
-  const T = [[0, schatten(m, 2, 1)], [0, haarnadel(m, 0.1, 141)]];
+  // Kontaktschatten und hintere Haarnadel zuerst, dann die Bretter von unten nach oben, vordere Haarnadel zuletzt
+  const T = [[0, fv.defs + teakSchatten(m, 2, 1)], [0, haarnadelMetall(m, 0.1, 141)]];
   zb.forEach((z, k) => {
-    T.push([k, koerper(platte(m, 0.02, 1.98, 0.08, 0.92, 0.04), z, z + 4, TEAK) + maser(m, 0.02, 1.98, 0.08, 0.92, z, z + 4, 2)]);
+    // Bretter etwas tiefer als vorher (v 0.08 bis 0.92): Pflanzen (dy 0.5 plus/minus 0.3) stehen ganz auf dem Brett
+    T.push([k, plastKoerper(platte(m, 0.02, 1.98, 0.08, 0.92, 0.04), z, z + 4, fv) + teakMaser(m, 0.1, 1.9, 0.2, 0.8, z + 4, 2, 61 + k)]);
   });
-  T.push([2, haarnadel(m, 1.9, 141)]);
+  T.push([2, haarnadelMetall(m, 1.9, 141)]);
   return { teile: T, zs: [22, 80, 138] };
 }
 
 // Brett auf Betonsteinen: Teakbrett auf zwei grauen Betonsteinen mit Poren, leicht schief
 function ziegelbrettZeichnen(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  let s = schatten(m, 2, 1);
+  const beton = verlaeufe('beton', PAL.beton.oben, PAL.beton.links, PAL.beton.rechts);
+  const holz = teakVerlaeufe();
+  let s = beton.defs + holz.defs + teakSchatten(m, 2, 1);
   for (const uc of [0.5, 1.5]) {
-    s += koerper(platte(m, uc - 0.24, uc + 0.24, 0.26, 0.74, 0.03), 0, 18, BETON);
-    s += sprenkel(m, uc - 0.24, uc + 0.24, 0.26, 0.74, 0, 18, 22, 7 + Math.round(uc * 10), 0.3, POREN, 0.9);
+    s += plastKoerper(platte(m, uc - 0.24, uc + 0.24, 0.18, 0.82, 0.03), 0, 18, beton, '#f2f2ec', '#4d4d48');
+    s += sprenkel(m, uc - 0.24, uc + 0.24, 0.18, 0.82, 0, 18, 22, 7 + Math.round(uc * 10), 0.3, POREN, 0.9);
   }
   // Brett: Oberseite faellt leicht von u = 0 nach u = 2, Unterseite liegt flach auf den Steinen
+  // Tiefer als vorher (v 0.12 bis 0.88), damit die Pflanze (dy 0.5 plus/minus 0.3) ganz aufliegt
   const zo = (u) => 25.4 - 0.4 * u;
   const zu = 18;
   const A = (u, v, z) => pkt(m, u, v, z);
-  const [u0, u1, v0, v1] = [0.02, 1.98, 0.2, 0.8];
-  s += poly([A(u0, v0, zo(u0)), A(u1, v0, zo(u1)), A(u1, v1, zo(u1)), A(u0, v1, zo(u0))], `fill="${TEAK.oben}" ${KON12}`);
-  s += poly([A(u0, v1, zu), A(u1, v1, zu), A(u1, v1, zo(u1)), A(u0, v1, zo(u0))], `fill="${farbeV(m, TEAK)}" ${KON12}`);
-  s += poly([A(u1, v0, zu), A(u1, v1, zu), A(u1, v1, zo(u1)), A(u1, v0, zo(u1))], `fill="${farbeU(m, TEAK)}" ${KON12}`);
-  // Maserung in Laengsrichtung
+  const [u0, u1, v0, v1] = [0.02, 1.98, 0.12, 0.88];
+  s += poly([A(u0, v0, zo(u0)), A(u1, v0, zo(u1)), A(u1, v1, zo(u1)), A(u0, v1, zo(u0))], `fill="${holz.oben}" ${KON12}`);
+  s += poly([A(u0, v1, zu), A(u1, v1, zu), A(u1, v1, zo(u1)), A(u0, v1, zo(u0))], `fill="${farbeV(m, holz)}" ${KON12}`);
+  s += poly([A(u1, v0, zu), A(u1, v1, zu), A(u1, v1, zo(u1)), A(u1, v0, zo(u1))], `fill="${farbeU(m, holz)}" ${KON12}`);
+  // Lichtkante an der vorderen Oberkante, Maserung in Laengsrichtung
+  s += linie(A(u0, v1, zo(u0)), A(u1, v1, zo(u1)), `stroke="${TEAK_LICHT}" stroke-width="1" stroke-linecap="round" opacity="0.85"`);
   for (const v of [0.36, 0.62]) {
-    s += linienzug([0.1, 0.5, 0.9, 1.3, 1.7, 1.9].map((u) => A(u, v, zo(u))), MASER);
+    s += linienzug([0.1, 0.5, 0.9, 1.3, 1.7, 1.9].map((u) => A(u, v, zo(u))), `stroke="${TEAK_MASER[1]}" stroke-width="0.7" stroke-linecap="round" opacity="0.5"`);
   }
   return s;
 }
 
-// Gaertnertisch Haarnadel: Teakplatte auf zwei Haarnadel-Gestellen, untere Ablage aus drei Teaklatten
+// Gaertnertisch Haarnadel: Teakplatte auf zwei Haarnadel-Gestellen, untere Ablage als durchgehendes Brett mit Lattenfugen
 function gaertnertischTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  const T = [[0, schatten(m, 2, 1)], [0, haarnadel(m, 0.12, 70)]];
-  for (const [v0, v1] of [[0.1, 0.32], [0.36, 0.58], [0.62, 0.84]]) {
-    T.push([0, koerper(platte(m, 0.12, 1.88, v0, v1, 0.02), 18, 21, TEAK)]);
+  const fv = teakVerlaeufe();
+  const T = [[0, fv.defs + teakSchatten(m, 2, 1)], [0, haarnadelMetall(m, 0.12, 70)]];
+  // Untere Ablage: ein Brett von v 0.08 bis 0.92 (vorher drei Latten), Fugen zeigen die Latten
+  let unten = plastKoerper(platte(m, 0.12, 1.88, 0.08, 0.92, 0.02), 18, 21, fv);
+  for (const v of [0.36, 0.64]) {
+    unten += linie(pkt(m, 0.12, v, 21), pkt(m, 1.88, v, 21), `stroke="${TEAK_FUGE}" stroke-width="0.9" stroke-linecap="round" opacity="0.6"`);
   }
-  T.push([1, haarnadel(m, 1.88, 70)]);
-  T.push([1, koerper(platte(m, 0, 2, 0, 1, 0.08), 74, 80, TEAK) + maser(m, 0, 2, 0, 1, 74, 80, 3)]);
+  T.push([0, unten]);
+  T.push([1, haarnadelMetall(m, 1.88, 70)]);
+  T.push([1, plastKoerper(platte(m, 0, 2, 0, 1, 0.08), 74, 80, fv) + teakMaser(m, 0.1, 1.9, 0.2, 0.8, 80, 3, 71)]);
   return { teile: T, zs: [21, 80] };
 }
 
@@ -632,12 +705,18 @@ function gaertnertischTeile(gx, gy, drehung) {
 // Leiste an der Wand, zwei Teakbretter auf Petrol-Konsolen in 110 und 160 Höhe.
 function wandregalTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  const T = [[0, quader(m, 0, 2, 0, 0.03, 100, 108, TEAK_DUNKEL)]];
+  const fv = teakVerlaeufe();
+  const dunkel = verlaeufe('dunkel', PAL.dunkel.oben, PAL.dunkel.links, PAL.dunkel.rechts);
+  const petrol = verlaeufe('petrol', PAL.petrol.oben, PAL.petrol.links, PAL.petrol.rechts);
+  // Rueckwand (dunkles Holz) zuerst, dann je Brett: Konsolen, Brett darueber
+  const T = [[0, dunkel.defs + petrol.defs + fv.defs + plastKoerper(viereck(m, 0, 2, 0, 0.03), 100, 108, dunkel)]];
   [110, 160].forEach((zb, k) => {
     for (const uc of [0.3, 1.7]) {
-      T.push([k, prisma(m, uc - 0.04, uc + 0.04, [[0.03, zb], [0.5, zb], [0.5, zb - 4], [0.1, zb - 20], [0.03, zb - 20]], PETROL)]);
+      // Konsole bis v 0.56, damit sie unter dem Brett bis fast zur Vorderkante reicht
+      T.push([k, prisma(m, uc - 0.04, uc + 0.04, [[0.03, zb], [0.56, zb], [0.56, zb - 4], [0.1, zb - 20], [0.03, zb - 20]], petrol)]);
     }
-    T.push([k, koerper(platte(m, 0, 2, 0.03, 0.55, 0.04), zb, zb + 4, TEAK) + maser(m, 0, 2, 0.03, 0.55, zb, zb + 4, 2)]);
+    // Brett tiefer als vorher (v 0 bis 0.62): Pflanzen mit dy 0.3 stehen ganz darauf
+    T.push([k, plastKoerper(viereck(m, 0, 2, 0, 0.62), zb, zb + 4, fv) + teakMaser(m, 0.1, 1.9, 0.14, 0.5, zb + 4, 2, 81 + k)]);
   });
   return { teile: T, zs: [114, 164] };
 }
@@ -645,11 +724,15 @@ function wandregalTeile(gx, gy, drehung) {
 // Kleines Wandbord: ein Brett für ein Feld an der Rückwand, in 130 Höhe
 function wandbordTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
-  const T = [[0, quader(m, 0.05, 0.95, 0, 0.03, 120, 127, TEAK_DUNKEL)]];
+  const fv = teakVerlaeufe();
+  const dunkel = verlaeufe('dunkel', PAL.dunkel.oben, PAL.dunkel.links, PAL.dunkel.rechts);
+  const petrol = verlaeufe('petrol', PAL.petrol.oben, PAL.petrol.links, PAL.petrol.rechts);
+  // Rueckwand, Konsolen, Brett. Brett tiefer als vorher (v 0 bis 0.6), Pflanze (dy 0.3) steht ganz darauf
+  const T = [[0, dunkel.defs + petrol.defs + fv.defs + plastKoerper(viereck(m, 0.05, 0.95, 0, 0.03), 120, 127, dunkel)]];
   for (const uc of [0.22, 0.78]) {
-    T.push([0, prisma(m, uc - 0.04, uc + 0.04, [[0.03, 130], [0.48, 130], [0.48, 126], [0.1, 112], [0.03, 112]], PETROL)]);
+    T.push([0, prisma(m, uc - 0.04, uc + 0.04, [[0.03, 130], [0.56, 130], [0.56, 126], [0.1, 112], [0.03, 112]], petrol)]);
   }
-  T.push([0, koerper(platte(m, 0.04, 0.96, 0.03, 0.52, 0.04), 130, 134, TEAK) + maser(m, 0.04, 0.96, 0.03, 0.52, 130, 134, 1)]);
+  T.push([0, plastKoerper(viereck(m, 0.04, 0.96, 0, 0.6), 130, 134, fv) + teakMaser(m, 0.1, 0.9, 0.12, 0.48, 134, 1, 91)]);
   return { teile: T, zs: [134] };
 }
 
@@ -657,14 +740,15 @@ function wandbordTeile(gx, gy, drehung) {
 function etagereTeile(gx, gy, drehung) {
   const m = { gx, gy, drehung };
   const [cx, cy] = feldPunkt(gx, gy, drehung, 0.5, 0.5);
-  // Strebenkurve: Radius (Felder) ueber der Hoehe, aussen an den Koerben vorbei, unten Fuss
-  const KEYS = [[2, 0.5], [20, 0.6], [40, 0.56], [74, 0.45], [104, 0.31]];
-  // Streben so, dass keine genau auf der Bildmitte steht (sonst wirkt sie wie eine Mittelsaeule).
-  // Hintere Strebe zuerst, dann die Koerbe von unten nach oben, zuletzt die vordere Strebe
-  const T = [[0, schatten(m, 1, 1)], [0, strebe(m, 240, KEYS) + strebe(m, 120, KEYS)]];
-  [[0.46, 40], [0.36, 74], [0.27, 108]].forEach(([r, z1], k) => {
+  // Strebenkurve: Radius (Felder) ueber der Hoehe, aussen an den Koerben vorbei, unten Fuss (Form nach oben schmaler)
+  const KEYS = [[2, 0.5], [20, 0.6], [40, 0.56], [74, 0.47], [104, 0.36]];
+  // Koerbe nach oben kleiner, der oberste etwas breiter als frueher, damit der Topf darauf Platz hat
+  // Reihenfolge: hintere Strebe zuerst, dann die Koerbe von unten nach oben, danach die vorderen Streben
+  const T = [[0, teakSchatten(m, 1, 1) + strebe(m, 240, KEYS)]];
+  [[0.46, 40], [0.38, 74], [0.31, 108]].forEach(([r, z1], k) => {
     T.push([k, korb(cx, cy, r, z1 - 5, z1)]);
   });
+  T.push([1, strebe(m, 120, KEYS)]);
   T.push([2, strebe(m, 0, KEYS)]);
   return { teile: T, zs: [40, 74, 108] };
 }

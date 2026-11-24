@@ -42,12 +42,46 @@ function glatt(pts) {
   return d + 'Z';
 }
 
-// Holz nach STIL.md: Grundton, Schatten, Licht
-const HOLZ = { links: '#c98f5a', rechts: '#a86b43', oben: '#e2b07c' };
+// ---------- Plastik-Helfer (Phase 2): Verlaeufe, Lichtkanten, Kontaktschatten ----------
+// Linearer Verlauf innerhalb der Flaeche (objectBoundingBox). Stopps: [Offset, Farbe] oder [Offset, Farbe, Deckkraft]
+const VERLAUF = (id, stopps, x1 = 0, y1 = 0, x2 = 0, y2 = 1) =>
+  `<linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">` +
+  stopps.map(([o, c, d]) => `<stop offset="${o}" stop-color="${c}"${d === undefined ? '' : ` stop-opacity="${d}"`}/>`).join('') +
+  `</linearGradient>`;
+
+// Radialer Verlauf, Mittelpunkt (cx, cy) und Radius als Anteil der Flaeche. Mittelpunkt oben links = Licht von links oben
+const RADIAL = (id, stopps, cx = 0.5, cy = 0.5, r = 0.5) =>
+  `<radialGradient id="${id}" cx="${cx}" cy="${cy}" r="${r}" fx="${cx}" fy="${cy}">` +
+  stopps.map(([o, c, d]) => `<stop offset="${o}" stop-color="${c}"${d === undefined ? '' : ` stop-opacity="${d}"`}/>`).join('') +
+  `</radialGradient>`;
+
+// Weicher Kontaktschatten am Boden: radialer Verlauf statt einfarbiger Ellipse
+function kontaktSchatten(rx, ry, dx = 0, dy = 0) {
+  const id = eindeutig('kontakt');
+  return `<defs>${RADIAL(id, [[0, '#6b4a3a', 0.32], [0.6, '#6b4a3a', 0.14], [1, '#6b4a3a', 0]])}</defs>` +
+    oval(dx, dy, rx, ry, `fill="url(#${id})"`);
+}
+
+// Quader mit eigenem Verlauf je Flaeche: Oberseite hell, linke Seite mittel, rechte Seite dunkel.
+// oben, links, rechts: Paare [Farbe oben, Farbe unten]. Liefert defs (in <defs> setzen) und f (fuer quader()).
+function quaderPlastik(name, oben, links, rechts) {
+  const id = eindeutig(name);
+  const defs = VERLAUF(`${id}-o`, [[0, oben[0]], [1, oben[1]]], 0, 0, 1, 1) +
+    VERLAUF(`${id}-l`, [[0, links[0]], [1, links[1]]], 0, 0, 0.3, 1) +
+    VERLAUF(`${id}-r`, [[0, rechts[0]], [1, rechts[1]]], 0, 0, 1, 1);
+  return { defs, f: { oben: `url(#${id}-o)`, links: `url(#${id}-l)`, rechts: `url(#${id}-r)` } };
+}
+
+// Helle Lichtkante (Oberkante) und dunkle Unterkante als feine Linien
+const LICHT = (a, b) => linie(a, b, 'stroke="#fff6e4" stroke-width="0.8" stroke-linecap="round" opacity="0.7"');
+const DUNKEL = (a, b) => linie(a, b, 'stroke="#4a2b15" stroke-width="0.7" stroke-linecap="round" opacity="0.4"');
 
 function laterne() {
   const glow = eindeutig('laterne-glow');
   const flam = eindeutig('laterne-flamme');
+  const holz = quaderPlastik('laterne-holz', ['#f0c896', '#dba06a'], ['#d59a62', '#b87a48'], ['#b07446', '#8f5a35']);
+  const kerze = quaderPlastik('laterne-kerze', ['#fffdf4', '#f4e8cc'], ['#fff6e0', '#eadcb8'], ['#e8d6b0', '#c9b48a']);
+  const dachL = eindeutig('laterne-dach-l'), dachR = eindeutig('laterne-dach-r'), knauf = eindeutig('laterne-knauf');
   const s = 3.6; // halbe Kantenlaenge des Glaskaefigs
   const glasVorne = 'fill="#fff3c4" fill-opacity="0.5" stroke="#c9a46a" stroke-width="0.8" stroke-linejoin="round"';
   const glasHinten = 'fill="#fff3c4" fill-opacity="0.22" stroke="#c9a46a" stroke-width="0.8" stroke-linejoin="round"';
@@ -55,41 +89,48 @@ function laterne() {
     linie(P(x, y, 2.8), P(x, y, 16), 'stroke="#6b4a3a" stroke-width="1.6" stroke-linecap="round"') +
     linie(P(x, y, 2.8), P(x, y, 16), 'stroke="#c98f5a" stroke-width="1.1" stroke-linecap="round"');
 
-  return `<defs>` +
+  return `<defs>` + holz.defs + kerze.defs +
+    // Dach: Lichtseite links heller, Schattenseite rechts dunkler (Holz mit Verlauf)
+    VERLAUF(dachL, [[0, '#eab27a'], [1, '#c98f5a']]) +
+    VERLAUF(dachR, [[0, '#b87a48'], [1, '#8f5a35']]) +
+    RADIAL(knauf, [[0, '#f2c896'], [1, '#8f5a35']], 0.35, 0.3, 0.8) +
     `<radialGradient id="${glow}"><stop offset="0" stop-color="#ffe9a8" stop-opacity="0.5"/>` +
     `<stop offset="1" stop-color="#ffe9a8" stop-opacity="0"/></radialGradient>` +
     // Flamme: oben orange, unten gelb
     `<linearGradient id="${flam}" x1="0" y1="0" x2="0" y2="1">` +
     `<stop offset="0" stop-color="#ffb347"/><stop offset="1" stop-color="#fff1a8"/></linearGradient>` +
     `</defs>` +
-    // Kontaktschatten und weicher Lichtschein
-    oval(0, 0, 11, 5.5, 'fill="#6b4a3a" opacity="0.18"') +
+    // Kontaktschatten und weicher Lichtschein (der Abendlicht-Schein kommt aus der Szene)
+    kontaktSchatten(11, 5.5) +
     kreis(0, -12, 24, `fill="url(#${glow})"`) +
     // Sockel und unterer Rahmen
-    quader(-4, 4, -4, 4, 0, 2, HOLZ) +
-    quader(-4.2, 4.2, -4.2, 4.2, 2, 2.8, HOLZ) +
+    quader(-4, 4, -4, 4, 0, 2, holz.f) +
+    quader(-4.2, 4.2, -4.2, 4.2, 2, 2.8, holz.f) +
     // Glas: Rueckwand schwach, damit man durchsieht
     flaeche([[-s, -s, 2.8], [-s, s, 2.8], [-s, s, 16], [-s, -s, 16]], glasHinten) +
     flaeche([[-s, -s, 2.8], [s, -s, 2.8], [s, -s, 16], [-s, -s, 16]], glasHinten) +
     // Kerze mit Docht und Flamme (Tropfenform, 1.5fach, Verlauf gelb unten nach orange oben)
-    quader(-1.2, 1.2, -1.2, 1.2, 2.8, 8, { links: '#fff6e0', rechts: '#e8d6b0', oben: '#fffbef' }) +
+    quader(-1.2, 1.2, -1.2, 1.2, 2.8, 8, kerze.f) +
     linie(P(0, 0, 8), P(0, 0, 9.5), 'stroke="#6b4a3a" stroke-width="0.8"') +
     `<path d="M0,-7 C1.4,-5 2.4,-3.6 2.2,-2 C2,-0.5 1,0.3 0,0.3 C-1,0.3 -2,-0.5 -2.2,-2 C-2.4,-3.6 -1.4,-5 0,-7Z" ` +
     `transform="translate(0,-8.5) scale(1.5)" fill="url(#${flam})" stroke="#e08a2c" stroke-width="0.5" stroke-linejoin="round"/>` +
     oval(0, -13.2, 1.3, 2.2, 'fill="#fffbe6" opacity="0.85"') +
-    // Glas vorne (zwei sichtbare Scheiben)
+    // Glas vorne (zwei sichtbare Scheiben) mit schmalem Glanz links
     flaeche([[s, -s, 2.8], [s, s, 2.8], [s, s, 16], [s, -s, 16]], glasVorne) +
     flaeche([[-s, s, 2.8], [s, s, 2.8], [s, s, 16], [-s, s, 16]], glasVorne) +
+    linie(P(-s + 0.8, s, 4), P(-s + 0.8, s, 14), 'stroke="#ffffff" stroke-width="0.8" stroke-linecap="round" opacity="0.55"') +
     // Eckstreben
     strebe(-s, -s) + strebe(s, -s) + strebe(-s, s) + strebe(s, s) +
-    // Oberer Rahmen
-    quader(-4.2, 4.2, -4.2, 4.2, 16, 17.5, HOLZ) +
+    // Oberer Rahmen mit Lichtkante vorn oben und dunkler Unterkante
+    quader(-4.2, 4.2, -4.2, 4.2, 16, 17.5, holz.f) +
+    LICHT(P(-4.2, 4.2, 17.5), P(4.2, 4.2, 17.5)) +
+    DUNKEL(P(-4.2, 4.2, 16), P(4.2, 4.2, 16)) +
     // Dach als Pyramide: zwei sichtbare Flaechen (Licht links, Schatten rechts)
-    flaeche([[-6, 6, 17.5], [6, 6, 17.5], [0, 0, 25]], `fill="#c98f5a" ${KON}`) +
-    flaeche([[6, -6, 17.5], [6, 6, 17.5], [0, 0, 25]], `fill="#a86b43" ${KON}`) +
+    flaeche([[-6, 6, 17.5], [6, 6, 17.5], [0, 0, 25]], `fill="url(#${dachL})" ${KON}`) +
+    flaeche([[6, -6, 17.5], [6, 6, 17.5], [0, 0, 25]], `fill="url(#${dachR})" ${KON}`) +
     flaeche([[-6, 6, 17.5], [0, 0, 25], [-6, -6, 17.5]], 'fill="none" stroke="#e2b07c" stroke-width="0.8" stroke-linejoin="round" opacity="0.7"') +
     // Knauf und Henkelring
-    kreis(0, -26, 1.3, `fill="#a86b43" ${KON}`) +
+    kreis(0, -26, 1.3, `fill="url(#${knauf})" ${KON}`) +
     kreis(0, -29, 2.6, 'fill="none" stroke="#6b4a3a" stroke-width="1.4"') +
     kreis(0, -29, 2.6, 'fill="none" stroke="#a86b43" stroke-width="0.7"');
 }
@@ -252,31 +293,37 @@ function bank() {
 
 function giesskanne() {
   const verlauf = eindeutig('giesskanne-verlauf');
+  const metall = eindeutig('giesskanne-deckel');
   // Naht mit Nieten: Punkte auf einer Quadratkurve
   const naht = [0.2, 0.5, 0.8].map((t) => qb([-10, -6], [0, 2.5], [10, -6], t));
-  return oval(1, 0, 15, 6.5, 'fill="#6b4a3a" opacity="0.18"') +
-    `<defs><linearGradient id="${verlauf}" x1="0" y1="0" x2="1" y2="0">` +
-    `<stop offset="0" stop-color="#a8d8d5"/><stop offset="0.35" stop-color="#6fb3b0"/>` +
-    `<stop offset="1" stop-color="#4f8f8c"/></linearGradient></defs>` +
+  // Korpus: Zylinder mit Licht von links (hell), Mitte, Schattenseite rechts (dunkel)
+  const korpus = `<defs>` +
+    VERLAUF(verlauf, [[0, '#c8ece9'], [0.3, '#8fcac7'], [0.7, '#5ea6a3'], [1, '#3f7e7b']], 0, 0, 1, 0) +
+    // Deckel und Brause: glaenzende Keramik/Metall mit Lichtpunkt links oben
+    RADIAL(metall, [[0, '#f4fcfb'], [0.55, '#bfe5e2'], [1, '#7fb6b3']], 0.35, 0.35, 0.75) +
+    `</defs>`;
+  return korpus + kontaktSchatten(15, 6.5, 1, 0) +
     // Ausguss, liegt hinter dem Korpus
     linie([9, -3.5], [22, -14], 'stroke="#6b4a3a" stroke-width="5" stroke-linecap="round"') +
     linie([9, -3.5], [22, -14], 'stroke="#6fb3b0" stroke-width="3" stroke-linecap="round"') +
-    linie([8.5, -4.4], [20.5, -14.8], 'stroke="#a8d8d5" stroke-width="0.9" stroke-linecap="round" opacity="0.8"') +
-    // Bügelgriff
+    linie([8.5, -4.4], [20.5, -14.8], 'stroke="#d6f0ee" stroke-width="0.9" stroke-linecap="round" opacity="0.8"') +
+    // Bügelgriff mit Lichtkante auf der Oberseite
     pfad('M-7,-11 Q0,-30 7,-11', 'fill="none" stroke="#6b4a3a" stroke-width="4.5" stroke-linecap="round"') +
     pfad('M-7,-11 Q0,-30 7,-11', 'fill="none" stroke="#6fb3b0" stroke-width="2.2" stroke-linecap="round"') +
+    pfad('M-7,-11 Q0,-30 7,-11', 'fill="none" stroke="#e6fbf9" stroke-width="0.7" stroke-linecap="round" opacity="0.8" transform="translate(-1.2,-0.8)"') +
     // Ovaler Korpus als Zylinder
     pfad('M-10,-11 L-10,-1.5 Q0,7.5 10,-1.5 L10,-11 Q0,-20 -10,-11Z', `fill="url(#${verlauf})" ${KON}`) +
     // Glanzstreifen links und Naht mit Nieten
     linie([-6.8, -9.5], [-6.8, -4], 'stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.6"') +
     pfad(`M-10,-6 Q0,2.5 10,-6`, 'fill="none" stroke="#4f8f8c" stroke-width="0.8"') +
-    naht.map(([x, y]) => kreis(x, y, 0.8, 'fill="#a8d8d5" stroke="#4f8f8c" stroke-width="0.6"')).join('') +
-    // Deckel als Ellipse mit Rand
-    oval(0, -11, 10, 4.5, `fill="#a8d8d5" ${KON}`) +
+    naht.map(([x, y]) => kreis(x, y, 0.8, 'fill="#bfe5e2" stroke="#4f8f8c" stroke-width="0.6"')).join('') +
+    // Deckel als Ellipse mit Rand und Glanzpunkt
+    oval(0, -11, 10, 4.5, `fill="url(#${metall})" ${KON}`) +
     oval(0, -11, 6.5, 2.8, 'fill="none" stroke="#4f8f8c" stroke-width="0.8" opacity="0.6"') +
+    oval(-3, -12.3, 3, 1, 'fill="#ffffff" opacity="0.6"') +
     // Brause: Rosette mit Loechern, quer zum Ausguss
     `<g transform="rotate(-39 22 -14)">` +
-    oval(22, -14, 2.6, 4.4, `fill="#a8d8d5" ${KON}`) +
+    oval(22, -14, 2.6, 4.4, `fill="url(#${metall})" ${KON}`) +
     [[-0.9, -2.6], [0.9, -2.6], [-0.9, 0], [0.9, 0], [-0.9, 2.6], [0.9, 2.6]]
       .map(([dx, dy]) => kreis(22 + dx, -14 + dy, 0.6, 'fill="#4f8f8c"')).join('') +
     `</g>`;
@@ -285,23 +332,33 @@ function giesskanne() {
 function katze() {
   const fell = 'fill="none" stroke="#b9c0cc" stroke-width="0.7" stroke-linecap="round"';
   const schwanz = 'M10,-1.5 C15,-0.5 14,2 8,1.8 C0,1.6 -9,2.4 -14,-0.5';
-  return oval(0, 0.5, 16, 5, 'fill="#6b4a3a" opacity="0.18"') +
+  // Weiches Fell: heller Kern oben links, nach rechts unten leicht bläulich abgedunkelt
+  const fellId = eindeutig('katze-fell');
+  const schattenId = eindeutig('katze-schatten');
+  const defs = `<defs>` +
+    RADIAL(fellId, [[0, '#ffffff'], [0.65, '#f2f4f8'], [1, '#d3d9e4']], 0.38, 0.3, 0.8) +
+    VERLAUF(schattenId, [[0, '#eef1f6'], [1, '#c4cbd8']], 0, 0, 1, 1) +
+    `</defs>`;
+  const fellFill = `fill="url(#${fellId})"`;
+  return defs + kontaktSchatten(16, 5, 0, 0.5) +
     // Koerper als weiche Bohne
-    pfad('M-13,-3 C-14.5,-11 -5,-14.5 3,-13 C11,-11.5 15,-7 13.5,-2.5 C12.5,0.5 6,0.8 0,0.4 C-7,0 -12.5,0.5 -13,-3Z', `fill="#ffffff" ${KON}`) +
+    pfad('M-13,-3 C-14.5,-11 -5,-14.5 3,-13 C11,-11.5 15,-7 13.5,-2.5 C12.5,0.5 6,0.8 0,0.4 C-7,0 -12.5,0.5 -13,-3Z', `${fellFill} ${KON}`) +
     // Schatten rechts unten
-    pfad('M13.5,-2.5 C12.5,0.5 6,0.8 0,0.4 C4,-2.5 9,-4.5 13.5,-2.5Z', 'fill="#dfe3ec"') +
+    pfad('M13.5,-2.5 C12.5,0.5 6,0.8 0,0.4 C4,-2.5 9,-4.5 13.5,-2.5Z', `fill="url(#${schattenId})"`) +
     // Fellstriche
     pfad('M4,-9 q2,1.2 1.5,3.2', fell) + pfad('M8,-6.5 q1.5,1 1.2,2.6', fell) +
     // Schwanz um den Koerper gelegt
     pfad(schwanz, 'fill="none" stroke="#6b4a3a" stroke-width="5.2" stroke-linecap="round"') +
-    pfad(schwanz, 'fill="none" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round"') +
+    pfad(schwanz, 'fill="none" stroke="#f4f6fa" stroke-width="2.8" stroke-linecap="round"') +
     pfad('M8,2.6 C0,2.4 -9,3.2 -13,0.6', 'fill="none" stroke="#dfe3ec" stroke-width="0.9" stroke-linecap="round"') +
     // Kopf auf den Pfoten mit Ohren
-    pfad('M-15.6,-9.6 L-14.4,-16.6 L-10.2,-12.3Z', `fill="#ffffff" ${KON}`) +
-    pfad('M-10.4,-12.6 L-5.6,-16.4 L-3.2,-9.8Z', `fill="#ffffff" ${KON}`) +
+    pfad('M-15.6,-9.6 L-14.4,-16.6 L-10.2,-12.3Z', `${fellFill} ${KON}`) +
+    pfad('M-10.4,-12.6 L-5.6,-16.4 L-3.2,-9.8Z', `${fellFill} ${KON}`) +
     pfad('M-14.6,-10.8 L-14.1,-14.6 L-11.9,-12.3Z', 'fill="#f5b9b5"') +
     pfad('M-9.6,-12.8 L-5.9,-14.8 L-4.6,-10.9Z', 'fill="#f5b9b5"') +
-    oval(-9, -6.5, 7, 5.3, `fill="#ffffff" ${KON}`) +
+    oval(-9, -6.5, 7, 5.3, `${fellFill} ${KON}`) +
+    // Glanzpunkt auf dem Kopf und Schatten unter dem Kinn
+    oval(-10.6, -9.2, 1.8, 0.9, 'fill="#ffffff" opacity="0.85"') +
     oval(-7.5, -3.6, 3.5, 1.6, 'fill="#dfe3ec"') +
     // Geschlossene Augen, Nase, Wangen
     pfad('M-12.6,-7.2 Q-11,-5.2 -9.4,-7.2', 'fill="none" stroke="#6b4a3a" stroke-width="1.1" stroke-linecap="round"') +
@@ -310,8 +367,8 @@ function katze() {
     oval(-12.5, -4.5, 1.3, 0.8, 'fill="#f5b9b5" opacity="0.7"') +
     oval(-4.2, -4.5, 1.3, 0.8, 'fill="#f5b9b5" opacity="0.7"') +
     // Pfoten unter dem Kopf
-    oval(-12, -0.6, 3.4, 1.8, `fill="#ffffff" ${KON}`) +
-    oval(-6, -0.2, 3.4, 1.8, `fill="#ffffff" ${KON}`);
+    oval(-12, -0.6, 3.4, 1.8, `${fellFill} ${KON}`) +
+    oval(-6, -0.2, 3.4, 1.8, `${fellFill} ${KON}`);
 }
 
 // Mittellinie eines Blatts als kubische Bezierkurve von a nach d (Kontrollpunkte c1, c2). Liefert die Mittellinie M
@@ -350,11 +407,25 @@ function haengeampel() {
   for (const [lx, ly] of [[-10.1, -1.8], [10.1, -1.8], [0, 5.4]]) {
     s += linie(AMPEL_HAKEN, [lx, ly], 'stroke="#6b4a3a" stroke-width="0.42"');
   }
+  // Verlaeufe: Schale (Rand hell, Innenseite dunkler), Erde, Rattan (Licht links, Schatten rechts), Blatt
+  const clipId = eindeutig('ampel-koerper');
+  const randId = eindeutig('ampel-rand'), schaleId = eindeutig('ampel-schale'), erdeId = eindeutig('ampel-erde');
+  const rattanId = eindeutig('ampel-rattan'), rattanSchatten = eindeutig('ampel-rattan-schatten');
+  const blattId = eindeutig('ampel-blatt'), vornId = eindeutig('ampel-vorn');
+  const defs = `<defs>` +
+    RADIAL(randId, [[0, '#f5dcb8'], [1, '#c08a58']], 0.4, 0.3, 0.8) +
+    RADIAL(schaleId, [[0, '#c9955e'], [1, '#8a5a34']], 0.4, 0.3, 0.8) +
+    RADIAL(erdeId, [[0, '#6e4d36'], [1, '#3f2c20']], 0.4, 0.3, 0.8) +
+    VERLAUF(rattanId, [[0, '#f0c896'], [0.45, '#d9a56b'], [1, '#b07a48']], 0, 0, 1, 0) +
+    VERLAUF(rattanSchatten, [[0, '#8a5a34', 0], [1, '#8a5a34', 0.55]], 0, 0, 1, 0) +
+    VERLAUF(blattId, [[0, '#8cc57a'], [0.5, '#5e9a52'], [1, '#3f7040']], 0, 0, 1, 1) +
+    VERLAUF(vornId, [[0, '#e8b98a'], [1, '#b07a48']], 0, 0, 0, 1) +
+    `</defs>`;
   // Blatt: Band mit Lichtseite (links) und dunklerer rechter Haelfte, cremefarbener Mittelstreifen, Kontur
   const blatt = (a, c1, c2, d, W) => {
     const b = blattBand(a, c1, c2, d, W);
     const sn = blattBand(a, c1, c2, d, W * 0.4);
-    let x = pfad(glatt([...b.L, ...b.R.slice().reverse()]), 'fill="#5e9a52"');
+    let x = pfad(glatt([...b.L, ...b.R.slice().reverse()]), `fill="url(#${blattId})"`);
     x += pfad(glatt([...b.M, ...b.R.slice().reverse()]), 'fill="#477d43" opacity="0.4"');
     x += pfad(glatt([...sn.L, ...sn.R.slice().reverse()]), 'fill="#f1ecc4"');
     x += pfad(glatt([...b.L, ...b.R.slice().reverse()]), 'fill="none" stroke="#2f5a30" stroke-width="0.7" stroke-linejoin="round"');
@@ -374,21 +445,21 @@ function haengeampel() {
     (cy > 0 ? vorn : hinten).push(blatt(a, c1, c2, d, 2 + r2()));
   }
   // Schale: obere Oeffnung mit Rand (Ellipse 2:1), Erde nur als schmaler dunkler Streifen hinten sichtbar
-  const oben = oval(0, 0, 10.8, 5.4, `fill="#e6bb88" ${KON_A}`) +
-    oval(0, 0, 9.2, 4.4, `fill="#b8844f" ${KON_A}`) +
-    oval(0, 0.7, 8.6, 3.6, 'fill="#5a3f2c"');
+  const oben = oval(0, 0, 10.8, 5.4, `fill="url(#${randId})" ${KON_A}`) +
+    oval(0, 0, 9.2, 4.4, `fill="url(#${schaleId})" ${KON_A}`) +
+    oval(0, 0.7, 8.6, 3.6, `fill="url(#${erdeId})"`);
   // Koerper: geflochtenes Rattan, Flechtlinien im Clip des Koerpers, Licht von links
-  let koerper = `<clipPath id="ampel-koerper"><path d="${KOERPER}"/></clipPath>`;
-  koerper += pfad(KOERPER, 'fill="#d9a56b"');
-  let muster = pfad('M1,-6 H15 V18 H1 Z', 'fill="#b8844f" opacity="0.55"');
+  let koerper = `<clipPath id="${clipId}"><path d="${KOERPER}"/></clipPath>`;
+  koerper += pfad(KOERPER, `fill="url(#${rattanId})"`);
+  let muster = pfad('M1,-6 H15 V18 H1 Z', `fill="url(#${rattanSchatten})"`);
   for (let x = -20; x <= 20; x += 4) {
     muster += linie([x, -6], [x + 22, 16], 'stroke="#a86b43" stroke-width="0.5" opacity="0.8"');
     muster += linie([x, -6], [x - 22, 16], 'stroke="#a86b43" stroke-width="0.5" opacity="0.8"');
   }
   muster += pfad('M-8.4,3 Q-9.4,8.5 -6.6,13', 'fill="none" stroke="#f6dcb2" stroke-width="1.1" stroke-linecap="round" opacity="0.8"');
-  koerper += `<g clip-path="url(#ampel-koerper)">${muster}</g>`;
+  koerper += `<g clip-path="url(#${clipId})">${muster}</g>`;
   koerper += pfad(KOERPER, `fill="none" ${KON_A}`);
-  koerper += pfad(RAND_VORN, `fill="#c9955e" ${KON_A}`);
+  koerper += pfad(RAND_VORN, `fill="url(#${vornId})" ${KON_A}`);
   koerper += pfad('M-10.15,-1.85 A10.8,5.4 0 0 1 -3.7,-5.07', 'fill="none" stroke="#fbe9cc" stroke-width="0.8" stroke-linecap="round" opacity="0.8"');
   // Auslaeufer: zwei duenne Triebe mit Kindeln (Mini-Rosetten aus 6 kurzen Blaettern) am Ende
   const laeufer = [
@@ -404,14 +475,10 @@ function haengeampel() {
     }
   }
   const inhalt = oben + hinten.join('') + koerper + lauf + vorn.join('');
-  return gruppe(tr(AMPEL_SCHALE, 1.5), s + inhalt);
+  return gruppe(tr(AMPEL_SCHALE, 1.5), defs + s + inhalt);
 }
 
 // ---------- Neue Deko (Teil 2): Teppich, Vogelhaus, Gartenzwerg, Windspiel, Lichterglas, Springbrunnen ----------
-const STEIN = { oben: '#ece9e3', links: '#d9d6cf', rechts: '#b9b5ac' };
-const HOLZ_D = { links: '#a86b43', rechts: '#8f5a35', oben: '#c98f5a' };
-const METALL_S = { oben: '#eef3f6', links: '#b8c4cc', rechts: '#8f9ba3' };
-const WASSER = '#8fd3ea';
 
 // Bildschirm-Halbachsen einer waagerechten Kreisscheibe mit Radius r (Deko-Einheiten)
 const ebeneRx = (r) => 0.9 * Math.SQRT2 * r;
@@ -495,20 +562,38 @@ function teppich() {
 
 // Vogelhaus: Pfahl, Holzkasten mit Einflugloch und Sitzstange, Schindeldach, Rotkehlchen auf dem First
 function vogelhaus() {
-  let s = oval(0, 0, 13, 6.5, 'fill="#6b4a3a" opacity="0.18"');
-  s += quader(-3, 3, -3, 3, 0, 1.6, HOLZ_D);
-  s += quader(-0.8, 0.8, -0.8, 0.8, 1.6, 33, HOLZ_D);
+  // Holz mit Verlauf: Pfahl etwas dunkler als der Kasten
+  const pfahl = quaderPlastik('vogel-pfahl', ['#d9a06a', '#c08050'], ['#b07446', '#94603a'], ['#8f5a35', '#744326']);
+  const kasten = quaderPlastik('vogel-kasten', ['#f2c08c', '#dba06a'], ['#d59a62', '#b87a48'], ['#b07446', '#8f5a35']);
+  // Dachflaechen: hinterer Hang, Giebel rechts (Schatten), vorderer Hang (Licht links oben)
+  const dHinten = eindeutig('vogel-dach-h'), dGiebel = eindeutig('vogel-dach-g'), dVorn = eindeutig('vogel-dach-v');
+  // Rotkehlchen: Koerper, Brust und Fluegel mit Verlauf
+  const bKoerper = eindeutig('vogel-brust-k'), bBrust = eindeutig('vogel-brust'), bFl = eindeutig('vogel-fluegel');
+  let s = `<defs>${pfahl.defs}${kasten.defs}` +
+    VERLAUF(dHinten, [[0, '#c46a50'], [1, '#8f4a33']]) +
+    VERLAUF(dGiebel, [[0, '#a85a40'], [1, '#7a3d2a']], 0, 0, 1, 1) +
+    VERLAUF(dVorn, [[0, '#e4826a'], [1, '#b35a40']]) +
+    RADIAL(bKoerper, [[0, '#b39370'], [1, '#5e4632']], 0.35, 0.3, 0.8) +
+    RADIAL(bBrust, [[0, '#f7b06a'], [1, '#d26a2a']], 0.35, 0.3, 0.8) +
+    VERLAUF(bFl, [[0, '#8a6c52'], [1, '#4a3426']], 0, 0, 1, 1) +
+    `</defs>`;
+  s += kontaktSchatten(13, 6.5);
+  s += quader(-3, 3, -3, 3, 0, 1.6, pfahl.f);
+  s += quader(-0.8, 0.8, -0.8, 0.8, 1.6, 33, pfahl.f);
   // Kasten mit Brettern (Fugen auf der Vorderseite)
-  s += quader(-6, 6, -5, 5, 33, 41, HOLZ);
+  s += quader(-6, 6, -5, 5, 33, 41, kasten.f);
   for (const x of [-4, -2, 0, 2, 4]) s += linie(P(x, 5, 33.5), P(x, 5, 40.5), 'stroke="#a86b43" stroke-width="0.6"');
   s += lochEbene(0, 5, 37, 1.7, 'y', 'fill="#3d2b20" stroke="#6b4a3a" stroke-width="0.8"');
   // Sitzstange unter dem Einflugloch
   s += linie(P(0, 5, 35), P(0, 8.6, 35), 'stroke="#6b4a3a" stroke-width="2.2" stroke-linecap="round"');
   s += linie(P(0, 5, 35), P(0, 8.6, 35), 'stroke="#c98f5a" stroke-width="1.1" stroke-linecap="round"');
   // Dach: hinterer Dachhang, Giebel, vorderer Dachhang
-  s += flaeche([[-7.2, -6.8, 40], [7.2, -6.8, 40], [7.2, 0, 45], [-7.2, 0, 45]], `fill="#a8533a" ${KON}`);
-  s += flaeche([[7.2, -6.8, 40], [7.2, 6.8, 40], [7.2, 0, 45]], `fill="#8f4a33" ${KON}`);
-  s += flaeche([[-7.2, 6.8, 40], [7.2, 6.8, 40], [7.2, 0, 45], [-7.2, 0, 45]], `fill="#c4644a" ${KON}`);
+  s += flaeche([[-7.2, -6.8, 40], [7.2, -6.8, 40], [7.2, 0, 45], [-7.2, 0, 45]], `fill="url(#${dHinten})" ${KON}`);
+  s += flaeche([[7.2, -6.8, 40], [7.2, 6.8, 40], [7.2, 0, 45]], `fill="url(#${dGiebel})" ${KON}`);
+  s += flaeche([[-7.2, 6.8, 40], [7.2, 6.8, 40], [7.2, 0, 45], [-7.2, 0, 45]], `fill="url(#${dVorn})" ${KON}`);
+  // Lichtkante am First, dunkle Unterkante an der Traufe
+  s += LICHT(P(-7.2, 0, 45), P(7.2, 0, 45));
+  s += DUNKEL(P(-7.2, 6.8, 40), P(7.2, 6.8, 40));
   // Schindeln: vier Reihen von der Traufe zum First, versetzte Stossfugen
   const z = (y) => 40 + ((6.8 - y) / 6.8) * 5;
   for (let j = 0; j < 4; j++) {
@@ -522,11 +607,12 @@ function vogelhaus() {
   }
   // Rotkehlchen auf dem First
   const [bx, by] = P(2.5, 0, 45);
-  s += poly([[bx - 1.8, by - 2.2], [bx - 6.4, by - 1.2], [bx - 5.8, by + 0.4], [bx - 1.4, by - 0.4]], 'fill="#6b5240" stroke="#4a3426" stroke-width="0.6" stroke-linejoin="round"');
-  s += oval(bx, by - 3.2, 3.2, 2.6, `fill="#8a6a4a" ${KON}`);
-  s += oval(bx + 1.3, by - 2.4, 2.1, 2.1, 'fill="#ec8a3e"');
-  s += kreis(bx + 2.8, by - 6.4, 2.1, `fill="#8a6a4a" ${KON}`);
-  s += kreis(bx + 3.2, by - 4.6, 1.5, 'fill="#ec8a3e"');
+  s += poly([[bx - 1.8, by - 2.2], [bx - 6.4, by - 1.2], [bx - 5.8, by + 0.4], [bx - 1.4, by - 0.4]], `fill="url(#${bFl})" stroke="#4a3426" stroke-width="0.6" stroke-linejoin="round"`);
+  s += oval(bx, by - 3.2, 3.2, 2.6, `fill="url(#${bKoerper})" ${KON}`);
+  s += oval(bx + 1.3, by - 2.4, 2.1, 2.1, `fill="url(#${bBrust})"`);
+  s += kreis(bx + 2.8, by - 6.4, 2.1, `fill="url(#${bKoerper})" ${KON}`);
+  s += kreis(bx + 3.2, by - 4.6, 1.5, `fill="url(#${bBrust})"`);
+  s += kreis(bx + 2.2, by - 7.6, 0.5, 'fill="#ffffff" opacity="0.6"');
   s += poly([[bx + 4.7, by - 6.8], [bx + 6.6, by - 6.1], [bx + 4.7, by - 5.4]], 'fill="#4a3426"');
   s += kreis(bx + 3.4, by - 6.8, 0.5, 'fill="#1f1510"');
   return s;
@@ -535,51 +621,74 @@ function vogelhaus() {
 // Gartenzwerg: Zipfelmuetze, weisser Bart, blaue Jacke, braune Hose, Schaufel (Blick von vorn, Hoehe ca. 22)
 function gartenzwerg() {
   const K = 'stroke="#6b4a3a" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"';
-  let s = oval(0, 0, 6, 2.8, 'fill="#6b4a3a" opacity="0.18"');
-  // Stiefel und Hose
-  s += oval(-2.6, -1.2, 2.3, 1.5, `fill="#4a3426" ${K}`) + oval(2.6, -1.2, 2.3, 1.5, `fill="#4a3426" ${K}`);
-  s += pfad('M-4.2,-6 L-4.6,-1.8 L-0.6,-1.8 L-0.2,-6 Z', `fill="#8a6a4a" ${K}`);
-  s += pfad('M0.2,-6 L0.6,-1.8 L4.6,-1.8 L4.2,-6 Z', `fill="#7a5a3c" ${K}`);
+  // Verlaeufe: Stiefel, Hosenbeine, Jacke (Licht links oben), Haut, Bart, Muetze, Metall der Schaufel
+  const stiefel = eindeutig('zwerg-stiefel'), hoseL = eindeutig('zwerg-hose-l'), hoseR = eindeutig('zwerg-hose-r');
+  const jacke = eindeutig('zwerg-jacke'), haut = eindeutig('zwerg-haut'), bart = eindeutig('zwerg-bart');
+  const muetze = eindeutig('zwerg-muetze'), metall = eindeutig('zwerg-metall'), bommel = eindeutig('zwerg-bommel');
+  const defs = `<defs>` +
+    RADIAL(stiefel, [[0, '#6e5238'], [1, '#33241a']], 0.35, 0.3, 0.8) +
+    VERLAUF(hoseL, [[0, '#a8845c'], [1, '#7a5a3c']], 0, 0, 1, 1) +
+    VERLAUF(hoseR, [[0, '#8a6a4a'], [1, '#5e4430']], 0, 0, 1, 1) +
+    VERLAUF(jacke, [[0, '#72aedb'], [0.5, '#3f7fb0'], [1, '#2d5f8a']], 0, 0, 1, 1) +
+    RADIAL(haut, [[0, '#fde6cc'], [1, '#e0ae8a']], 0.35, 0.3, 0.8) +
+    RADIAL(bart, [[0, '#ffffff'], [1, '#d9d9cf']], 0.4, 0.35, 0.8) +
+    VERLAUF(muetze, [[0, '#f2736b'], [1, '#a8221f']], 0, 0, 1, 1) +
+    VERLAUF(metall, [[0, '#f4f8fa'], [0.5, '#b8c4cc'], [1, '#7f8c94']], 0, 0, 1, 1) +
+    RADIAL(bommel, [[0, '#ffffff'], [1, '#d7d7cf']], 0.4, 0.35, 0.8) +
+    `</defs>`;
+  let s = defs + kontaktSchatten(6, 2.8);
+  // Stiefel und Hose (Hosenbein links heller, rechts dunkler)
+  s += oval(-2.6, -1.2, 2.3, 1.5, `fill="url(#${stiefel})" ${K}`) + oval(2.6, -1.2, 2.3, 1.5, `fill="url(#${stiefel})" ${K}`);
+  s += pfad('M-4.2,-6 L-4.6,-1.8 L-0.6,-1.8 L-0.2,-6 Z', `fill="url(#${hoseL})" ${K}`);
+  s += pfad('M0.2,-6 L0.6,-1.8 L4.6,-1.8 L4.2,-6 Z', `fill="url(#${hoseR})" ${K}`);
   // Arme seitlich, Jacke mit Schattenseite rechts
-  s += oval(-5.6, -9.5, 1.8, 3.2, `fill="#3f7fb0" ${K}`);
-  s += oval(5.8, -8.8, 1.8, 3.2, `fill="#3f7fb0" ${K}`);
-  s += pfad('M-5.4,-5.5 Q-6.2,-10 -4.2,-13.4 Q0,-14.6 4.2,-13.4 Q6.2,-10 5.4,-5.5 Q0,-4.6 -5.4,-5.5 Z', `fill="#3f7fb0" ${K}`);
+  s += oval(-5.6, -9.5, 1.8, 3.2, `fill="url(#${jacke})" ${K}`);
+  s += oval(5.8, -8.8, 1.8, 3.2, `fill="url(#${jacke})" ${K}`);
+  s += pfad('M-5.4,-5.5 Q-6.2,-10 -4.2,-13.4 Q0,-14.6 4.2,-13.4 Q6.2,-10 5.4,-5.5 Q0,-4.6 -5.4,-5.5 Z', `fill="url(#${jacke})" ${K}`);
   s += pfad('M0.2,-13.9 Q6.2,-10 5.4,-5.5 Q0,-4.6 0.2,-4.6 Z', 'fill="#2f6494" opacity="0.6"');
   s += pfad('M-3.6,-12 Q-4.4,-9 -4,-7', 'fill="none" stroke="#ffffff" stroke-width="0.9" opacity="0.5" stroke-linecap="round"');
   s += linie([-5, -6.3], [5, -6.3], 'stroke="#4a3426" stroke-width="1"');
-  // Schaufel in der rechten Hand
+  // Schaufel in der rechten Hand: Holzstiel, Metallblatt mit Glanzkante
   s += linie([6.2, -9.5], [9.6, -2.8], 'stroke="#a86b43" stroke-width="1.1" stroke-linecap="round"');
-  s += pfad('M9.2,-3.4 Q11.4,-1.6 10.2,0.4 Q8.4,1.6 7.4,-0.6 Q7.6,-2.6 9.2,-3.4Z', `fill="#9aa6ad" ${K}`);
-  s += kreis(6, -9.4, 1.1, `fill="#f5d3b0" ${K}`);
+  s += pfad('M9.2,-3.4 Q11.4,-1.6 10.2,0.4 Q8.4,1.6 7.4,-0.6 Q7.6,-2.6 9.2,-3.4Z', `fill="url(#${metall})" ${K}`);
+  s += linie([8.2, -2.4], [8.8, -1.2], 'stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" opacity="0.8"');
+  s += kreis(6, -9.4, 1.1, `fill="url(#${haut})" ${K}`);
   // Kopf, Nase, Augen, Bart
-  s += kreis(0, -16.2, 3.6, `fill="#f5d3b0" ${K}`);
+  s += kreis(0, -16.2, 3.6, `fill="url(#${haut})" ${K}`);
   s += kreis(0, -15.4, 0.9, 'fill="#f2a58a"');
   s += kreis(-1.3, -16.6, 0.45, 'fill="#3d2b20"') + kreis(1.3, -16.6, 0.45, 'fill="#3d2b20"');
-  s += pfad('M-3.4,-16 Q-3.8,-11 0,-10.2 Q3.8,-11 3.4,-16 Q2.4,-14.4 0,-14.6 Q-2.4,-14.4 -3.4,-16Z', `fill="#f7f7f2" ${K}`);
+  s += pfad('M-3.4,-16 Q-3.8,-11 0,-10.2 Q3.8,-11 3.4,-16 Q2.4,-14.4 0,-14.6 Q-2.4,-14.4 -3.4,-16Z', `fill="url(#${bart})" ${K}`);
   // Zipfelmuetze mit Bommel
-  s += pfad('M-4.4,-18.2 Q0,-19.8 4.4,-18.2 Q2.6,-21 1,-23.4 Q-1.2,-21 -4.4,-18.2Z', `fill="#d8332f" ${K}`);
+  s += pfad('M-4.4,-18.2 Q0,-19.8 4.4,-18.2 Q2.6,-21 1,-23.4 Q-1.2,-21 -4.4,-18.2Z', `fill="url(#${muetze})" ${K}`);
   s += pfad('M-2.6,-19.4 Q0,-20.4 2.6,-19.4', 'fill="none" stroke="#f0706a" stroke-width="0.7" opacity="0.8"');
-  s += kreis(1.4, -24, 1.2, `fill="#ffffff" ${K}`);
+  s += kreis(1.4, -24, 1.2, `fill="url(#${bommel})" ${K}`);
   return gruppe('transform="scale(0.9)"', s);
 }
 
 // Windspiel: Holzstaender mit Querbalken, fuenf Klangstaebe und Holzscheibe; Pendelbewegung um den Aufhaengepunkt
 function windspiel() {
-  let s = oval(0, 0, 13, 6.5, 'fill="#6b4a3a" opacity="0.18"');
+  // Holz mit Verlauf (Staender und Balken), Metall der Klangstaebe mit Glanzkante, Holzscheibe mit Verlauf
+  const holz = quaderPlastik('wind-holz', ['#f0c896', '#dba06a'], ['#d59a62', '#b87a48'], ['#b07446', '#8f5a35']);
+  const balken = quaderPlastik('wind-balken', ['#f2c08c', '#d9a06a'], ['#d59a62', '#b87a48'], ['#b07446', '#8f5a35']);
+  const metall = quaderPlastik('wind-metall', ['#f4f8fa', '#cfd9df'], ['#c4cfd6', '#8f9ba3'], ['#8f9ba3', '#6f7c85']);
+  const scheibeId = eindeutig('wind-scheibe');
+  let s = `<defs>${holz.defs}${balken.defs}${metall.defs}` +
+    VERLAUF(scheibeId, [[0, '#e8bb88'], [1, '#a86b43']], 0, 0, 1, 1) + `</defs>`;
+  s += kontaktSchatten(13, 6.5);
   // Staender: Sockel, zwei Pfosten, Querbalken oben
-  s += quader(-10.5, 10.5, -3.5, 3.5, 0, 2.5, HOLZ_D);
-  s += quader(-9.2, -7.2, -1.2, 1.2, 2.5, 33, HOLZ_D) + quader(7.2, 9.2, -1.2, 1.2, 2.5, 33, HOLZ_D);
-  s += quader(-10, 10, -1.3, 1.3, 33, 36, HOLZ);
+  s += quader(-10.5, 10.5, -3.5, 3.5, 0, 2.5, holz.f);
+  s += quader(-9.2, -7.2, -1.2, 1.2, 2.5, 33, holz.f) + quader(7.2, 9.2, -1.2, 1.2, 2.5, 33, holz.f);
+  s += quader(-10, 10, -1.3, 1.3, 33, 36, balken.f);
   // Haengender Teil (schwingt um den Aufhaengepunkt in der Mitte des Balkens)
   const pivot = P(0, 0, 33);
   let hang = '';
   for (const [x, y, L] of [[-7.2, 0, 24], [-3.6, 0, 20], [0, -1.2, 18], [3.6, 0, 22], [7.2, 0, 16]]) {
     const zb = 33 - L;
-    hang += quader(x - 0.7, x + 0.7, y - 0.7, y + 0.7, zb, 33, METALL_S);
+    hang += quader(x - 0.7, x + 0.7, y - 0.7, y + 0.7, zb, 33, metall.f);
     hang += linie(P(x - 0.35, y + 0.7, zb + 1.5), P(x - 0.35, y + 0.7, 31), 'stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" opacity="0.85"');
   }
   hang += linie(P(0, 1.2, 33), P(0, 1.2, 11.6), 'stroke="#8a6a4a" stroke-width="0.6"');
-  hang += scheibeVert(0, 1.2, 8, 3.4, `fill="${HOLZ.links}" ${KON}`);
+  hang += scheibeVert(0, 1.2, 8, 3.4, `fill="url(#${scheibeId})" ${KON}`);
   hang += scheibeVert(0, 1.2, 8, 2.2, 'fill="none" stroke="#a86b43" stroke-width="0.6"');
   hang += scheibeVert(0, 1.2, 8, 0.6, 'fill="#6b4a3a"');
   const w = f(pivot[1]);
@@ -632,23 +741,37 @@ function lichterglas() {
 
 // Springbrunnen: Steinbecken in drei Ebenen mit Wasserflaechen, animierte Wasserbaender
 function springbrunnen() {
-  let s = oval(0, 0, 21, 10.5, 'fill="#6b4a3a" opacity="0.18"');
+  // Stein mit Verlaeufen: Seite links hell (Licht von links), rechts dunkler; Oberseite mit hellem Lichtpunkt
+  const id = eindeutig('brunnen');
+  const stein = { links: `url(#${id}-l)`, rechts: `url(#${id}-r)`, oben: `url(#${id}-o)` };
+  // Wasser hellblau mit Spiegelung (heller Fleck oben links)
+  const wasser = `url(#${id}-wasser)`;
+  const defs = `<defs>` +
+    VERLAUF(`${id}-l`, [[0, '#f9f7f3'], [0.45, '#ebe8e1'], [1, '#cdc9c0']], 0, 0, 1, 0) +
+    VERLAUF(`${id}-r`, [[0, '#cdc9c0'], [1, '#a39f96']], 0, 0, 1, 0) +
+    RADIAL(`${id}-o`, [[0, '#ffffff'], [0.6, '#f0ede7'], [1, '#d6d2c9']], 0.4, 0.35, 0.7) +
+    RADIAL(`${id}-wasser`, [[0, '#e6f9fe'], [0.35, '#a9e2f3'], [1, '#5fb3d6']], 0.35, 0.3, 0.8) +
+    `</defs>`;
+  // Lichtkante am Beckenrand: heller Bogen oben links auf der Ellipse der Oberseite (Hoehe z, Radius r)
+  const oberKante = (z, r) => pfad(`M${p2([-ebeneRx(r), -z])}A${f(ebeneRx(r))},${f(ebeneRy(r))} 0 0 1 ${p2([0, -z - ebeneRy(r)])}`,
+    'fill="none" stroke="#ffffff" stroke-width="0.9" stroke-linecap="round" opacity="0.75"');
+  let s = defs + kontaktSchatten(21, 10.5);
   // Sockel und untere Schale
-  s += zylinderD(16, 0, 4, STEIN);
-  s += zylinderD(15, 4, 11, STEIN) + scheibe(11, 15, `fill="${STEIN.oben}" ${KON}`);
-  s += scheibe(10.6, 13.2, `fill="${WASSER}" stroke="#5fb3d6" stroke-width="0.8"`);
+  s += zylinderD(16, 0, 4, stein);
+  s += zylinderD(15, 4, 11, stein) + scheibe(11, 15, `fill="${stein.oben}" ${KON}`) + oberKante(11, 15);
+  s += scheibe(10.6, 13.2, `fill="${wasser}" stroke="#5fb3d6" stroke-width="0.8"`);
   s += oval(-5, -10.9, 4, 1, 'fill="#ffffff" opacity="0.6"');
   // Mittlere Saeule und Schale
-  s += zylinderD(2.8, 10, 24, STEIN);
-  s += zylinderD(9, 19, 24, STEIN) + scheibe(24, 9, `fill="${STEIN.oben}" ${KON}`);
-  s += scheibe(23.4, 7.6, `fill="${WASSER}" stroke="#5fb3d6" stroke-width="0.8"`);
+  s += zylinderD(2.8, 10, 24, stein);
+  s += zylinderD(9, 19, 24, stein) + scheibe(24, 9, `fill="${stein.oben}" ${KON}`) + oberKante(24, 9);
+  s += scheibe(23.4, 7.6, `fill="${wasser}" stroke="#5fb3d6" stroke-width="0.8"`);
   s += oval(-3.5, -23.6, 3, 0.8, 'fill="#ffffff" opacity="0.6"');
   // Obere Saeule und Schale
-  s += zylinderD(1.8, 24, 28, STEIN);
-  s += zylinderD(5, 28, 32, STEIN) + scheibe(32, 5, `fill="${STEIN.oben}" ${KON}`);
-  s += scheibe(31.4, 4.2, `fill="${WASSER}" stroke="#5fb3d6" stroke-width="0.8"`);
-  s += zylinderD(1.2, 31, 34, STEIN);
-  s += oval(0, -36, 2.6, 2.6, `fill="${STEIN.oben}" ${KON}`);
+  s += zylinderD(1.8, 24, 28, stein);
+  s += zylinderD(5, 28, 32, stein) + scheibe(32, 5, `fill="${stein.oben}" ${KON}`) + oberKante(32, 5);
+  s += scheibe(31.4, 4.2, `fill="${wasser}" stroke="#5fb3d6" stroke-width="0.8"`);
+  s += zylinderD(1.2, 31, 34, stein);
+  s += oval(0, -36, 2.6, 2.6, `fill="${stein.oben}" ${KON}`);
   // Wasserstrahlen: Baender mit animiertem Strichmuster, je Ebene ein Kranz
   const strahl = (rs, zs, re, ze, winkel) => {
     const a = (winkel * Math.PI) / 180;
