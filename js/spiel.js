@@ -10,6 +10,7 @@ import { DEKO } from './grafik/deko.js';
 import { RARITAETEN } from './grafik/raritaeten.js';
 import { hakenFuer } from './szene.js';
 import { dekoAufMoebel } from './grafik/deko-klein.js';
+import { TOEPFE, STANDARD_TOPF } from './grafik/toepfe.js';
 import * as G_MOEBEL2 from './grafik/moebel2.js';
 import * as G_PFLANZEN2 from './grafik/pflanzen2.js';
 import * as G_DEKO2 from './grafik/deko2.js';
@@ -96,6 +97,12 @@ export const PREISE_DEKO = {
   giesskanne: { name: 'Gießkanne', preis: 40, level: 1 },
   katze: { name: 'Katze', preis: 250, level: 9 },
   teppich: { name: 'Teppich', preis: 60, level: 3 },
+  berber_rund: { name: 'Berberteppich', preis: 120, level: 4 },
+  karo: { name: 'Karoteppich', preis: 140, level: 6 },
+  kelim: { name: 'Kelim', preis: 160, level: 8 },
+  wolke: { name: 'Wolkenteppich', preis: 110, level: 10 },
+  laeufer: { name: 'Läufer', preis: 130, level: 12 },
+  fell: { name: 'Schaffell', preis: 90, level: 14 },
   vogelhaus: { name: 'Vogelhaus', preis: 70, level: 6 },
   gartenzwerg: { name: 'Gartenzwerg', preis: 40, level: 4 },
   windspiel: { name: 'Windspiel', preis: 30, level: 2 },
@@ -1741,6 +1748,12 @@ export function verkaufen(daten, kategorie, id) {
   }
   const def = tabelle[liste[idx].typ] || preisVon(liste[idx].typ);
   const erloes = liste[idx].saat || !def ? 0 : Math.floor(def.preis / 2);
+  // Ein eigener Topf geht beim Verkauf der Pflanze nicht verloren, er kommt ins Lager
+  const topfAlt = kategorie === 'pflanze' ? liste[idx].topf : null;
+  if (topfAlt && !istStandardTopf(topfAlt)) {
+    d.spiel.lager = d.spiel.lager || [];
+    d.spiel.lager.push({ id: neueId('l'), kategorie: 'topf', typ: topfAlt, eigenschaften: {} });
+  }
   liste.splice(idx, 1);
   d.spiel.samen += erloes;
   return { daten: d };
@@ -2249,6 +2262,7 @@ export function lagerPlatzieren(daten, lagerId, ort) {
   if (i < 0) return fehler('Dieses Teil liegt nicht im Lager.');
   const e = d.spiel.lager[i];
   const eig = e.eigenschaften || {};
+  if (e.kategorie === 'topf') return fehler('Töpfe kommen über „Topf ändern“ an eine Pflanze.');
   if (e.kategorie === 'moebel') {
     const pos = {
       gx: ort ? ort.gx : undefined,
@@ -2285,7 +2299,7 @@ export function lagerListe(daten) {
     lagerId: e.id,
     kategorie: e.kategorie,
     typ: e.typ,
-    name: lagerName(katalogListe, e.typ)
+    name: e.kategorie === 'topf' ? ((TOEPFE[e.typ] && TOEPFE[e.typ].name) || e.typ) : lagerName(katalogListe, e.typ)
   }));
 }
 
@@ -2424,4 +2438,122 @@ export function freischaltungenBei(daten, level) {
   }
   if (level === TUETE_LEVEL) liste.push({ kategorie: 'tuete', typ: 'samentuete', name: 'Samentüten' });
   return liste;
+}
+
+// ---------- Töpfe (SPEC-5): kaufen, wechseln, im Lager verkaufen ----------
+
+// Topfgröße für eine Pflanze: Kübel für große, kleiner Topf für kleine Pflanzen
+export function topfGroesse(pflanzenTyp) {
+  return groesseVon(pflanzenTyp) === 'gross' ? 'kuebel' : 'klein';
+}
+
+function istStandardTopf(typ) {
+  return typ === STANDARD_TOPF.klein || typ === STANDARD_TOPF.kuebel;
+}
+
+// Aktueller Topf einer Pflanze (ohne eigene Wahl: Terrakotta der passenden Größe)
+export function topfVon(p) {
+  return p.topf || STANDARD_TOPF[topfGroesse(p.typ)];
+}
+
+// Hat die Pflanze überhaupt einen wechselbaren Topf? Beetpflanzen und Raritäten nicht.
+export function topfWechselbar(p) {
+  return !!p && !p.saat && !p.rar;
+}
+
+// Töpfe im Shop (ohne die kostenlosen Terrakotta-Töpfe)
+export function topfKatalog(daten) {
+  const lvl = levelAus(daten.spiel.xp).level;
+  const lager = daten.spiel.lager || [];
+  return Object.keys(TOEPFE).filter(t => !istStandardTopf(t)).map(t => ({
+    kategorie: 'topf',
+    typ: t,
+    name: TOEPFE[t].name,
+    groesse: TOEPFE[t].groesse,
+    preis: TOEPFE[t].preis,
+    level: TOEPFE[t].level,
+    freigeschaltet: lvl >= TOEPFE[t].level,
+    gezeichnet: true,
+    imLager: lager.filter(e => e.kategorie === 'topf' && e.typ === t).length
+  })).sort((a, b) => (a.groesse === b.groesse ? 0 : a.groesse === 'klein' ? -1 : 1) || a.level - b.level || a.preis - b.preis);
+}
+
+// Topf kaufen: kommt ins Lager, von dort über „Topf ändern“ an eine Pflanze
+export function topfKaufen(daten, typ) {
+  if (!hat(TOEPFE, typ) || istStandardTopf(typ)) return fehler('Diesen Topf gibt es nicht zu kaufen.');
+  const t = TOEPFE[typ];
+  const d = migriere(kopie(daten));
+  if (levelAus(d.spiel.xp).level < t.level) return fehler(t.name + ' wird ab Level ' + t.level + ' freigeschaltet.');
+  if (d.spiel.samen < t.preis) return fehler('Dafür fehlen ' + (t.preis - d.spiel.samen) + ' Samen.');
+  d.spiel.samen -= t.preis;
+  d.spiel.lager.push({ id: neueId('l'), kategorie: 'topf', typ, eigenschaften: {} });
+  return { daten: d };
+}
+
+// Passende Töpfe für eine Pflanze: Terrakotta (immer) und je Typ ein Topf aus dem Lager
+export function passendeToepfe(daten, pflanzeId) {
+  const p = daten.spiel.gewaechshaus.pflanzen.find(x => x.id === pflanzeId);
+  if (!topfWechselbar(p)) return [];
+  const groesse = topfGroesse(p.typ);
+  const liste = [{ lagerId: 'standard', typ: STANDARD_TOPF[groesse], name: TOEPFE[STANDARD_TOPF[groesse]].name, aktuell: topfVon(p) === STANDARD_TOPF[groesse] }];
+  const gesehen = new Set();
+  for (const e of daten.spiel.lager || []) {
+    if (e.kategorie !== 'topf' || gesehen.has(e.typ) || !hat(TOEPFE, e.typ) || TOEPFE[e.typ].groesse !== groesse) continue;
+    gesehen.add(e.typ);
+    liste.push({ lagerId: e.id, typ: e.typ, name: TOEPFE[e.typ].name, aktuell: false });
+  }
+  return liste;
+}
+
+// Topf wechseln: lagerId eines Topfs im Lager oder 'standard' (Terrakotta). Der alte Topf (außer Terrakotta) kommt ins Lager.
+export function topfWechseln(daten, pflanzeId, lagerId) {
+  const d = migriere(kopie(daten));
+  const p = d.spiel.gewaechshaus.pflanzen.find(x => x.id === pflanzeId);
+  if (!p) return fehler('Diese Pflanze gibt es nicht.');
+  if (!topfWechselbar(p)) return fehler(p.saat ? 'Beetpflanzen wachsen direkt im Beet.' : 'Raritäten behalten ihr eigenes Gefäß.');
+  const groesse = topfGroesse(p.typ);
+  let neuerTyp;
+  if (lagerId === 'standard') {
+    neuerTyp = STANDARD_TOPF[groesse];
+  } else {
+    const i = d.spiel.lager.findIndex(e => e.id === lagerId && e.kategorie === 'topf');
+    if (i < 0) return fehler('Dieser Topf liegt nicht im Lager.');
+    neuerTyp = d.spiel.lager[i].typ;
+    if (!hat(TOEPFE, neuerTyp) || TOEPFE[neuerTyp].groesse !== groesse) {
+      return fehler(groesse === 'kuebel' ? 'Große Pflanzen brauchen einen Kübel.' : 'Kleine Pflanzen brauchen einen kleinen Topf.');
+    }
+    d.spiel.lager.splice(i, 1);
+  }
+  const alt = topfVon(p);
+  if (alt === neuerTyp) return fehler('Die Pflanze steht schon in diesem Topf.');
+  if (!istStandardTopf(alt)) d.spiel.lager.push({ id: neueId('l'), kategorie: 'topf', typ: alt, eigenschaften: {} });
+  if (istStandardTopf(neuerTyp)) delete p.topf;
+  else p.topf = neuerTyp;
+  return { daten: d };
+}
+
+// Teil aus dem Lager verkaufen: halber Preis (Raritäten nie, Beetpflanzen und Gutschein-Teile ohne Preis bringen nichts)
+export function lagerVerkaufen(daten, lagerId) {
+  const d = migriere(kopie(daten));
+  const i = d.spiel.lager.findIndex(e => e.id === lagerId);
+  if (i < 0) return fehler('Dieses Teil liegt nicht im Lager.');
+  const e = d.spiel.lager[i];
+  const eig = e.eigenschaften || {};
+  if (eig.rar) return fehler('Raritäten kann man nicht verkaufen.');
+  let preis = 0;
+  if (e.kategorie === 'topf') preis = hat(TOEPFE, e.typ) ? TOEPFE[e.typ].preis : 0;
+  else if (eig.saat) preis = 0;
+  else {
+    const tabelle = e.kategorie === 'pflanze' ? PREISE_PFLANZEN : e.kategorie === 'moebel' ? PREISE_MOEBEL : PREISE_DEKO;
+    const def = tabelle[e.typ] || preisVon(e.typ) || (hat(SAISON_ARTIKEL, e.typ) ? SAISON_ARTIKEL[e.typ] : null);
+    preis = def && def.preis ? def.preis : 0;
+  }
+  const erloes = Math.floor(preis / 2);
+  d.spiel.lager.splice(i, 1);
+  d.spiel.samen += erloes;
+  // Eine Pflanze mit eigenem Topf: der Topf bleibt im Lager
+  if (e.kategorie === 'pflanze' && eig.topf && !istStandardTopf(eig.topf)) {
+    d.spiel.lager.push({ id: neueId('l'), kategorie: 'topf', typ: eig.topf, eigenschaften: {} });
+  }
+  return { daten: d, erloes };
 }

@@ -6,7 +6,9 @@
 import * as L from '../logik.js';
 import { zeichneSzene, vorschau, einpassen, feldAusPunkt, punktAusOrt, FELD_PX, erntereif, ERNTE_WARTE_TAGE } from '../szene.js';
 import { iso } from '../grafik/hilfen.js';
-import { dekoBreite, gewaehlteKategorie, meidbareKategorien, kategorieWaehlen, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO, einlagern, lagerPlatzieren, lagerListe, schmuecken, SCHMUCK } from '../spiel.js';
+import { TOEPFE } from '../grafik/toepfe.js';
+import { mitTopf } from '../grafik/topfwahl.js';
+import { passendeToepfe, topfWechseln, topfVon, topfWechselbar, dekoBreite, gewaehlteKategorie, meidbareKategorien, kategorieWaehlen, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO, einlagern, lagerPlatzieren, lagerListe, schmuecken, SCHMUCK } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { RARITAETEN } from '../grafik/raritaeten.js';
@@ -163,6 +165,16 @@ export function zeige(container, ctx, param) {
       '.'
     ]
   }));
+
+  // Gestern: Ergebnis des Vortags als kurze Zeile, damit sichtbar bleibt, was das Budget bringt
+  const gesternE = (d.spiel.bewertet.tage || []).find(t => t.datum === L.datumPlusTage(hd, -1));
+  if (gesternE && !aktion) {
+    container.append(el('div', { class: 'karte gs-karte' + (gesternE.erfuellt ? ' gs-gut' : '') },
+      el('span', { 'aria-hidden': 'true', text: gesternE.erfuellt ? '✅' : '🌧️' }),
+      el('span', { text: gesternE.erfuellt
+        ? `Gestern im Budget: +${gesternE.samen} Samen${d.spiel.serie >= 2 ? `, ${d.spiel.serie} Tage in Folge` : ''}`
+        : 'Gestern über dem Budget: keine Samen. Heute zählt neu.' })));
+  }
 
   // Einrichten-Knopf über der Szene (nicht während einer Platzwahl oder im Bewegungsmodus)
   if (!aktion && !bewegen) container.append(einrichtenLeiste(ctx));
@@ -1124,9 +1136,15 @@ function pflanzenBlatt(ctx, p) {
     p.rar ? el('div', { class: 'ra-marke', text: 'Rarität' }) : null,
     el('div', { class: 'ga-sterne', 'aria-hidden': 'true', text: '★'.repeat(p.stufe) + '☆'.repeat(4 - p.stufe) }),
     el('div', { class: 'klein', text: `Stufe ${p.stufe} von 4` }),
-    def ? vorschau(def.zeichne(p.stufe, false, 'boden'), 'ga-vorschau') : null,
+    def ? vorschau(pflanzeImTopf(def, p, topfVon(p)), 'ga-vorschau') : null,
     el('div', { class: 'aktionen' },
       levelKnopf,
+      topfWechselbar(p) ? el('button', {
+        type: 'button',
+        class: 'knopf knopf-voll',
+        text: `Topf ändern (${(TOEPFE[topfVon(p)] || {}).name || 'Terrakotta'})`,
+        onclick: () => { schliessen(); topfBlatt(ctx, p); }
+      }) : null,
       p.stufe >= 4 ? el('p', { class: 'ga-grund', text: 'Die Pflanze ist schon auf Stufe 4.' }) : null,
       zuWenig ? el('p', { class: 'ga-grund', text: `Dafür fehlen ${zahl(kosten - d.spiel.samen)} Samen.` }) : null,
       el('button', {
@@ -1142,6 +1160,39 @@ function pflanzenBlatt(ctx, p) {
     p.typ === 'zimmertanne' ? schmuckAbschnitt(ctx, p, schliessen) : null
   );
   blatt = blattOeffnen(ctx, inhalt);
+}
+
+// Pflanze in einem bestimmten Topf zeichnen (Vorschau im Blatt)
+function pflanzeImTopf(def, p, topfTyp) {
+  const t = topfTyp && !p.rar ? TOEPFE[topfTyp] : null;
+  return mitTopf(t ? t.zeichne : null, () => def.zeichne(p.stufe, false, 'boden', p.schmuck || null));
+}
+
+// Topf ändern: Terrakotta und alle passenden Töpfe aus dem Lager, jeweils als Vorschau mit der Pflanze darin
+function topfBlatt(ctx, p) {
+  const def = pflanzenDef(p);
+  const liste = passendeToepfe(ctx.daten, p.id);
+  let blatt = null;
+  const karten = liste.map(t => el('button', {
+    type: 'button',
+    class: 'karte sh-karte tp-wahl' + (topfVon(p) === t.typ ? ' tp-aktuell' : ''),
+    onclick: () => {
+      if (topfVon(p) === t.typ) return;
+      const r = topfWechseln(ctx.daten, p.id, t.lagerId);
+      if (r.fehler) return ctx.toast(r.fehler);
+      blatt.schliessen();
+      ctx.speichern(r.daten);
+      ctx.toast(`Neuer Topf: ${t.name}`);
+    }
+  },
+    el('div', { class: 'sh-bild' }, def ? vorschau(pflanzeImTopf(def, p, t.typ), 'sh-vorschau') : null),
+    el('div', { class: 'sh-name', text: t.name }),
+    topfVon(p) === t.typ ? el('div', { class: 'sh-hinweis', text: 'Aktuell' }) : null));
+  blatt = blattOeffnen(ctx, el('div', {},
+    el('h2', { class: 'ga-titel', text: 'Topf ändern' }),
+    el('p', { class: 'klein', text: 'Der alte Topf kommt ins Lager (Terrakotta ist immer da). Weitere Töpfe gibt es im Shop unter „Töpfe“.' }),
+    el('div', { class: 'raster' }, karten),
+    el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Zum Shop: Töpfe', onclick: () => { blatt.schliessen(); ctx.navigiere('shop', { reiter: 'topf' }); } })));
 }
 
 // Blatt einer Saatpflanze auf dem Beet: Name, Seltenheit, Wachstum, Ernte, Entfernen. Leveln gibt es hier nicht.

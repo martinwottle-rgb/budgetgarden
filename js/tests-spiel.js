@@ -1015,6 +1015,64 @@ test('Sechs Haken an den Rückwänden', () => {
   gleich(S.freiePlaetze(leer, 'deko', 'haengeampel').length, 6, 'im leeren Gewächshaus alle sechs frei');
 });
 
+
+test('Töpfe: kaufen landet im Lager, wechseln, alter Topf zurück ins Lager, verkaufen', () => {
+  const d = basis(1000, 2100); // Level 7; Efeutute p1 auf dem Tisch (klein)
+  gleich(S.topfKatalog(d).some(t => t.typ === 'terrakotta' || t.typ === 'terrakotta_kuebel'), false, 'Terrakotta ist gratis und nicht im Shop');
+  gleich(S.topfKatalog(d).filter(t => t.groesse === 'klein').length, 11, '11 kaufbare kleine Töpfe');
+  gleich(S.topfKatalog(d).filter(t => t.groesse === 'kuebel').length, 11, '11 kaufbare Kübel');
+  scheitert(S.topfKaufen(basis(1000, 0), 'kupfer'), 'Kupfer vor dem Level');
+  const k = S.topfKaufen(d, 'keramik_weiss');
+  klappt(k, 'weißen Topf kaufen');
+  gleich(k.daten.spiel.samen, 1000 - 30, 'Preis abgezogen');
+  const lagerTopf = k.daten.spiel.lager.find(e => e.kategorie === 'topf');
+  gleich(lagerTopf && lagerTopf.typ, 'keramik_weiss', 'Topf liegt im Lager');
+  gleich(S.passendeToepfe(k.daten, 'p1').map(t => t.typ), ['terrakotta', 'keramik_weiss'], 'passende Töpfe für die Efeutute');
+  const w = S.topfWechseln(k.daten, 'p1', lagerTopf.id);
+  klappt(w, 'Topf wechseln');
+  gleich(w.daten.spiel.gewaechshaus.pflanzen.find(p => p.id === 'p1').topf, 'keramik_weiss', 'Pflanze steht im neuen Topf');
+  gleich(w.daten.spiel.lager.some(e => e.kategorie === 'topf'), false, 'Terrakotta kommt nicht ins Lager');
+  const z = S.topfWechseln(w.daten, 'p1', 'standard');
+  klappt(z, 'zurück auf Terrakotta');
+  gleich(z.daten.spiel.lager.filter(e => e.kategorie === 'topf').map(e => e.typ), ['keramik_weiss'], 'weißer Topf wieder im Lager');
+  const v = S.lagerVerkaufen(z.daten, z.daten.spiel.lager[0].id);
+  klappt(v, 'Topf aus dem Lager verkaufen');
+  gleich([v.erloes, v.daten.spiel.lager.length], [15, 0], 'halber Preis, Lager leer');
+  scheitert(S.lagerPlatzieren(w.daten.spiel.lager.length ? w.daten : z.daten, z.daten.spiel.lager[0].id, { feld: [5, 5] }), 'Topf lässt sich nicht auf den Boden stellen');
+});
+
+test('Töpfe: Größe passt zur Pflanze, Beet und Raritäten ohne Wechsel, Topf bleibt beim Verkauf', () => {
+  const d = basis(2000, 2100);
+  d.spiel.gewaechshaus.pflanzen.push({ id: 'gm', typ: 'monstera', stufe: 2, ort: { feld: [4, 4] } });
+  const k = S.topfKaufen(d, 'keramik_weiss');
+  const lid = k.daten.spiel.lager[0].id;
+  scheitert(S.topfWechseln(k.daten, 'gm', lid), 'kleiner Topf passt nicht zur Monstera');
+  const kb = S.topfKaufen(k.daten, 'laufglasur_kuebel');
+  const kid = kb.daten.spiel.lager.find(e => e.typ === 'laufglasur_kuebel').id;
+  scheitert(S.topfWechseln(kb.daten, 'p1', kid), 'Kübel passt nicht zur Efeutute');
+  const w = S.topfWechseln(kb.daten, 'gm', kid);
+  klappt(w, 'Kübel für die Monstera');
+  const v = S.verkaufen(w.daten, 'pflanze', 'gm');
+  klappt(v, 'Monstera verkaufen');
+  gleich(v.daten.spiel.lager.some(e => e.kategorie === 'topf' && e.typ === 'laufglasur_kuebel'), true, 'Kübel bleibt im Lager');
+  const beet = basis(2000, 2100);
+  beet.spiel.gewaechshaus.pflanzen.push({ id: 's1', typ: 'tomate', stufe: 2, saat: true, ort: { feld: [5, 5] } });
+  gleich(S.passendeToepfe(beet, 's1').length, 0, 'Beetpflanze ohne Topfwahl');
+  scheitert(S.topfWechseln(beet, 's1', 'standard'), 'Beetpflanze kann keinen Topf wechseln');
+});
+
+test('Lager: Pflanze, Möbel und Deko verkaufen, Raritäten nicht', () => {
+  const d = basis(500, 300);
+  const e = S.einlagern(d, 'pflanze', 'p1');
+  const v = S.lagerVerkaufen(e.daten, e.daten.spiel.lager[0].id);
+  klappt(v, 'Efeutute aus dem Lager verkaufen');
+  gleich(v.erloes, 25, 'halber Preis der Efeutute (50)');
+  const rar = basis(500, 300);
+  rar.spiel.gewaechshaus.pflanzen.push({ id: 'r1', typ: Object.keys(S.RARITAETEN_REGELN)[0], stufe: 1, rar: true, ort: { feld: [5, 5] } });
+  const er = S.einlagern(rar, 'pflanze', 'r1');
+  scheitert(S.lagerVerkaufen(er.daten, er.daten.spiel.lager[0].id), 'Rarität nicht verkaufbar');
+});
+
 test('Katze kostet 250 und ist ab Level 9', () => {
   gleich(S.PREISE_DEKO.katze.preis, 250, 'Preis');
   gleich(S.PREISE_DEKO.katze.level, 9, 'Level');

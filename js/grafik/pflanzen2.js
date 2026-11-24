@@ -4,6 +4,7 @@
 // ebene: 'boden' (Standard) oder 'brett' (Stellplatz auf einem Moebel).
 
 import { f, p2, gruppe, pfad, linie, oval, kreis, qb, zufall } from './hilfen.js';
+import { gewaehlterTopf } from './topfwahl.js';
 
 const RAD = Math.PI / 180;
 const EF_R = 10; // Radius des kleinen Topfs
@@ -30,6 +31,8 @@ const HOLZ_WELK = { grund: '#c9b07a', schatten: '#a8966a', licht: '#e6d3a4' };
 
 // ---------- Topf (Terrakotta, Kegelstumpf mit Ellipse oben) ----------
 function topf(R, H) {
+  const gewaehlt = gewaehlterTopf();
+  if (gewaehlt) return gewaehlt(R, H);
   const Rb = R * 0.72, ry = R * 0.4, ryb = Rb * 0.4, k = R / 14;
   const korpus = `M${f(-R)},${-H}L${f(-Rb)},0A${f(Rb)},${f(ryb)} 0 0 0 ${f(Rb)},0L${R},${-H}A${R},${f(ry)} 0 0 1 ${f(-R)},${-H}Z`;
   const krumen = [[-6, 1.5, 1.1, 0.6], [-2, 2.6, 0.9, 0.5], [3, 0.8, 1, 0.55], [6, 2.2, 0.8, 0.45], [1, -1.2, 0.7, 0.4]]

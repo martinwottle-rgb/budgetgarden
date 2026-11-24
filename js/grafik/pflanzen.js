@@ -3,6 +3,7 @@
 // ebene: 'boden' (Standard) oder 'brett' (Stellplatz auf einem Moebel).
 
 import { f, p2, gruppe, pfad, linie, oval, kreis, rechteck, poly, qb, zufall, iso, kiste, OX, OY } from './hilfen.js';
+import { gewaehlterTopf } from './topfwahl.js';
 
 const RAD = Math.PI / 180;
 
@@ -1701,7 +1702,8 @@ function zeichnePflanze(typ, stufe, welk, ebene) {
   else if (typ === 'gluecksfeder') inhalt = gluecksfeder(s, welk);
   else if (typ === 'echeverie') inhalt = echeverie(s, welk);
   else inhalt = efeutute(s, welk, ebene);
-  return (typ === 'orchidee' ? kunststofftopf(R, H) : schale ? bonsaiSchale(H) : topf(R, H)) +
+  const gewaehlt = gewaehlterTopf();
+  return (gewaehlt ? gewaehlt(R, H) : typ === 'orchidee' ? kunststofftopf(R, H) : schale ? bonsaiSchale(H) : topf(R, H)) +
     gruppe(`transform="translate(0,${-H}) rotate(${welk ? 8 : 0})"`, inhalt) +
     (welk ? fallLaub(ebene) : '');
 }

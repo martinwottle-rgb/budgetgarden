@@ -4,8 +4,10 @@
 
 import {
   katalog, freiePlaetze, kaufen, levelAus, ERWEITERUNGEN, raritaetenListe,
-  samentuete, saatSeltenheit, saisonKatalog, aktiveSaison, designListe, designKaufen, designWaehlen, lagerListe
+  samentuete, saatSeltenheit, saisonKatalog, aktiveSaison, designListe, designKaufen, designWaehlen, lagerListe,
+  topfKatalog, topfKaufen, lagerVerkaufen
 } from '../spiel.js';
+import { TOEPFE } from '../grafik/toepfe.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { MOEBEL } from '../grafik/moebel.js';
@@ -24,6 +26,7 @@ const REITER = [
   { id: 'pflanze', name: 'Pflanzen' },
   { id: 'moebel', name: 'Möbel' },
   { id: 'deko', name: 'Deko' },
+  { id: 'topf', name: 'Töpfe 🪴' },
   { id: 'erweiterung', name: 'Erweiterungen' },
   { id: 'raritaet', name: 'Raritäten ✨' },
   { id: 'tuete', name: 'Samentüten 🌱' },
@@ -60,8 +63,10 @@ const istBeet = (typ) => !!(MOEBEL2[typ] && MOEBEL2[typ].beet);
 // Zustand: gewählter Reiter bleibt beim Neuzeichnen erhalten
 let reiterWahl = 'pflanze';
 
-export function zeige(container, ctx) {
+export function zeige(container, ctx, param) {
   const d = ctx.daten;
+  // Aufruf mit Reiter, z. B. aus „Topf ändern“: { reiter: 'topf' }
+  if (param && param.reiter && REITER.some(r => r.id === param.reiter)) reiterWahl = param.reiter;
   const saison = aktiveSaison(ctx.heute);
   // Lager-Reiter nur mit eingelagerten Teilen, Saison-Reiter in der Saison oder mit Saison-Gutschein
   const ansicht = {
@@ -89,6 +94,7 @@ function saisonGutscheine(d) {
 
 function inhaltDesReiters(ctx, saison) {
   if (reiterWahl === 'lager') return lagerBereich(ctx);
+  if (reiterWahl === 'topf') return topfBereich(ctx);
   if (reiterWahl === 'raritaet') return el('div', { class: 'raster' }, raritaetenListe(ctx.daten).map(r => raritaetKarte(ctx, r)));
   if (reiterWahl === 'tuete') return tuetenBereich(ctx);
   if (reiterWahl === 'saison') return saisonBereich(ctx, saison);
@@ -422,19 +428,47 @@ function lagerKarte(ctx, e) {
   const eintrag = (ctx.daten.spiel.lager || []).find(x => x.id === e.lagerId) || null;
   const art = eintrag ? lagerArt(eintrag) : e.kategorie;
   const passt = freiePlaetze(ctx.daten, art, e.typ).length > 0;
+  const istTopf = e.kategorie === 'topf';
   return el('button', {
     type: 'button',
-    class: 'karte sh-karte lg-karte' + (passt ? '' : ' sh-ausgegraut'),
-    onclick: () => {
-      if (!passt) return ctx.toast(KEIN_PLATZ);
-      ctx.navigiere('garten', { platzieren: { kategorie: e.kategorie, typ: e.typ, lagerId: e.lagerId } });
-    }
+    class: 'karte sh-karte lg-karte' + (passt || istTopf ? '' : ' sh-ausgegraut'),
+    onclick: () => lagerBlatt(ctx, e, eintrag, passt)
   },
     lagerBild(eintrag),
     el('div', { class: 'sh-name', text: e.name }),
-    el('div', { class: 'sh-preis sp12-gratis', text: 'Gratis aufstellen' }),
-    passt ? null : el('div', { class: 'sh-hinweis', text: 'Gerade kein freier Platz' })
+    el('div', { class: 'sh-preis sp12-gratis', text: istTopf ? 'Für „Topf ändern“' : 'Gratis aufstellen' }),
+    passt || istTopf ? null : el('div', { class: 'sh-hinweis', text: 'Gerade kein freier Platz' })
   );
+}
+
+// Blatt eines Lagerteils: aufstellen (bzw. Hinweis für Töpfe) und verkaufen zum halben Preis
+function lagerBlatt(ctx, e, eintrag, passt) {
+  const probe = lagerVerkaufen(ctx.daten, e.lagerId);
+  const istTopf = e.kategorie === 'topf';
+  let blatt = null;
+  blatt = ctx.sheet(el('div', { class: 'lg-blatt' },
+    el('h2', { class: 'sh-titel', text: e.name }),
+    lagerBild(eintrag),
+    istTopf
+      ? el('p', { class: 'klein', text: 'Tippe im Garten eine Pflanze an und wähle „Topf ändern“. Kleine Töpfe passen zu kleinen Pflanzen, Kübel zu großen.' })
+      : el('button', {
+        type: 'button', class: 'knopf knopf-primaer knopf-voll', text: passt ? 'Gratis aufstellen' : 'Gerade kein freier Platz',
+        disabled: passt ? null : true,
+        onclick: () => { blatt.schliessen(); ctx.navigiere('garten', { platzieren: { kategorie: e.kategorie, typ: e.typ, lagerId: e.lagerId } }); }
+      }),
+    probe.fehler ? el('p', { class: 'klein', text: probe.fehler }) : el('button', {
+      type: 'button', class: 'knopf knopf-leise knopf-voll',
+      text: probe.erloes > 0 ? `Verkaufen für ${zahl(probe.erloes)} Samen` : 'Weggeben (ohne Samen)',
+      onclick: () => {
+        const r = lagerVerkaufen(ctx.daten, e.lagerId);
+        if (r.fehler) return ctx.toast(r.fehler);
+        blatt.schliessen();
+        ctx.speichern(r.daten);
+        ctx.toast(r.erloes > 0 ? `Verkauft: +${zahl(r.erloes)} Samen` : 'Weggegeben');
+      }
+    })
+  ));
+  einpassen(blatt.element);
 }
 
 // Saat im Lager wird wie Saat auf dem Beet geprüft, sonst zählt die Kategorie
@@ -773,4 +807,63 @@ function rahmenSvg(id) {
     `<path d="M60,12 V78 M30,45 H90" stroke="${f}" stroke-width="4"/>` +
     `<rect x="30" y="12" width="60" height="66" rx="3" fill="none" stroke="${f}" stroke-width="8"/>` +
     '<rect x="26" y="8" width="68" height="74" rx="4" fill="none" stroke="#6b4a3a" stroke-width="0.8"/>';
+}
+
+// ---------- Töpfe (SPEC-5): kaufen, landen im Lager, Wechsel über das Pflanzenblatt ----------
+
+function topfBild(typ) {
+  const t = TOEPFE[typ];
+  const [R, H] = t && t.groesse === 'kuebel' ? [18, 26] : [12, 18];
+  return el('div', { class: 'sh-bild' }, vorschau(t ? t.zeichne(R, H) : '', 'sh-vorschau'));
+}
+
+function topfBereich(ctx) {
+  const liste = topfKatalog(ctx.daten);
+  const gruppe = (groesse, titel, text) => [
+    el('div', { class: 'abschnitt', text: titel }),
+    el('p', { class: 'klein tp-hinweis', text }),
+    el('div', { class: 'raster' }, liste.filter(a => a.groesse === groesse).map(a => topfKarte(ctx, a)))
+  ];
+  return el('div', {},
+    ...gruppe('klein', 'Kleine Töpfe', 'Für kleine Pflanzen. Gekaufte Töpfe liegen im Lager; tippe eine Pflanze an und wähle „Topf ändern“.'),
+    ...gruppe('kuebel', 'Kübel', 'Für große Pflanzen wie Monstera, Strelitzie oder Feigenbaum.'));
+}
+
+function topfKarte(ctx, a) {
+  const samen = ctx.daten.spiel.samen;
+  const zuWenig = samen < a.preis;
+  return el('button', {
+    type: 'button',
+    class: 'karte sh-karte' + (!a.freigeschaltet || zuWenig ? ' sh-ausgegraut' : ''),
+    onclick: () => topfKaufBlatt(ctx, a)
+  },
+    topfBild(a.typ),
+    el('div', { class: 'sh-name', text: a.name }),
+    el('div', { class: 'sh-preis' }, svgBox(muenzSvg(18), 'muenze-klein'), zahl(a.preis)),
+    !a.freigeschaltet ? el('div', { class: 'sh-hinweis', text: `🔒 ab Level ${a.level}` })
+      : a.imLager ? el('div', { class: 'sh-hinweis', text: `${a.imLager} im Lager` })
+        : zuWenig ? el('div', { class: 'sh-hinweis', text: `Noch ${zahl(a.preis - samen)} Samen` }) : null
+  );
+}
+
+function topfKaufBlatt(ctx, a) {
+  let blatt = null;
+  const knopf = el('button', {
+    type: 'button', class: 'knopf knopf-primaer knopf-voll',
+    text: !a.freigeschaltet ? `🔒 ab Level ${a.level}` : `Kaufen für ${zahl(a.preis)} Samen`,
+    disabled: !a.freigeschaltet || ctx.daten.spiel.samen < a.preis ? true : null,
+    onclick: () => {
+      const r = topfKaufen(ctx.daten, a.typ);
+      if (r.fehler) return ctx.toast(r.fehler);
+      blatt.schliessen();
+      ctx.speichern(r.daten);
+      ctx.toast(`${a.name} liegt im Lager. Tippe eine Pflanze an und wähle „Topf ändern“.`);
+    }
+  });
+  blatt = ctx.sheet(el('div', {},
+    el('h2', { class: 'sh-titel', text: a.name }),
+    topfBild(a.typ),
+    el('p', { class: 'klein', text: a.groesse === 'kuebel' ? 'Kübel für große Pflanzen.' : 'Topf für kleine Pflanzen.' }),
+    knopf));
+  einpassen(blatt.element);
 }

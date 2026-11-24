@@ -5,6 +5,7 @@
 // Licht von links oben, Konturen #6b4a3a, Kontaktschatten unter jedem Objekt. Alles deterministisch.
 
 import { f, p2, gruppe, pfad, linie, oval, kreis, poly } from './hilfen.js';
+import { gewaehlterTopf } from './topfwahl.js';
 
 const RAD = Math.PI / 180;
 const FAC = [0.5, 0.72, 0.9, 1]; // Groesse je Stufe 1 bis 4
@@ -87,6 +88,8 @@ function quader(x0, x1, y0, y1, z0, z1, fa, kon = KON_DEKO) {
 
 // ---------- Topf (wie pflanzen.js und saison.js) ----------
 function topf(R, H) {
+  const gewaehlt = gewaehlterTopf();
+  if (gewaehlt) return gewaehlt(R, H);
   const Rb = R * 0.72, ry = R * 0.4, ryb = Rb * 0.4, k = R / 14;
   const korpus = `M${f(-R)},${-H}L${f(-Rb)},0A${f(Rb)},${f(ryb)} 0 0 0 ${f(Rb)},0L${R},${-H}A${R},${f(ry)} 0 0 1 ${f(-R)},${-H}Z`;
   const krumen = [[-6, 1.5, 1.1, 0.6], [-2, 2.6, 0.9, 0.5], [3, 0.8, 1, 0.55], [6, 2.2, 0.8, 0.45], [1, -1.2, 0.7, 0.4]]

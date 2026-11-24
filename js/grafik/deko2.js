@@ -4,6 +4,7 @@
 // Stil: Mid-Century (Teak, Messing, Akzentfarben aus STIL.md). Alles deterministisch, Animation nur per SVG <animate>.
 
 import { f, kreis, oval, p2, pfad, poly, zufall } from './hilfen.js';
+import { TEPPICHE } from './teppiche.js';
 
 let zaehler = 0;
 // Eindeutige Ids fuer Verlaeufe, damit mehrere SVGs auf einer Seite nicht kollidieren
@@ -1068,6 +1069,8 @@ function jubilaeumsbrunnen() {
 
 // ---------- Export ----------
 export const DEKO2 = {
+  // Teppiche (SPEC-5): liegen als Bodenbelag unter allem
+  ...TEPPICHE,
   katzenkorb: { name: 'Katzenkorb', zeichne: () => katzenkorb() },
   leseecke: { name: 'Leseplatz', zeichne: () => leseecke() },
   loungesessel: { name: 'Lounge-Sessel', zeichne: () => loungesessel() },

@@ -1012,6 +1012,42 @@ function samenBlattZeigen() {
 
 // Nacheinander: Raritaeten-Feiern, Challenges, offene Monatsabschlüsse, dann die Gehaltsfrage, dann der Wochenrückblick,
 // dann das Tagesgeschenk, dann die Backup-Erinnerung. Nie zwei Abläufe gleichzeitig.
+// ---------- Gestern im Budget ----------
+
+// Einmal am Tag beim ersten Öffnen: Ergebnis von gestern, damit sichtbar wird, was das Budget bringt
+const GESTERN_SCHLUESSEL = 'budgetgarten-gestern-gezeigt';
+async function gesternZeigen() {
+  const heute = ctx.heute;
+  const gestern = L.datumPlusTage(heute, -1);
+  try { if (localStorage.getItem(GESTERN_SCHLUESSEL) === heute) return; } catch (e) { /* ohne Speicher trotzdem zeigen */ }
+  const e = (ctx.daten.spiel.bewertet.tage || []).find(t => t.datum === gestern);
+  if (!e) return;
+  try { localStorage.setItem(GESTERN_SCHLUESSEL, heute); } catch (err) { /* egal */ }
+  const budget = L.tagesbudget(ctx.daten, gestern);
+  const aus = L.ausgabenAm(ctx.daten, gestern);
+  const serie = ctx.daten.spiel.serie;
+  const beet = ctx.daten.spiel.gewaechshaus.pflanzen.some(p => p.saat);
+  const zeile = (symbol, text) => el('div', { class: 'gs-zeile' }, el('span', { class: 'gs-symbol', 'aria-hidden': 'true', text: symbol }), el('span', { text }));
+  const zeilen = e.erfuellt
+    ? [
+      zeile('🌱', `+${zahl(e.samen)} Samen für gestern`),
+      zeile('🔥', serie >= 2 ? `${tage(serie)} in Folge im Budget` : 'Deine Serie hat begonnen'),
+      beet ? zeile('🪴', 'Deine Beetpflanzen sind gewachsen') : zeile('💚', 'Deine Pflanzen bleiben frisch'),
+      zeile('💶', `${L.euro(aus)} von ${L.euro(Math.max(0, budget))} ausgegeben`)
+    ]
+    : [
+      zeile('💶', `${L.euro(aus - Math.max(0, budget))} über dem Tagesbudget`),
+      zeile('🌱', 'Keine Samen für gestern, deine Serie beginnt neu'),
+      zeile('🥀', 'Die Pflanzen lassen die Blätter hängen, bis du heute etwas einträgst'),
+      zeile('✨', 'Bleib heute im Budget, dann gibt es morgen früh wieder Samen')
+    ];
+  await dialog({
+    titel: e.erfuellt ? 'Gestern im Budget! 🎉' : 'Gestern war teuer',
+    inhalt: el('div', { class: 'gs-liste' + (e.erfuellt ? ' gs-gut' : '') }, zeilen),
+    knoepfe: [{ text: e.erfuellt ? 'Weiter so!' : 'Neuer Tag, neues Glück', art: 'primaer' }]
+  });
+}
+
 async function dialogeNachStart() {
   if (dialogeLaufen || !ctx.daten.einstellungen.ersteinrichtungFertig) return;
   dialogeLaufen = true;
@@ -1021,6 +1057,7 @@ async function dialogeNachStart() {
     await abschluesseZeigen();
     await gehaltZeigen();
     await rueckblickZeigen();
+    await gesternZeigen();
     await tagesgeschenkZeigen();
     backupPruefen();
   } finally {

@@ -851,3 +851,10 @@ button:not([disabled]):active,
 .griff::before { top: 12px; }
 .ebene { overscroll-behavior: contain; touch-action: none; }
 .ebene .sheet, .ebene .dialog { touch-action: pan-y; }
+
+/* Gestern im Budget: Dialogzeilen und kurze Karte auf der Startseite */
+.gs-liste { display: grid; gap: 10px; margin: 6px 0 14px; text-align: left; }
+.gs-zeile { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; line-height: 1.35; }
+.gs-symbol { width: 24px; flex: none; text-align: center; }
+.gs-karte { display: flex; gap: 10px; align-items: center; padding: 10px 14px; font-size: 14px; font-weight: 600; color: #8a6a5a; }
+.gs-karte.gs-gut { color: #4f7a45; background: #eef6e8; }
