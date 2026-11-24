@@ -381,6 +381,8 @@ function oeffneEbene(panel, { mitte = false, abbruch = null } = {}) {
       setTimeout(() => ebene.remove(), 220);
     }
   };
+  // Wischen auf dem abgedunkelten Hintergrund scrollt nicht die Seite darunter
+  hinter.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
   hinter.addEventListener('click', () => {
     if (abbruch) abbruch();
     eintrag.schliessen();
@@ -400,11 +402,71 @@ document.addEventListener('keydown', (e) => {
 
 // Bottom Sheet. inhalt: Element oder HTML-String (nur für feste Texte, Nutzerdaten immer als Element).
 function sheet(inhalt) {
-  const blatt = el('div', { class: 'sheet', role: 'dialog' }, el('div', { class: 'griff', onclick: () => ebene.schliessen() }));
+  const griff = el('div', { class: 'griff', role: 'button', 'aria-label': 'Schließen', onclick: () => { if (!gezogen) ebene.schliessen(); } });
+  const blatt = el('div', { class: 'sheet', role: 'dialog' }, griff);
   if (typeof inhalt === 'string') blatt.insertAdjacentHTML('beforeend', inhalt);
   else if (inhalt) blatt.append(inhalt);
   const ebene = oeffneEbene(blatt);
+  let gezogen = false;
+  wischenZumSchliessen(blatt, griff, () => ebene.schliessen(), (wert) => { gezogen = wert; });
   return { schliessen: () => ebene.schliessen(), element: blatt };
+}
+
+// Blatt nach unten wegwischen wie bei iOS: an der Pille ziehen, oder im Inhalt nach unten ziehen, wenn das Blatt
+// ganz oben steht. Folgt dem Finger; schließt ab 90 px Weg oder schnellem Wischen, sonst federt es zurück.
+function wischenZumSchliessen(blatt, griff, schliessen, merkeGezogen) {
+  let start = null;   // { y, zeit, vonGriff }
+  let dy = 0;
+  let aktiv = false;
+  const setzen = (y, mitUebergang) => {
+    blatt.style.transition = mitUebergang ? 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none';
+    blatt.style.transform = y > 0 ? `translateY(${y}px)` : '';
+  };
+  const beginnen = (y, vonGriff) => { start = { y, zeit: performance.now(), vonGriff }; dy = 0; aktiv = vonGriff; merkeGezogen(false); };
+  const bewegen = (y, ev) => {
+    if (!start) return;
+    const d = y - start.y;
+    // Im Inhalt erst dann übernehmen, wenn ganz oben und nach unten gezogen wird (sonst normal scrollen)
+    if (!aktiv && d > 4 && blatt.scrollTop <= 0) { aktiv = true; start.y = y; start.zeit = performance.now(); }
+    if (!aktiv) return;
+    if (ev && ev.cancelable) ev.preventDefault();
+    dy = Math.max(0, y - start.y);
+    if (dy > 3) merkeGezogen(true);
+    setzen(dy, false);
+  };
+  const enden = () => {
+    if (!start) return;
+    const zeit = Math.max(1, performance.now() - start.zeit);
+    const schnell = dy / zeit > 0.6 && dy > 30;
+    if (aktiv && (dy > 90 || schnell)) {
+      blatt.style.transition = 'transform 0.22s ease-in';
+      blatt.style.transform = 'translateY(100%)';
+      setTimeout(schliessen, 180);
+    } else if (aktiv) {
+      setzen(0, true);
+    }
+    start = null;
+    aktiv = false;
+    // Ein Ziehen an der Pille soll kein „Antippen“ auslösen
+    setTimeout(() => merkeGezogen(false), 50);
+  };
+  blatt.addEventListener('touchstart', (e) => { if (e.touches.length === 1) beginnen(e.touches[0].clientY, griff.contains(e.target)); }, { passive: true });
+  blatt.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 1) return;
+    bewegen(e.touches[0].clientY, e);
+    // Kurzer Inhalt ohne eigenes Scrollen: Wischen darf nie die Seite dahinter bewegen
+    if (!aktiv && blatt.scrollHeight <= blatt.clientHeight + 1 && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  blatt.addEventListener('touchend', enden);
+  blatt.addEventListener('touchcancel', enden);
+  // Maus (Desktop): nur an der Pille
+  griff.addEventListener('mousedown', (e) => {
+    beginnen(e.clientY, true);
+    const mm = (ev) => bewegen(ev.clientY, null);
+    const mu = () => { enden(); window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
+    window.addEventListener('mousemove', mm);
+    window.addEventListener('mouseup', mu);
+  });
 }
 
 // Dialog mit Knöpfen. inhalt: optionales Element zwischen Text und Knöpfen (z. B. ein Datumsfeld).

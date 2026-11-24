@@ -844,3 +844,10 @@ button:not([disabled]):active,
   margin: 0 4px;
   text-align: center;
 }
+
+/* Blatt zum Wegwischen: Pille bleibt beim Scrollen oben, Scrollen schiebt die Seite dahinter nicht mit */
+.sheet { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.griff { position: sticky; top: 0; z-index: 5; height: 34px; background: var(--creme); touch-action: none; cursor: grab; }
+.griff::before { top: 12px; }
+.ebene { overscroll-behavior: contain; touch-action: none; }
+.ebene .sheet, .ebene .dialog { touch-action: pan-y; }
