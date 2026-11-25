@@ -610,9 +610,47 @@ function marke(seltenheit) {
 }
 
 // ---------- Öffnen-Animation (Vollbild-Overlay) ----------
-// Stufen: 1 wackelt, 2 reißt auf, 3 Karte erscheint (legendär mit Konfetti), 4 Knöpfe.
-// Antippen des Hintergrunds springt zur letzten Stufe.
-const ZEITEN = [900, 1450, 1900];
+// Stufen: 1 wackelt, 2 reißt auf und das Kartenband läuft durch die Seltenheiten, bremst ab und rastet ein,
+// 3 Karte erscheint (legendär mit Konfetti), 4 Knöpfe. Antippen des Hintergrunds springt zur letzten Stufe.
+const ZEITEN = [900];
+const BAND_DAUER = 4300;      // Laufzeit des Bands bis zum Einrasten (ms)
+const KACHEL_BREITE = 74;     // Kachel 64 px plus 10 px Abstand
+const BAND_VOR = 44;          // Kacheln vor dem Treffer
+const SEL_ORDNUNG = ['gewoehnlich', 'selten', 'episch', 'legendaer'];
+
+// Farbe mischen: a und b als #rrggbb, t = Anteil von b
+function mische(a, b, t) {
+  const h = (x) => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16));
+  const [p, q] = [h(a), h(b)];
+  return '#' + p.map((v, i) => Math.round(v + (q[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+
+// Eine Kachel im Band: nur Farbe (Verlauf, Glanz, Samenkorn), kein Text
+function bandKachel(seltenheit) {
+  const f = SEL_FARBE[seltenheit];
+  return el('div', {
+    class: 's20-kachel s20-k-' + seltenheit,
+    style: `--k-hell:${mische(f, '#ffffff', 0.45)};--k-mitte:${f};--k-dunkel:${mische(f, '#3d2b20', 0.35)}`
+  }, el('span', { class: 's20-korn', 'aria-hidden': 'true' }));
+}
+
+// Zufällige Folge, die natürlich wirkt (viel gewöhnlich, wenig legendär), mit dem Treffer an Stelle BAND_VOR.
+// Direkt danach liegt oft eine seltenere Kachel: das knappe Verpassen macht das Abbremsen spannend.
+function bandFolge(treffer) {
+  const gewicht = [['gewoehnlich', 52], ['selten', 28], ['episch', 14], ['legendaer', 6]];
+  const zieh = () => { let x = Math.random() * 100; for (const [k, g] of gewicht) { if ((x -= g) < 0) return k; } return 'gewoehnlich'; };
+  const folge = [];
+  for (let i = 0; i < BAND_VOR; i++) {
+    let k = zieh();
+    if (i > 0 && k === folge[i - 1] && Math.random() < 0.6) k = zieh();
+    folge.push(k);
+  }
+  folge[BAND_VOR - 1] = treffer === 'legendaer' ? 'episch' : SEL_ORDNUNG[Math.max(0, SEL_ORDNUNG.indexOf(treffer) - 1)];
+  folge.push(treffer);
+  const hoeher = SEL_ORDNUNG[Math.min(3, SEL_ORDNUNG.indexOf(treffer) + 1)];
+  folge.push(treffer === 'legendaer' ? 'selten' : (Math.random() < 0.7 ? hoeher : zieh()), zieh(), zieh(), zieh());
+  return folge;
+}
 
 function oeffneTuete(ctx, r, vorherAnzahl) {
   const farbe = SEL_FARBE[r.seltenheit];
@@ -628,12 +666,13 @@ function oeffneTuete(ctx, r, vorherAnzahl) {
     role: 'dialog',
     'aria-modal': 'true',
     'aria-label': 'Samentüte öffnen',
-    style: `--s20-farbe:${farbe}`
+    style: `--s20-ziel:${farbe}`
   });
 
   const setze = (neu) => {
     if (neu <= stufe) return;
     stufe = neu;
+    if (stufe === 2) timer.push(setTimeout(bandLaufen, 380));
     hinter.classList.toggle('s20-wackel', stufe === 1);
     hinter.classList.toggle('s20-reisst', stufe >= 2);
     hinter.classList.toggle('s20-zeigt', stufe >= 3);
@@ -645,12 +684,54 @@ function oeffneTuete(ctx, r, vorherAnzahl) {
   };
   const schliesse = () => {
     timer.forEach(clearTimeout);
+    cancelAnimationFrame(raf);
     hinter.remove();
+  };
+
+  // Kartenband mit Zeiger oben und unten, Rand weich ausgeblendet
+  const folge = bandFolge(r.seltenheit);
+  const kacheln = folge.map(bandKachel);
+  const band = el('div', { class: 's20-band' }, ...kacheln);
+  const ring = el('div', { class: 's20-ring', 'aria-hidden': 'true' });
+  const bandWrap = el('div', { class: 's20-band-wrap', 'aria-hidden': 'true' },
+    el('div', { class: 's20-zeiger s20-zeiger-oben' }), band, el('div', { class: 's20-zeiger s20-zeiger-unten' }), ring);
+  let raf = 0;
+  const bandLaufen = () => {
+    const breite = bandWrap.clientWidth || 320;
+    // Ziel: Mitte der Trefferkachel unter dem Zeiger, mit kleinem Zufallsversatz innerhalb der Kachel
+    const versatz = (Math.random() - 0.5) * 30;
+    const ziel = BAND_VOR * KACHEL_BREITE + 32 - breite / 2 + versatz;
+    const ueber = 14; // federt etwas über das Ziel hinaus und kommt zurück
+    const start = performance.now();
+    let zuletzt = -1;
+    const schritt = (jetzt) => {
+      const t = Math.min(1, (jetzt - start) / BAND_DAUER);
+      // Schnell an, sehr lang auslaufend (Quint), am Ende kleines Nachfedern
+      let x;
+      if (t < 0.93) x = (ziel + ueber) * (1 - Math.pow(1 - t / 0.93, 5));
+      else { const u = (t - 0.93) / 0.07; x = ziel + ueber * (1 - (1 - Math.pow(1 - u, 3))); }
+      band.style.transform = `translate3d(${-x}px,0,0)`;
+      const mitte = Math.floor((x + breite / 2) / KACHEL_BREITE);
+      if (mitte !== zuletzt && kacheln[mitte]) {
+        if (kacheln[zuletzt]) kacheln[zuletzt].classList.remove('s20-mitte');
+        kacheln[mitte].classList.add('s20-mitte');
+        zuletzt = mitte;
+        if (navigator.vibrate && t > 0.55) navigator.vibrate(4);
+      }
+      if (t < 1) { raf = requestAnimationFrame(schritt); return; }
+      kacheln[BAND_VOR].classList.add('s20-treffer');
+      hinter.classList.add('s20-eingerastet');
+      if (r.seltenheit === 'episch' || r.seltenheit === 'legendaer') hinter.classList.add('s20-blitz');
+      timer.push(setTimeout(() => setze(3), 900));
+      timer.push(setTimeout(() => setze(4), 1400));
+    };
+    raf = requestAnimationFrame(schritt);
   };
 
   const buehne = el('div', { class: 's20-buehne' },
     el('div', { class: 's20-licht', 'aria-hidden': 'true' }),
     svgBox(tuetenSvg(), 's20-tuete-svg'),
+    bandWrap,
     el('div', { class: 's20-ergebnis-wrap' },
       el('section', { class: 'karte s20-ergebnis' },
         el('div', { class: 'sh-bild s20-ergebnis-bild' }, vorschau(saatGrafik(r.sorte), 'sh-vorschau')),
@@ -681,14 +762,17 @@ function oeffneTuete(ctx, r, vorherAnzahl) {
   hinter.addEventListener('click', () => {
     if (stufe >= 4) return;
     timer.forEach(clearTimeout);
+    cancelAnimationFrame(raf);
     setze(4);
   });
   document.body.append(hinter);
   einpassen(hinter);
 
+  // Erst wackeln, dann reißt die Tüte auf und das Band läuft; Stufe 3 und 4 setzt das Band nach dem Einrasten.
+  // Ohne Bewegung (prefers-reduced-motion) direkt zur Karte.
+  const ruhig = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (ruhig) { setze(4); return; }
   timer.push(setTimeout(() => setze(2), ZEITEN[0]));
-  timer.push(setTimeout(() => setze(3), ZEITEN[1]));
-  timer.push(setTimeout(() => setze(4), ZEITEN[2]));
 }
 
 // Goldenes Konfetti für legendäre Samen
