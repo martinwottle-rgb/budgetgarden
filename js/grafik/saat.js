@@ -25,6 +25,34 @@ const farben = (i, welk) => (welk ? WELK : GRUEN[i % 2]);
 
 const stufeN = (n) => Math.min(4, Math.max(1, Math.round(Number(n) || 1)));
 
+// ---------- Plastik: Verlaeufe ----------
+// Verlaufs-Ids kommen aus einem Zaehler, damit sie auf der Seite eindeutig sind. Je Zeichnung (eintrag.zeichne)
+// wird die Liste neu aufgebaut; gleiche Verlaeufe werden nur einmal in <defs> geschrieben.
+let SAAT_UID = 0;
+let VERLAUF_IDS = new Map();
+let VERLAUF_DEFS = '';
+// Mischung zweier Hexfarben (Mittelwert je Kanal)
+function mischen(a, b) {
+  const kanal = (h, i) => parseInt(h.slice(1 + 2 * i, 3 + 2 * i), 16);
+  return '#' + [0, 1, 2].map((i) => Math.round((kanal(a, i) + kanal(b, i)) / 2).toString(16).padStart(2, '0')).join('');
+}
+// Verlauf mit drei Stopps [hell, mitte, dunkel]. 'h': waagerecht, Licht links. 'r': radial, Glanzzentrum oben links.
+// Liefert den url()-Verweis fuer fill.
+function verlauf(art, [a, b, c]) {
+  const schluessel = art + a + b + c;
+  if (!VERLAUF_IDS.has(schluessel)) {
+    const id = `saat-${art}-${++SAAT_UID}`;
+    VERLAUF_IDS.set(schluessel, id);
+    const stopps = `<stop offset="0" stop-color="${a}"/><stop offset="0.55" stop-color="${b}"/><stop offset="1" stop-color="${c}"/>`;
+    VERLAUF_DEFS += art === 'r'
+      ? `<radialGradient id="${id}" cx="0.35" cy="0.3" r="0.8" fx="0.3" fy="0.25">${stopps}</radialGradient>`
+      : `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0">${stopps}</linearGradient>`;
+  }
+  return `url(#${VERLAUF_IDS.get(schluessel)})`;
+}
+// Verlauf fuer eine Frucht oder Kugel aus einer Grundfarbe: hell, Grundfarbe, dunkel
+const fruchtVerlauf = (col) => verlauf('r', [mischen(col, '#ffffff'), col, mischen(col, '#000000')]);
+
 // ---------- Boden ----------
 // Kleine dunkle Erdkuhle, Ursprung im Mittelpunkt; die Pflanze wachsen aus ihr heraus
 // Klein genug, dass sie auch bei den vorderen Beetplaetzen nicht ueber den Beetrand ragt
@@ -101,15 +129,21 @@ const an = (x, y, rot, inhalt) => gruppe(`transform="translate(${f(x)},${f(y)}) 
 function blatt(R, o) {
   const { L, W, hell, dunkel, welk } = o;
   const lk = R.map(([x, y]) => [-x, y]).reverse();
-  let out = pfad(p2pfad(R), `fill="${dunkel}"`) + pfad(p2pfad(lk), `fill="${hell}"`);
+  const ganz = p2pfad(R.concat(lk));
+  // Ganzes Blatt mit Verlauf (Licht links, Schatten rechts), darueber die dunklere rechte Haelfte
+  let out = pfad(ganz, `fill="${verlauf('h', [hell, mischen(hell, dunkel), dunkel])}"`) +
+    pfad(p2pfad(R), `fill="${dunkel}" opacity="0.18"`);
+  out += linie([0, 0], [0, -L * 0.92], `stroke="${welk ? '#e6dca0' : '#d7efb8'}" stroke-width="0.7" stroke-linecap="round" opacity="0.8"`);
   out += linie([0, 0], [0, -L * 0.92], ADER);
   for (const t of [0.3, 0.5, 0.7]) {
     for (const s of [-1, 1]) {
       out += linie([0, -L * t], [s * W * 0.4, -L * (t + 0.12)], ADER);
     }
   }
-  out += pfad(p2pfad(R.concat(lk)), `fill="none" ${kontur(welk)}`);
+  out += pfad(ganz, `fill="none" ${kontur(welk)}`);
+  // Glanzkante auf der Lichtseite und kleiner Glanzpunkt
   out += linie([-W * 0.3, -L * 0.2], [-W * 0.2, -L * 0.5], 'stroke="#ffffff" stroke-width="1.1" stroke-linecap="round" opacity="0.45"');
+  out += kreis(-W * 0.34, -L * 0.64, Math.min(0.8, 0.25 + W * 0.1), 'fill="#ffffff" opacity="0.5"');
   return out;
 }
 
@@ -149,7 +183,7 @@ function halm(P, W, welk, i) {
     C.push([x, y]); R.push([x + w, y]); Lk.push([x - w, y]);
   }
   const ganz = R.concat(Lk.slice().reverse());
-  return pfad(p2pfad(ganz), `fill="${c.hell}" ${kontur(welk)}`) +
+  return pfad(p2pfad(ganz), `fill="${verlauf('h', [c.hell, mischen(c.hell, c.dunkel), c.dunkel])}" ${kontur(welk)}`) +
     pfad(p2pfad(C.concat(R.slice().reverse())), `fill="${c.dunkel}" opacity="0.8"`) +
     pfad('M' + C.map(p2).join('L'), `fill="none" stroke="${welk ? '#d8d6a0' : '#c8e6a8'}" stroke-width="0.5" opacity="0.7"`);
 }
@@ -203,7 +237,9 @@ function basilBlatt(L, W, welk) {
     lk.push([-0.9 * x, y]);
   }
   const rand = welk ? 'stroke="#a6845a" stroke-width="0.8" stroke-linejoin="round"' : 'stroke="#2f5a30" stroke-width="0.6" stroke-linejoin="round"';
-  let out = pfad(p2pfad(R), `fill="${c.grund}"`) + pfad(p2pfad(lk), `fill="${c.licht}"`);
+  // Verlauf ueber das ganze Blatt (Licht links), rechte Haelfte leicht abgedunkelt
+  let out = pfad(p2pfad(R.concat(lk)), `fill="${verlauf('h', [c.licht, c.grund, mischen(c.grund, '#2f5a30')])}"`) +
+    pfad(p2pfad(R), `fill="#2f5a30" opacity="0.14"`);
   const glanz = [];
   for (let i = 8; i <= 20; i++) glanz.push([-0.55 * breite(i / 30), -L * (i / 30)]);
   for (let i = 20; i >= 8; i--) glanz.push([-0.33 * breite(i / 30), -L * (i / 30)]);
@@ -267,7 +303,7 @@ function erdFrucht(x, y, r) {
   const w = r * 0.9, h = r;
   const pts = [[0, -0.55 * h], [0.55 * w, -0.95 * h], [0.95 * w, -0.2 * h], [0.5 * w, 0.6 * h], [0, 1.2 * h], [-0.5 * w, 0.6 * h], [-0.95 * w, -0.2 * h], [-0.55 * w, -0.95 * h]]
     .map(([px, py]) => [x + px, y + py]);
-  let out = pfad(glattGeschlossen(pts), 'fill="#e8453c" stroke="#8a2a24" stroke-width="0.6" stroke-linejoin="round"') +
+  let out = pfad(glattGeschlossen(pts), `fill="${verlauf('r', ['#f47f6e', '#e8453c', '#9e2b25'])}" stroke="#8a2a24" stroke-width="0.6" stroke-linejoin="round"`) +
     oval(x - 0.4 * w, y - 0.2 * h, 0.3 * w, 0.2 * h, 'fill="#ffffff" opacity="0.5"');
   for (const [px, py] of [[-0.5, -0.45], [0.4, -0.35], [-0.2, 0.1], [0.45, 0.25], [-0.45, 0.4], [0, 0.65], [0.25, 0.8]]) {
     out += kreis(x + px * w, y + py * h, 0.3, 'fill="#ffe08a"');
@@ -335,11 +371,12 @@ function tomatenBlatt(len, welk, i) {
 
 // Tomatenfrucht mit Glanzpunkt und gruenem Kelch-Stern. gold: Goldtomate
 function frucht(x, y, r, gold = false) {
-  const [dunkel, hell, kon] = gold ? ['#c99a1c', '#f5d061', 'stroke="#8a6a1a" stroke-width="0.6"'] : ['#b8362e', '#e0533d', KON_GRUEN];
-  return kreis(x, y, r, `fill="${dunkel}"`) +
-    kreis(x - r * 0.22, y - r * 0.22, r * 0.9, `fill="${hell}"`) +
+  const [g, kon] = gold
+    ? [verlauf('r', ['#fff0b0', '#f5c530', '#b8861a']), 'stroke="#8a6a1a" stroke-width="0.6"']
+    : [verlauf('r', ['#f27a68', '#e0533d', '#8f2a22']), KON_GRUEN];
+  return kreis(x, y, r, `fill="${g}" ${kon}`) +
     kreis(x - r * 0.4, y - r * 0.42, r * 0.22, 'fill="#ffffff" opacity="0.75"') +
-    kreis(x, y, r, `fill="none" ${kon}`) +
+    kreis(x - r * 0.12, y - r * 0.2, r * 0.12, 'fill="#ffffff" opacity="0.35"') +
     poly(stern(x, y - r * 0.9, r * 0.5), `fill="#5e9a52" stroke="#3a6b3a" stroke-width="0.3" stroke-linejoin="round"`);
 }
 
@@ -368,7 +405,7 @@ function tomate(s, welk, gold = false) {
   const P = (t) => qb([2, 0], [6, -H / 2], [4, -H], t);
   const SH = H + 8;
   // Holzstab mit Licht, Schatten und Maserung, steht im Erdboden
-  let out = rechteck(-5, -SH, 4, SH, 1.5, `fill="#c98f5a" ${KON_HOLZ}`) +
+  let out = rechteck(-5, -SH, 4, SH, 1.5, `fill="${verlauf('h', ['#e2b07c', '#c98f5a', '#a86b43'])}" ${KON_HOLZ}`) +
     linie([-4.2, -SH + 2], [-4.2, -2], 'stroke="#e2b07c" stroke-width="1" stroke-linecap="round"') +
     linie([-1.6, -SH + 2], [-1.6, -2], 'stroke="#a86b43" stroke-width="1"') +
     linie([-3, -SH * 0.6], [-2.6, -SH * 0.4], 'stroke="#a86b43" stroke-width="0.5"') +
@@ -421,7 +458,7 @@ function schote(x, y, len, dx, col) {
   const tx = x + dx, ty = y + len;
   const d = `M${f(x - 1.5)},${f(y)}Q${f(x - 2.2 + dx * 0.4)},${f(y + len * 0.55)} ${f(tx)},${f(ty)}Q${f(x + 2.2 + dx * 0.4)},${f(y + len * 0.55)} ${f(x + 1.5)},${f(y)}Z`;
   return linie([x, y - 1.6], [x + 0.2, y + 0.4], 'stroke="#5e9a52" stroke-width="1" stroke-linecap="round"') +
-    pfad(d, `fill="${col}" ${KON_GRUEN}`) +
+    pfad(d, `fill="${fruchtVerlauf(col)}" ${KON_GRUEN}`) +
     pfad(`M${f(x - 0.8)},${f(y + 2)}Q${f(x - 1.2 + dx * 0.3)},${f(y + len * 0.5)} ${f(x + dx * 0.5)},${f(y + len * 0.85)}`,
       'fill="none" stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" opacity="0.5"');
 }
@@ -469,8 +506,9 @@ function paprikaFrucht(x, y, r, col) {
     [0, 0.95 * r], [-0.4 * r, 1.05 * r], [-0.9 * r, 0.6 * r], [-1.05 * r, -0.2 * r], [-0.8 * r, -1.0 * r]]
     .map(([px, py]) => [x + px, y + py]);
   return linie([x, y - 0.9 * r], [x + 0.6, y - 1.8 * r], 'stroke="#5e9a52" stroke-width="1" stroke-linecap="round"') +
-    pfad(glattGeschlossen(pts), `fill="${col}" ${KON_GRUEN}`) +
+    pfad(glattGeschlossen(pts), `fill="${fruchtVerlauf(col)}" ${KON_GRUEN}`) +
     oval(x - 0.45 * r, y + 0.1 * r, 0.3 * r, 0.6 * r, 'fill="#ffffff" opacity="0.45"') +
+    kreis(x - 0.4 * r, y - 0.35 * r, 0.22 * r, 'fill="#ffffff" opacity="0.6"') +
     poly(stern(x, y - 0.9 * r, 0.9 * r, 4), `fill="#5e9a52" ${KON_GRUEN}`);
 }
 
@@ -604,7 +642,7 @@ const SILBER = { hell: '#c9d8d0', dunkel: '#9fb4aa' };
 
 // Knospe (Stufe 4): gruene Schuppen in Reihen, oben gerundet
 function artiKnospe(x, y) {
-  let out = oval(x, y, 5, 6.5, `fill="#7f9a5a" ${KON_GRUEN}`) +
+  let out = oval(x, y, 5, 6.5, `fill="${verlauf('r', ['#b9d08a', '#7f9a5a', '#4d6a36'])}" ${KON_GRUEN}`) +
     oval(x - 1.8, y - 1.5, 1.2, 3.2, 'fill="#a9c27a" opacity="0.6"');
   const reihen = [[-6.2, 4, '#6f8a4a'], [-3.2, 4.6, '#8aa562'], [0, 4.8, '#a9c27a']];
   reihen.forEach(([dy, n, col], row) => {
@@ -664,7 +702,7 @@ function mangold(s, welk) {
 // ---------- Physalis ----------
 // Lampion: Huelle mit Adern, gruener Kelch oben
 function lampion(x, y, col) {
-  return oval(x, y, 3.6, 4.6, `fill="${col}" ${KON_GRUEN}`) +
+  return oval(x, y, 3.6, 4.6, `fill="${fruchtVerlauf(col)}" ${KON_GRUEN}`) +
     oval(x + 1.4, y, 2.2, 4.1, 'fill="#b8602a" opacity="0.3"') +
     [-1.6, 0, 1.6].map((dx) => linie([x + dx * 0.5, y - 4], [x + dx, y + 4], 'stroke="#b8602a" stroke-width="0.5" opacity="0.7"')).join('') +
     oval(x - 1.4, y - 0.8, 0.7, 1.6, 'fill="#ffffff" opacity="0.5"') +
@@ -703,9 +741,9 @@ function physalis(s, welk) {
 function krokus(x, y, welk) {
   const petal = 'M0,0C-3.2,-1.5 -3.4,-7.5 0,-9.5C3.4,-7.5 3.2,-1.5 0,0Z';
   const [seite, mitte, faden] = welk ? ['#a08a6a', '#b5a07a', '#c4a06a'] : ['#8a5cc0', '#a878d8', '#e0302a'];
-  let out = an(x, y, -24, pfad(petal, `fill="${seite}" ${kontur(welk)}`));
-  out += an(x, y, 24, pfad(petal, `fill="${seite}" ${kontur(welk)}`));
-  out += an(x, y, 0, pfad(petal, `fill="${mitte}" ${kontur(welk)}`));
+  let out = an(x, y, -24, pfad(petal, `fill="${fruchtVerlauf(seite)}" ${kontur(welk)}`));
+  out += an(x, y, 24, pfad(petal, `fill="${fruchtVerlauf(seite)}" ${kontur(welk)}`));
+  out += an(x, y, 0, pfad(petal, `fill="${fruchtVerlauf(mitte)}" ${kontur(welk)}`));
   out += pfad(`M${f(x)},${f(y - 3.5)}L${f(x - 0.4)},${f(y - 9)}`, `fill="none" stroke="#ffffff" stroke-width="0.8" opacity="0.35" stroke-linecap="round"`);
   out += kreis(x, y - 2.5, 1.1, 'fill="#f5c518"');
   for (const [dx, dy] of [[-3.6, -11], [0, -12.5], [3.6, -11]]) {
@@ -745,7 +783,7 @@ const WASA = {
 function rhizom(s, welk) {
   if (s < 3) return '';
   const rx = s === 4 ? 6.5 : 4.5;
-  const grund = welk ? '#b5a57a' : '#8bb062';
+  const grund = welk ? verlauf('r', ['#d6c9a0', '#b5a57a', '#7d7150']) : verlauf('r', ['#c3dc9a', '#8bb062', '#4f7a3a']);
   let out = oval(0, -1.2, rx, 2.6, `fill="${grund}" ${kontur(welk)}`) +
     oval(-1.5, -2.2, rx * 0.5, 0.8, 'fill="#c3dc9a" opacity="0.8"');
   for (const [x, y, r] of [[-3, -1.5, 1.1], [1.5, -2.6, 1.3], [4, -0.8, 0.9]]) {
@@ -780,7 +818,8 @@ const RADI = {
 // Knolle halb aus der Erde: rote Kuppel auf der Erdlinie
 function knolle(x, r, welk) {
   const d = `M${f(x - r)},0A${f(r)},${f(r * 0.9)} 0 0 1 ${f(x + r)},0Z`;
-  return pfad(d, `fill="${welk ? '#b8917a' : '#d9364a'}" ${kontur(welk)}`) +
+  const knollenFarbe = welk ? verlauf('r', ['#d9c0b0', '#b8917a', '#7a5a4a']) : verlauf('r', ['#f2808f', '#d9364a', '#8f1f2e']);
+  return pfad(d, `fill="${knollenFarbe}" ${kontur(welk)}`) +
     oval(x - r * 0.35, -r * 0.45, r * 0.3, r * 0.22, 'fill="#ffffff" opacity="0.5"');
 }
 
@@ -797,7 +836,13 @@ function radieschen(s, welk) {
 const eintrag = (name, seltenheit, fn) => ({
   name,
   seltenheit,
-  zeichne: (stufe, welk = false) => erdkuhle() + fn(stufeN(stufe), welk) + (welk ? fallLaub() : ''),
+  zeichne: (stufe, welk = false) => {
+    // Verlaeufe dieser Zeichnung sammeln, danach als <defs> voranstellen
+    VERLAUF_IDS = new Map();
+    VERLAUF_DEFS = '';
+    const koerper = erdkuhle() + fn(stufeN(stufe), welk) + (welk ? fallLaub() : '');
+    return (VERLAUF_DEFS ? `<defs>${VERLAUF_DEFS}</defs>` : '') + koerper;
+  },
 });
 
 export const SAAT = {
@@ -809,7 +854,7 @@ export const SAAT = {
       3: [[-14, 19], [-7, 22], [0, 24], [7, 21], [14, 18]],
       4: [[-16, 24], [-10, 28], [-4, 30], [2, 31], [8, 28], [15, 24]],
     };
-    const kugel = (x, y) => kreis(x, y, 4, 'fill="#9b6fc9" stroke="#5f3f8a" stroke-width="0.6"') +
+    const kugel = (x, y) => kreis(x, y, 4, `fill="${verlauf('r', ['#d7b4f0', '#9b6fc9', '#5f3f8a'])}" stroke="#5f3f8a" stroke-width="0.6"`) +
       [0, 1, 2, 3, 4, 5, 6, 7].map((k) => kreis(x + 2.4 * Math.cos(k * 45 * RAD), y + 2.4 * Math.sin(k * 45 * RAD), 1.1, 'fill="#c9a6e8"')).join('') +
       kreis(x, y, 0.9, 'fill="#e7d4f5"');
     let out = oval(0, -1, 3.4, 1.8, `fill="#e8dcc0" ${kontur(welk)}`);

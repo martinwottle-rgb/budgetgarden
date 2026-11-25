@@ -1,6 +1,7 @@
 // Start, Zustand, Router und der gemeinsame Kontext (ctx) für alle Bildschirme.
 // Jeder Bildschirm exportiert zeige(container, ctx, param). ctx.daten immer frisch lesen (es wird ersetzt, nicht verändert).
 
+import { kisteSvg, preisEinpassen, SAECKCHEN, TUETE } from './grafik/kiste.js';
 import * as L from './logik.js';
 import { laden, speichern as persistieren, standardDaten } from './speicher.js';
 import { bewerte, levelAus, restVerwenden, ABZEICHEN, wochenRueckblick, freiePlaetze, katalog, tagesgeschenk, geschenkAbholen, MEILENSTEINE, naechsterMeilenstein, heuteInAussicht, samenQuellen, freischaltungenBei, SCHMUCK } from './spiel.js';
@@ -733,18 +734,16 @@ levelKreis.addEventListener('keydown', (e) => {
 
 // ---------- Tagesgeschenk ----------
 
-// Geschenkbox (fest gezeichnet). Der Deckel hat die Klasse ios-deckel und wird per CSS angehoben.
-const GESCHENK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="150" height="150" aria-hidden="true">' +
-  '<ellipse cx="60" cy="110" rx="42" ry="6" fill="#6b4a3a" opacity="0.18"/>' +
-  '<rect x="22" y="50" width="76" height="60" rx="6" fill="#e88a7a" stroke="#6b4a3a" stroke-width="2"/>' +
-  '<rect x="54" y="50" width="12" height="60" fill="#f2c14e" stroke="#6b4a3a" stroke-width="1.5"/>' +
-  '<g class="ios-deckel">' +
-  '<rect x="16" y="36" width="88" height="18" rx="5" fill="#f08f7e" stroke="#6b4a3a" stroke-width="2"/>' +
-  '<rect x="54" y="36" width="12" height="18" fill="#f2c14e" stroke="#6b4a3a" stroke-width="1.5"/>' +
-  '<path d="M60 36 C44 14 24 20 32 34 C38 42 54 38 60 36 Z" fill="#f2c14e" stroke="#6b4a3a" stroke-width="2" stroke-linejoin="round"/>' +
-  '<path d="M60 36 C76 14 96 20 88 34 C82 42 66 38 60 36 Z" fill="#f2c14e" stroke="#6b4a3a" stroke-width="2" stroke-linejoin="round"/>' +
-  '<circle cx="60" cy="36" r="5" fill="#e0a93a" stroke="#6b4a3a" stroke-width="1.5"/>' +
-  '</g></svg>';
+// Die Geschenk-Grafik ist die Gärtnerkiste aus js/grafik/kiste.js
+
+// Preis, der aus der Gärtnerkiste steigt: Meilenstein, Gutschein-Teil, Saison-Teil, Samentüte, sonst ein Samensäckchen
+function kistenPreis(b) {
+  const bild = (kat, typ) => { try { return shop.bildFuer(kat, typ) || null; } catch (e) { return null; } };
+  return (b.meilenstein && bild('deko', b.meilenstein.typ)) ||
+    (b.gutschein && bild(b.gutschein.kategorie, b.gutschein.typ)) ||
+    (b.saisonGutschein && bild('saison', b.saisonGutschein)) ||
+    (b.tuete ? TUETE : SAECKCHEN);
+}
 
 // Vorschau eines Gutscheins (Pflanze, Deko, auch aus den Grafiken der Erweiterungen PFLANZEN2 und DEKO2)
 function gutscheinVorschau(daten, gutschein) {
@@ -814,7 +813,7 @@ function tagesgeschenkZeigen() {
         ? el('p', { class: 'klein ios-meilen-hinweis', text: `Heute ist Tag ${g.tag}: ein Meilenstein! ⭐` })
         : el('p', { class: 'klein ios-meilen-hinweis', text: `Nächster Meilenstein: Tag ${naechster.tag} (noch ${tage(naechster.tag - g.tag)})` });
 
-    const hinweis = el('p', { class: 'klein ios-hinweis', text: advent ? 'Tippe auf das goldene Türchen.' : 'Tippe auf das Geschenk.' });
+    const hinweis = el('p', { class: 'klein ios-hinweis', text: advent ? 'Tippe auf das goldene Türchen.' : 'Tippe auf die Kiste.' });
     const samenZahl = el('div', { class: 'ios-geschenk-samen', text: '+0 Samen', 'aria-live': 'polite' });
     const danke = el('button', {
       type: 'button',
@@ -870,11 +869,11 @@ function tagesgeschenkZeigen() {
 
     const strahlen = el('div', { class: 'ios-strahlen', 'aria-hidden': 'true' });
     const bild = el('span', { class: 'ios-geschenk-bild' });
-    bild.innerHTML = GESCHENK_SVG;
+    bild.innerHTML = kisteSvg(kistenPreis(g.belohnung));
     const box = el('button', {
       type: 'button',
       class: 'ios-geschenk wippt',
-      'aria-label': 'Geschenk öffnen',
+      'aria-label': 'Gärtnerkiste öffnen',
       onclick: () => {
         if (offen) return;
         offen = true;
@@ -886,11 +885,12 @@ function tagesgeschenkZeigen() {
           box.classList.remove('schuettelt');
           box.classList.add('offen');
           panel.append(konfettiSchicht(44));
+          // Erst die Kiste wirken lassen (Deckel, Münzen, Preis steigt auf), dann die Karten darunter
           timer.push(setTimeout(() => {
             belohnung.classList.add('sichtbar');
             requestAnimationFrame(() => einpassen(belohnung));
             zaehleZahl(g.belohnung.samen, samenZahl);
-          }, 150));
+          }, 1100));
         }, 400));
       }
     }, strahlen, bild);
@@ -910,6 +910,7 @@ function tagesgeschenkZeigen() {
       }
     });
     einpassen(panel);
+    if (!advent) requestAnimationFrame(() => preisEinpassen(bild.querySelector('svg')));
   });
 }
 

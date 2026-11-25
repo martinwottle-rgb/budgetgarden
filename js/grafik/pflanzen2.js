@@ -394,45 +394,56 @@ const KEN_V = [[0, '#b4dfa0'], [0.5, '#7fb36e'], [1, '#4a8552']];
 const KEN_VD = [[0, '#8fc27e'], [0.5, '#5e9a5e'], [1, '#34663f']];
 const KEN_H = [[0, '#9cc9a8'], [0.5, '#6a9c86'], [1, '#3f6f62']];
 const KEN_HD = [[0, '#74a58e'], [0.5, '#4f7f72'], [1, '#2d5a52']];
-// Wedel: [Endpunkt x (negativ = links), Bogenhoehe]
+// Wedel: [Ausladung x der Spitze (negativ = links), Stielhoehe]. Wie die echte Kentia: schlanke, fast senkrechte Stiele,
+// oben biegt die Spindel nach aussen und haengt ueber, an ihr haengen viele schmale Fiedern nach unten.
 const KEN_WEDEL = {
-  1: [[-16, 26], [14, 28], [-2, 32]],
-  2: [[-22, 30], [-6, 36], [12, 36], [24, 30]],
-  3: [[-30, 34], [-14, 42], [2, 44], [18, 40], [30, 32]],
-  4: [[-36, 36], [-22, 44], [-7, 50], [9, 50], [22, 44], [36, 34], [-42, 22], [42, 24]],
+  1: [[-14, 36], [12, 40], [-2, 46]],
+  2: [[-22, 46], [-7, 58], [9, 56], [22, 44]],
+  3: [[-32, 56], [-16, 70], [1, 76], [16, 70], [31, 54]],
+  4: [[-40, 64], [-26, 80], [-10, 90], [8, 92], [24, 80], [39, 64], [-33, 48], [33, 50]],
 };
-const KEN_FIEDER = { 1: 5, 2: 7, 3: 9, 4: 11 };
+const KEN_FIEDER = { 1: 10, 2: 13, 3: 16, 4: 19 };
 
-// Ein Wedel: Spindel als Bezier vom Boden bis zum Endpunkt, Fiedern paarweise hängend nach beiden Seiten
+// Winkel a (Grad, 0 = nach oben, im Uhrzeigersinn) mit dem Anteil w Richtung senkrecht nach unten mischen
+function kenHaengen(a, w) {
+  const vx = (1 - w) * Math.sin(a * RAD), vy = -(1 - w) * Math.cos(a * RAD) + w;
+  return Math.atan2(vx, -vy) / RAD;
+}
+
+// Ein Wedel: Stiel und Spindel als eine Bezier-Kurve, Fiedern paarweise an der oberen Haelfte, nach unten haengend
 function kentiaWedel(c, X, Y, n, welk, hinten) {
-  const P = [[0, 0], [X * 0.1, -Y], [X * 0.85, -Y * 0.8], [X, welk ? 12 : 5]];
-  const L = welk ? 6 : 8.5;
-  const U = p2pfad(umriss(ovalKante(L, 0.1 * L, false)));
+  const bx = X * 0.1;
+  const P = [[bx, 0], [X * 0.22, -Y * 0.62], [X * 0.62, -Y * 1.06], [X * 1.12, -Y * (welk ? 0.35 : 0.72)]];
   const hell = fv(c, welk, hinten ? 'ken-h' : 'ken-v', hinten ? KEN_H : KEN_V);
   const dunkel = fv(c, welk, hinten ? 'ken-hd' : 'ken-vd', hinten ? KEN_HD : KEN_VD);
   const ader = welk ? '#e6dca0' : hinten ? '#9fc4b2' : '#d7efb8';
-  const kon = welk ? KON_WELK : KON_GRUEN;
-  let out = stiel(c, `M0,0C${sp(P[1])} ${sp(P[2])} ${sp(P[3])}`, welk, 1.8, 0, X);
+  const rand = welk ? '#7d6a45' : '#2f5a30';
+  let fiedern = '';
   for (let k = 0; k < n; k++) {
-    const t = 0.18 + 0.78 * k / (n - 1);
+    const tt = k / (n - 1);
+    const t = 0.3 + 0.68 * tt;
     const [x, y] = bez(P, t);
-    const [x2, y2] = bez(P, t + 0.02);
+    const [x2, y2] = bez(P, Math.min(1, t + 0.02));
     const tRot = Math.atan2(x2 - x, -(y2 - y)) / RAD;
+    const L = (welk ? 10 : 14) * (1 - 0.55 * tt) + 2;
+    const U = p2pfad(umriss(ovalKante(L, 0.085 * L + 0.25, false)));
     for (const sd of [-1, 1]) {
-      out += an(x, y, tRot + sd * (welk ? 95 : 48),
-        pfad(U, `fill="${sd > 0 ? hell : dunkel}" stroke="${welk ? '#7d6a45' : '#2f5a30'}" stroke-width="0.35" stroke-linejoin="round"`) +
-        linie([0, 0], [0, -L * 0.85], `stroke="${ader}" stroke-width="0.3" stroke-linecap="round" opacity="0.5"`));
+      const rot = kenHaengen(tRot + sd * 50, welk ? 0.75 : 0.55);
+      fiedern += an(x, y, rot,
+        pfad(U, `fill="${sd > 0 ? hell : dunkel}" stroke="${rand}" stroke-width="0.35" stroke-linejoin="round"`) +
+        linie([0, -0.5], [0, -L * 0.85], `stroke="${ader}" stroke-width="0.3" stroke-linecap="round" opacity="0.5"`));
     }
   }
-  return out;
+  return stiel(c, `M${sp(P[0])}C${sp(P[1])} ${sp(P[2])} ${sp(P[3])}`, welk, 1.5, 0, X) + fiedern;
 }
 
 function kentia(s, welk, ebene, c) {
   let hinten = '', vorn = '';
-  const tab = KEN_WEDEL[s].slice().sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]));
+  // Aussen liegende und niedrige Wedel zuerst (hinten), die hohen mittleren zuletzt
+  const tab = KEN_WEDEL[s].slice().sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]) || p[1] - q[1]);
   const nh = Math.floor(tab.length / 2);
   tab.forEach(([X0, Y0], k) => {
-    const X = welk ? X0 * 1.15 : X0, Y = welk ? Y0 * 0.6 : Y0;
+    const X = welk ? X0 * 1.2 : X0, Y = welk ? Y0 * 0.65 : Y0;
     const w = kentiaWedel(c, X, Y, KEN_FIEDER[s], welk, k < nh);
     if (k < nh) hinten += w; else vorn += w;
   });

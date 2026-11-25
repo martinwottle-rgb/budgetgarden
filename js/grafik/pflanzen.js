@@ -1531,23 +1531,26 @@ function lavendel(s, welk) {
   for (let i = 0; i < N; i++) {
     const th = (-82 + 164 * (i + r() * 0.8) / N) * RAD;
     const rho = Rd * (0.75 + 0.25 * r()) * (welk ? 0.8 : 1);
-    const ziel = [rho * Math.sin(th) * (welk ? 1.15 : 1), -rho * Math.cos(th) * (welk ? 0.6 : 0.9)];
-    const x0 = (r() - 0.5) * 6, y0 = -1 - r() * 2;
+    const ziel = [rho * Math.sin(th) * (welk ? 1.15 : 1), -rho * Math.cos(th) * (welk ? 0.65 : 1.25) - 1.5];
+    // Ansatz breit im Boden verteilt, damit der Busch aus der Erde waechst und nicht darueber schwebt
+    const x0 = (r() - 0.5) * Rd * 0.9, y0 = 0.4 - r() * 1.6;
     const dx = ziel[0] - x0, dy = ziel[1] - y0;
     const a = Math.atan2(dx, -dy) / RAD;
     // Licht von links: Nadeln links heller, rechts dunkler (gelegentlich abweichend)
     nadeln.push({ th: Math.abs(th), x0, y0, a, L: Math.hypot(dx, dy) * (0.95 + 0.1 * r()), hell: (a < 0) !== (r() < 0.2) });
   }
-  let out = '';
+  // Dichter Fuss: dunkle Kuppe direkt auf der Erde
+  let out = oval(0, -0.6, Rd * 0.72, 2.6, `fill="${T.schatten}" stroke="${T.kontur}" stroke-width="0.6"`) +
+    oval(-1, -1.4, Rd * 0.5, 1.6, `fill="${T.hell}" opacity="0.6"`);
   for (const b of nadeln.slice().sort((p, q) => q.th - p.th)) {
     out += lavNadel(b.x0, b.y0, b.a, b.L, vref(`${u}-${b.hell ? 'h' : 's'}`), T.kontur);
   }
   const [ns, hoehe] = LAV_STIELE[s];
   let stiele = '', spitzen = '';
   for (let k = 0; k < ns; k++) {
-    const a = (-24 + 48 * (k + r() * 0.6) / Math.max(1, ns - 1)) * RAD;
+    const a = (-32 + 64 * (k + r() * 0.6) / Math.max(1, ns - 1)) * RAD;
     const h = hoehe * (0.85 + 0.25 * r()) * (welk ? 0.8 : 1);
-    const B = [(r() - 0.5) * 6, -4];
+    const B = [(r() - 0.5) * 6, -6];
     const tip = [B[0] + h * Math.sin(a) * (welk ? 1.3 : 1), B[1] - h * Math.cos(a)];
     const C = [B[0] + (tip[0] - B[0]) * 0.1, (B[1] + tip[1]) / 2];
     stiele += vlStiel(`M${sp(B)}Q${sp(C)} ${sp(tip)}`, welk, 0.9);
@@ -1571,7 +1574,8 @@ function lavendel(s, welk) {
         kreis(px - 0.25, py - 0.25, 0.25, `fill="${T.licht}" opacity="0.7"`);
     }
   }
-  return defs + out + stiele + spitzen;
+  // Stiele wachsen aus dem Busch: zuerst Stiele, dann der Busch darueber, die Aehren zuletzt
+  return defs + stiele + out + spitzen;
 }
 
 // Weisse Bluete mit radialem Verlauf und gelber Mitte mit Glanzpunkt (Erdbeere, Zitrone)
@@ -1856,15 +1860,16 @@ function bonsai(s, welk) {
   const holz = welk ? '#c9b07a' : '#c98f5a';
   const holzVerlauf = vlLin(`${u}-st`, welk ? ['#e3cf9a', '#c9b07a', '#9c8456'] : ['#e8bd8a', '#c98f5a', '#8a5a36'], 1, 0);
   // Knorriger S-foermiger Stamm: dunkle Kontur, Verlauf (Licht links), Rindenstreifen in hellem und dunklem Ton
-  const d = `M0,2C-6,${f(-h * 0.13)} 5,${f(-h * 0.3)} 0,${f(-h * 0.5)}C-5,${f(-h * 0.7)} 4,${f(-h * 0.83)} 1,${f(-h)}`;
+  const d = `M0,1C-6,${f(-h * 0.13)} 5,${f(-h * 0.3)} 0,${f(-h * 0.5)}C-5,${f(-h * 0.7)} 4,${f(-h * 0.83)} 1,${f(-h)}`;
   let out = vlDefs(holzVerlauf) + vlBlattDefs(u) +
     pfad(d, 'fill="none" stroke="#6b4a3a" stroke-width="6.4" stroke-linecap="round"') +
     pfad(d, `fill="none" stroke="${vref(`${u}-st`)}" stroke-width="5" stroke-linecap="round"`) +
     gruppe('transform="translate(-1.3,0)"', pfad(d, 'fill="none" stroke="#e2b07c" stroke-width="1.2" stroke-linecap="round" opacity="0.8"')) +
     gruppe('transform="translate(1.7,0)"', pfad(d, 'fill="none" stroke="#a86b43" stroke-width="1.2" stroke-linecap="round" opacity="0.6"'));
   // Wurzelansatz: vier kurze Wurzeln, die sich auf der Erde verteilen
-  for (const [ex, ey] of [[-7, 4], [6, 4], [-3, 5.5], [4, 5]]) {
-    const rd = `M0,2Q${f(ex * 0.5)},${f(ey - 1)} ${f(ex)},${f(ey)}`;
+  // Endpunkte innerhalb der Erdraute der Schale, nicht ueber die Vorderkante
+  for (const [ex, ey] of [[-6.5, 0.6], [6, 0.4], [-3, 1.8], [3.5, 1.6]]) {
+    const rd = `M0,1Q${f(ex * 0.5)},${f(ey - 0.8)} ${f(ex)},${f(ey)}`;
     out += pfad(rd, 'fill="none" stroke="#6b4a3a" stroke-width="3" stroke-linecap="round"') +
       pfad(rd, `fill="none" stroke="${holz}" stroke-width="1.6" stroke-linecap="round"`);
   }
