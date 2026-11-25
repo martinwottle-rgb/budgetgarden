@@ -8,7 +8,7 @@ import { zeichneSzene, vorschau, einpassen, feldAusPunkt, punktAusOrt, FELD_PX, 
 import { iso } from '../grafik/hilfen.js';
 import { TOEPFE } from '../grafik/toepfe.js';
 import { mitTopf } from '../grafik/topfwahl.js';
-import { passendeToepfe, topfWechseln, topfVon, topfWechselbar, dekoBreite, gewaehlteKategorie, meidbareKategorien, kategorieWaehlen, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO, einlagern, lagerPlatzieren, lagerListe, schmuecken, SCHMUCK } from '../spiel.js';
+import { topfAuswahl, topfKaufenUndSetzen, topfWechseln, topfVon, topfWechselbar, dekoBreite, gewaehlteKategorie, meidbareKategorien, kategorieWaehlen, welk, challengesDerWoche, challengeStatus, freiePlaetze, kaufen, platzieren, moebelSetzen, pflanzeLeveln, verkaufen, raritaetPflanzen, saatPflanzen, saatSeltenheit, ernten, aktiveSaison, saisonKatalog, PREISE_PFLANZEN, PREISE_MOEBEL, PREISE_DEKO, einlagern, lagerPlatzieren, lagerListe, schmuecken, SCHMUCK } from '../spiel.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { RARITAETEN } from '../grafik/raritaeten.js';
@@ -295,7 +295,9 @@ function aktionAus(param) {
 function hinweisLeiste(ctx, aktion) {
   const name = aktion.lagerId ? lagerName(ctx.daten, aktion.lagerId) : '';
   return el('section', { class: 'karte ga-hinweis', role: 'status' },
-    el('span', { text: aktion.lagerId ? `Tippe auf einen freien Platz für ${name}` : 'Tippe auf einen freien Platz' }),
+    el('span', { text: aktion.lagerId ? `Tippe auf einen freien Platz für ${name}`
+      : aktion.preis > 0 ? `Tippe auf einen freien Platz${aktion.name ? ' für ' + aktion.name : ''}. Erst dann werden ${zahl(aktion.preis)} Samen abgebucht.`
+        : 'Tippe auf einen freien Platz' }),
     el('span', { class: 'ga-punkt', 'aria-hidden': 'true', text: '·' }),
     el('button', { type: 'button', class: 'knopf knopf-leise ga-hinweis-knopf', text: 'Abbrechen', onclick: () => ctx.navigiere('garten') })
   );
@@ -1168,31 +1170,62 @@ function pflanzeImTopf(def, p, topfTyp) {
   return mitTopf(t ? t.zeichne : null, () => def.zeichne(p.stufe, false, 'boden', p.schmuck || null));
 }
 
-// Topf ändern: Terrakotta und alle passenden Töpfe aus dem Lager, jeweils als Vorschau mit der Pflanze darin
+// Topf ändern: alle passenden Töpfe (Terrakotta, aus dem Lager, zum Kaufen mit Preis). Erst auswählen, dann bestätigen;
+// ein neuer Topf wird erst beim Bestätigen bezahlt.
 function topfBlatt(ctx, p) {
   const def = pflanzenDef(p);
-  const liste = passendeToepfe(ctx.daten, p.id);
+  const liste = topfAuswahl(ctx.daten, p.id);
+  let wahl = liste.find(t => t.aktuell) || liste[0];
   let blatt = null;
-  const karten = liste.map(t => el('button', {
-    type: 'button',
-    class: 'karte sh-karte tp-wahl' + (topfVon(p) === t.typ ? ' tp-aktuell' : ''),
-    onclick: () => {
-      if (topfVon(p) === t.typ) return;
-      const r = topfWechseln(ctx.daten, p.id, t.lagerId);
-      if (r.fehler) return ctx.toast(r.fehler);
-      blatt.schliessen();
-      ctx.speichern(r.daten);
-      ctx.toast(`Neuer Topf: ${t.name}`);
-    }
-  },
-    el('div', { class: 'sh-bild' }, def ? vorschau(pflanzeImTopf(def, p, t.typ), 'sh-vorschau') : null),
-    el('div', { class: 'sh-name', text: t.name }),
-    topfVon(p) === t.typ ? el('div', { class: 'sh-hinweis', text: 'Aktuell' }) : null));
+  const raster = el('div', { class: 'raster' });
+  const knopfBox = el('div', { class: 'aktionen tp-knoepfe' });
+  const samen = () => ctx.daten.spiel.samen;
+
+  const unterzeile = (t) => {
+    if (t.aktuell) return el('div', { class: 'sh-hinweis', text: 'Aktuell' });
+    if (t.lagerId === 'standard') return el('div', { class: 'sh-preis sp12-gratis', text: 'Gratis' });
+    if (t.lagerId) return el('div', { class: 'sh-preis sp12-gratis', text: 'Im Lager' });
+    if (!t.freigeschaltet) return el('div', { class: 'sh-hinweis', text: `🔒 ab Level ${t.level}` });
+    return el('div', { class: 'sh-preis' }, svgBox(muenzSvg(16), 'muenze-klein'), zahl(t.preis));
+  };
+
+  const zeichnen = () => {
+    raster.replaceChildren(...liste.map(t => el('button', {
+      type: 'button',
+      class: 'karte sh-karte tp-wahl' + (t === wahl ? ' tp-aktuell' : '') + (!t.freigeschaltet ? ' sh-ausgegraut' : ''),
+      'aria-pressed': t === wahl ? 'true' : 'false',
+      onclick: () => { wahl = t; zeichnen(); }
+    },
+      el('div', { class: 'sh-bild' }, def ? vorschau(pflanzeImTopf(def, p, t.typ), 'sh-vorschau') : null),
+      el('div', { class: 'sh-name', text: t.name }),
+      unterzeile(t))));
+    const kaufen = !wahl.lagerId;
+    const zuWenig = kaufen && samen() < wahl.preis;
+    knopfBox.replaceChildren(
+      el('button', {
+        type: 'button',
+        class: 'knopf knopf-primaer knopf-voll',
+        disabled: wahl.aktuell || !wahl.freigeschaltet || zuWenig ? true : null,
+        text: wahl.aktuell ? 'Steht schon in diesem Topf'
+          : !wahl.freigeschaltet ? `🔒 ab Level ${wahl.level}`
+            : zuWenig ? `Noch ${zahl(wahl.preis - samen())} Samen`
+              : kaufen ? `Für ${zahl(wahl.preis)} Samen kaufen und einsetzen` : 'Einsetzen',
+        onclick: () => {
+          const r = kaufen ? topfKaufenUndSetzen(ctx.daten, p.id, wahl.typ) : topfWechseln(ctx.daten, p.id, wahl.lagerId);
+          if (r.fehler) return ctx.toast(r.fehler);
+          blatt.schliessen();
+          ctx.speichern(r.daten);
+          ctx.toast(kaufen ? `${wahl.name} gekauft und eingesetzt` : `Neuer Topf: ${wahl.name}`);
+        }
+      }),
+      el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Abbrechen', onclick: () => blatt.schliessen() }));
+    if (blatt) einpassen(blatt.element);
+  };
+  zeichnen();
   blatt = blattOeffnen(ctx, el('div', {},
     el('h2', { class: 'ga-titel', text: 'Topf ändern' }),
-    el('p', { class: 'klein', text: 'Der alte Topf kommt ins Lager (Terrakotta ist immer da). Weitere Töpfe gibt es im Shop unter „Töpfe“.' }),
-    el('div', { class: 'raster' }, karten),
-    el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Zum Shop: Töpfe', onclick: () => { blatt.schliessen(); ctx.navigiere('shop', { reiter: 'topf' }); } })));
+    el('p', { class: 'klein', text: 'Wähle einen Topf. Neue Töpfe werden erst beim Einsetzen bezahlt, der alte Topf kommt ins Lager (Terrakotta ist immer da).' }),
+    raster, knopfBox));
 }
 
 // Blatt einer Saatpflanze auf dem Beet: Name, Seltenheit, Wachstum, Ernte, Entfernen. Leveln gibt es hier nicht.
@@ -1252,6 +1285,8 @@ function saatBlatt(ctx, p) {
     el('div', { class: 'aktionen' },
       el('p', { class: reif ? 'g20-status g20-reif' : 'g20-status', text: status }),
       erntKnopf,
+      // Einlagern behält Stufe und Wachstum; später gratis wieder auf ein freies Beet setzen
+      ...einlagernBereich(ctx, 'pflanze', p.id, schliessen),
       entfernKnopf
     )
   );

@@ -17,9 +17,10 @@ const KON_GRUEN = 'stroke="#2f5a30" stroke-width="0.7" stroke-linejoin="round" s
 const KON_WELK = 'stroke="#7d6a45" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"';
 const kontur = (welk) => (welk ? KON_WELK : KON_GRUEN);
 const ADER = 'stroke="#3a6b3a" stroke-width="0.5" stroke-linecap="round" opacity="0.6"';
-const SCHATTEN = 'fill="#6b4a3a" opacity="0.18"';
 const GRUEN = { hell: '#7fb069', dunkel: '#5e9a52' };
 const GRUEN_LEDER = { hell: '#5e9a52', dunkel: '#3a6b3a' };
+// Hintere Blaetter: dunkler und bläulich (Tiefe)
+const TIEF_LEDER = { hell: '#4f8a78', dunkel: '#2e5a4c' };
 const WELK = { hell: '#c4c98f', dunkel: '#a8a36a' };
 const TEAK = { links: '#b8743d', rechts: '#8a5228', oben: '#d99a5b' };
 const PETROL = '#2f6f73';
@@ -32,10 +33,46 @@ const KX = 0.9, KY = 0.45;
 const P = (x, y, z = 0) => [(x - y) * KX, (x + y) * KY - z];
 const pk = (pts, attr) => poly(pts.map(([x, y, z = 0]) => P(x, y, z)), attr);
 const zug = (pts, attr) => pfad('M' + pts.map(p2).join('L'), `fill="none" ${attr}`);
-const kontakt = (rx, ry) => oval(0, 0, rx, ry, SCHATTEN);
 const an = (x, y, rot, inhalt) => gruppe(`transform="translate(${f(x)},${f(y)}) rotate(${f(rot)})"`, inhalt);
 const zu = (pts) => 'M' + pts.map(p2).join('L') + 'Z';
 const stufeN = (s) => Math.min(4, Math.max(1, Math.round(Number(s) || 1)));
+
+// ---------- Plastik-Helfer: Verlaeufe statt Volltoene (Licht von links oben) ----------
+// Mischung zweier Hexfarben (t = 0 ist a, t = 1 ist b)
+const mischen = (a, b, t) => {
+  const teil = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const A = teil(a), B = teil(b);
+  return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
+};
+// Linearer Verlauf (objectBoundingBox). Stopps: [Offset, Farbe] oder [Offset, Farbe, Deckkraft]
+const LIN = (id, stopps, x1 = 0, y1 = 0, x2 = 0, y2 = 1) =>
+  `<linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">` +
+  stopps.map(([o, c, d]) => `<stop offset="${o}" stop-color="${c}"${d === undefined ? '' : ` stop-opacity="${d}"`}/>`).join('') +
+  '</linearGradient>';
+// Radialer Verlauf, Mittelpunkt (cx, cy) und Radius als Anteil der Flaeche
+const RAD_V = (id, stopps, cx = 0.35, cy = 0.3, r = 0.75) =>
+  `<radialGradient id="${id}" cx="${cx}" cy="${cy}" r="${r}" fx="${cx}" fy="${cy}">` +
+  stopps.map(([o, c, d]) => `<stop offset="${o}" stop-color="${c}"${d === undefined ? '' : ` stop-opacity="${d}"`}/>`).join('') +
+  '</radialGradient>';
+// Weicher Kontaktschatten an beliebiger Stelle (radialer Verlauf statt harter Ellipse)
+const kontaktAt = (x, y, rx, ry) => {
+  const id = uid('kontakt');
+  return `<defs>${RAD_V(id, [[0, '#6b4a3a', 0.32], [0.6, '#6b4a3a', 0.14], [1, '#6b4a3a', 0]], 0.5, 0.5, 0.5)}</defs>` +
+    oval(x, y, rx, ry, `fill="url(#${id})"`);
+};
+// Kontaktschatten im Ursprung
+const kontakt = (rx, ry) => kontaktAt(0, 0, rx, ry);
+// Flaechen eines Quaders mit Verlauf: Oberseite hell, linke Seite mittel, rechte Seite dunkel.
+// Liefert defs (vor den Quader setzen) und f (Fuellungen fuer quader()).
+function plastik(fa) {
+  const id = uid('pl');
+  const defs = '<defs>' +
+    LIN(`${id}-o`, [[0, mischen(fa.oben, '#ffffff', 0.25)], [1, fa.oben]], 0, 0, 1, 1) +
+    LIN(`${id}-l`, [[0, mischen(fa.links, '#ffffff', 0.18)], [1, fa.links]], 0, 0, 0.3, 1) +
+    LIN(`${id}-r`, [[0, fa.rechts], [1, mischen(fa.rechts, '#000000', 0.2)]], 0, 0, 1, 1) +
+    '</defs>';
+  return { defs, f: { oben: `url(#${id}-o)`, links: `url(#${id}-l)`, rechts: `url(#${id}-r)` } };
+}
 
 // Quadratische Kurve von a nach b, bog = seitlicher Versatz der Mitte
 const kurve = (a, b, bog = 0) => {
@@ -50,23 +87,28 @@ function stiel(d, welk, w = 2.6) {
 }
 
 // Blatt: Ansatz im Ursprung, Spitze bei -L (nach oben). W halbe Breite.
+// Verlauf von links (hell) nach rechts (dunkel), Mittelader und Seitenadern.
 // spitz: unter 1 = breit nahe Ansatz, ueber 1 = breit zur Spitze (Bluetenblatt, Rundblatt)
 // ader: Mittelader und Seitenadern (bei Bluetenblaettern aus)
 function blatt(L, W, hell, dunkel, kon, spitz = 0.8, ader = true) {
+  const id = uid('bl');
   const R = [];
   for (let i = 0; i <= 12; i++) {
     const t = i / 12;
     R.push([W * Math.pow(Math.sin(Math.PI * Math.pow(t, spitz)), 0.85), -L * t]);
   }
   const Lk = R.map(([x, y]) => [-x, y]);
-  let out = pfad(zu(R), `fill="${dunkel}"`) + pfad(zu(Lk), `fill="${hell}"`);
+  const umriss = zu(R.concat(Lk.slice().reverse()));
+  let out = `<defs>${LIN(id, [[0, mischen(hell, '#ffffff', 0.12)], [0.45, mischen(hell, dunkel, 0.5)], [1, dunkel]], 0, 0, 1, 0)}</defs>` +
+    pfad(umriss, `fill="url(#${id})"`);
   if (ader) {
     out += linie([0, 0], [0, -L * 0.92], ADER);
+    out += linie([-W * 0.14, -L * 0.12], [-W * 0.14, -L * 0.78], 'stroke="#ffffff" stroke-width="0.4" stroke-linecap="round" opacity="0.28"');
     for (const t of [0.3, 0.55, 0.8]) {
       for (const s of [-1, 1]) out += linie([0, -L * t], [s * W * 0.5, -L * (t + 0.14)], ADER);
     }
   }
-  return out + pfad(zu(R), `fill="none" ${kon}`) + pfad(zu(Lk), `fill="none" ${kon}`);
+  return out + pfad(umriss, `fill="none" ${kon}`);
 }
 
 // Scheibe in der Grundebene auf Hoehe z (Teller, Deckel)
@@ -86,22 +128,27 @@ function quader(x0, x1, y0, y1, z0, z1, fa, kon = KON_DEKO) {
     pk([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], `fill="${fa.oben}" ${kon}`);
 }
 
-// ---------- Topf (wie pflanzen.js und saison.js) ----------
+// ---------- Topf (wie pflanzen.js und saison.js) mit Verlauf ----------
 function topf(R, H) {
   const gewaehlt = gewaehlterTopf();
   if (gewaehlt) return gewaehlt(R, H);
+  const id = uid('tp');
   const Rb = R * 0.72, ry = R * 0.4, ryb = Rb * 0.4, k = R / 14;
   const korpus = `M${f(-R)},${-H}L${f(-Rb)},0A${f(Rb)},${f(ryb)} 0 0 0 ${f(Rb)},0L${R},${-H}A${R},${f(ry)} 0 0 1 ${f(-R)},${-H}Z`;
   const krumen = [[-6, 1.5, 1.1, 0.6], [-2, 2.6, 0.9, 0.5], [3, 0.8, 1, 0.55], [6, 2.2, 0.8, 0.45], [1, -1.2, 0.7, 0.4]]
     .map(([x, y, rx, rr]) => oval(x * k, -H + y * k, rx * k, rr * k, 'fill="#d6b08a"'))
     .join('');
-  return oval(1, 0, Rb + 2.5, ryb + 1.5, SCHATTEN) +
-    pfad(korpus, 'fill="#d9825b"') +
-    pfad(`M0,${f(-H + ry)}A${R},${f(ry)} 0 0 0 ${R},${-H}L${f(Rb)},0A${f(Rb)},${f(ryb)} 0 0 1 0,${f(ryb)}Z`, 'fill="#b8643f"') +
-    pfad(`M${f(-R + 3)},${f(-H + 5)}L${f(-Rb + 3)},-4`, 'fill="none" stroke="#eba47f" stroke-width="2" stroke-linecap="round" opacity="0.8"') +
+  const defs = '<defs>' +
+    LIN(`${id}-k`, [[0, '#f0b08a'], [0.4, '#d9825b'], [1, '#a85a38']], 0, 0, 1, 0) +
+    RAD_V(`${id}-r`, [[0, '#f7c7a6'], [0.6, '#d9825b'], [1, '#b8643f']], 0.35, 0.3, 0.7) +
+    '</defs>';
+  return defs +
+    kontaktAt(1, 0, Rb + 2.5, ryb + 1.5) +
+    pfad(korpus, `fill="url(#${id}-k)"`) +
+    pfad(`M0,${f(-H + ry)}A${R},${f(ry)} 0 0 0 ${R},${-H}L${f(Rb)},0A${f(Rb)},${f(ryb)} 0 0 1 0,${f(ryb)}Z`, 'fill="#5a2f1c" opacity="0.3"') +
+    pfad(`M${f(-R + 3)},${f(-H + 5)}L${f(-Rb + 3)},-4`, 'fill="none" stroke="#f3b996" stroke-width="2" stroke-linecap="round" opacity="0.8"') +
     pfad(korpus, `fill="none" ${KON_TOPF}`) +
-    oval(0, -H, R, ry, 'fill="#eba47f"') +
-    pfad(`M0,${f(-H - ry)}A${R},${f(ry)} 0 0 1 0,${f(-H + ry)}Z`, 'fill="#d9825b"') +
+    oval(0, -H, R, ry, `fill="url(#${id}-r)"`) +
     oval(0, -H, R - 2.4, ry - 1.2, 'fill="#a85a38"') +
     oval(0, -H + 0.8, R - 3.4, ry - 1.7, 'fill="#7a5238"') +
     krumen +
@@ -125,9 +172,10 @@ function mitTopf(R, H, inhalt, welk, ebene) {
 const CR = { hell: '#fdfbf6', dunkel: '#f1dfe3', rand: '#c9a9b3' };
 const CR_WELK = { hell: '#d8bf9a', dunkel: '#b4916a', rand: '#8f6446' };
 
-// Handfoermig geteiltes, lederiges Blatt: fuenf Fiedern faecheln vom Stielende aus
-function handBlatt(x, y, rot, L, welk) {
-  const g = welk ? WELK : GRUEN_LEDER;
+// Handfoermig geteiltes, lederiges Blatt: fuenf Fiedern faecheln vom Stielende aus.
+// tief: hinteres Blatt, dunkler und bläulich
+function handBlatt(x, y, rot, L, welk, tief = false) {
+  const g = welk ? WELK : (tief ? TIEF_LEDER : GRUEN_LEDER);
   const kon = welk ? KON_WELK : 'stroke="#2f5a30" stroke-width="0.6" stroke-linejoin="round" stroke-linecap="round"';
   const winkel = [-62, -31, 0, 31, 62];
   const lang = [0.78, 0.92, 1, 0.92, 0.78];
@@ -139,7 +187,7 @@ function handBlatt(x, y, rot, L, welk) {
   return out;
 }
 
-// Schalenbluete mit fuenf Blaettern und gelben Staubgefaessen
+// Schalenbluete mit fuenf Blaettern (Verlauf) und gelben Staubgefaessen
 function christroseBluete(x, y, r, welk) {
   const c = welk ? CR_WELK : CR;
   const kon = `stroke="${c.rand}" stroke-width="0.5" stroke-linejoin="round"`;
@@ -151,7 +199,9 @@ function christroseBluete(x, y, r, welk) {
     const a = j * (360 / 7) * RAD;
     out += kreis(x + Math.cos(a) * r * 0.3, y + Math.sin(a) * r * 0.3, r * 0.13, 'fill="#f5c518" stroke="#b8862e" stroke-width="0.3"');
   }
-  out += kreis(x, y, r * 0.18, `fill="${welk ? '#8f6446' : '#d9a441'}"`);
+  const mitte = uid('cr-mitte');
+  out += `<defs>${RAD_V(mitte, [[0, '#f5e08a'], [1, welk ? '#8f6446' : '#b8862e']], 0.4, 0.35, 0.7)}</defs>` +
+    kreis(x, y, r * 0.18, `fill="url(#${mitte})"`);
   return out;
 }
 
@@ -168,11 +218,12 @@ function christrose(s, welk, ebene) {
   const ws = welk ? 1.25 : 1, wy = welk ? 0.6 : 1;
   let blaetter = '', stiele = '', koepfe = '';
   const grund = [[-16, -7, -14], [-5, -10, 6], [7, -9, 20], [16, -5, 36]].slice(0, s === 1 ? 3 : 4);
-  for (const [x, y, rot] of grund) {
+  grund.forEach(([x, y, rot], i) => {
     const t = [x * k * ws, y * k * wy];
+    // Die ersten beiden Blaetter stehen hinten: dunkler und bläulich
     blaetter += stiel(kurve([0, 0], t, x < 0 ? -1.5 : 1.5), welk, 1.3) +
-      handBlatt(t[0], t[1], rot + (welk ? (x < 0 ? -20 : 20) : 0), 8.5 * k, welk);
-  }
+      handBlatt(t[0], t[1], rot + (welk ? (x < 0 ? -20 : 20) : 0), 8.5 * k, welk, i < 2);
+  });
   const rf = 3.2 + 3.3 * k;
   const geo = {
     2: [[-4, -20, 'k'], [4, -22, 'k']],
@@ -194,7 +245,7 @@ const AM = { hell: '#f07a6a', dunkel: '#d94b3d', rand: '#a8321f' };
 const AM_WELK = { hell: '#d9a08a', dunkel: '#b07a5c', rand: '#8f5a40' };
 const ZWIEBEL_KON = 'stroke="#6b4a3a" stroke-width="1" stroke-linejoin="round"';
 
-// Trichterbluete: sechs breite Blaetter, weisser Schlund, Staubfaeden
+// Trichterbluete: sechs breite Blaetter mit Verlauf, weisser Schlund, Staubfaeden
 function amaryllisBluete(x, y, r, welk) {
   const c = welk ? AM_WELK : AM;
   const kon = `stroke="${c.rand}" stroke-width="0.5" stroke-linejoin="round"`;
@@ -202,7 +253,9 @@ function amaryllisBluete(x, y, r, welk) {
   for (let j = 0; j < 6; j++) {
     out += an(x, y, j * 60 + (j % 2 ? 9 : -3), blatt(r * (j % 2 ? 0.92 : 1), r * 0.5, c.hell, c.dunkel, kon, 1.45, false));
   }
-  out += kreis(x, y, r * 0.28, `fill="${welk ? '#e8d8c0' : '#fff6ef'}"`);
+  const schlund = uid('am-schlund');
+  out += `<defs>${RAD_V(schlund, [[0, welk ? '#f3e6d6' : '#ffffff'], [1, welk ? '#e8d8c0' : '#fff6ef']], 0.4, 0.35, 0.7)}</defs>` +
+    kreis(x, y, r * 0.28, `fill="url(#${schlund})"`);
   for (const [dx, dy] of [[0.3, -0.7], [-0.4, -0.6], [0.05, -0.9]]) {
     out += linie([x, y], [x + dx * r, y + dy * r], `stroke="${welk ? '#c4a58a' : '#fff6ef'}" stroke-width="0.6" stroke-linecap="round"`) +
       kreis(x + dx * r, y + dy * r, 0.7, `fill="${welk ? '#8f6446' : '#6b3a2a'}"`);
@@ -216,11 +269,14 @@ function amaryllis(s, welk, ebene) {
   const g = welk ? WELK : GRUEN;
   const kon = kontur(welk);
   const ws = welk ? 1.2 : 1, wy = welk ? 0.85 : 1;
-  // Zwiebel: obere Haelfte sichtbar, Erde am Rand
-  let out = pfad('M-7,0A7,7.5 0 0 1 7,0Z', `fill="${welk ? '#c9b08a' : '#f1e2c4'}" ${ZWIEBEL_KON}`) +
+  // Zwiebel mit Verlauf (Licht links), Erde am Rand mit Radialverlauf
+  const zwiebel = uid('zwiebel'), erde = uid('zwiebel-erde');
+  let out = `<defs>${LIN(zwiebel, [[0, '#fffaf0'], [0.5, welk ? '#c9b08a' : '#f1e2c4'], [1, welk ? '#a88a66' : '#d8c09a']], 0, 0, 1, 0)}` +
+    RAD_V(erde, [[0, '#8a5a3a'], [1, '#5a3a24']], 0.4, 0.3, 0.8) + '</defs>' +
+    pfad('M-7,0A7,7.5 0 0 1 7,0Z', `fill="url(#${zwiebel})" ${ZWIEBEL_KON}`) +
     pfad('M-4.5,-1Q-5.5,-5 -2.5,-6.5', 'fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" opacity="0.7"') +
     pfad('M2,0Q4,-3 6,-1', 'fill="none" stroke="#c9a77a" stroke-width="0.7" opacity="0.8"') +
-    oval(0, 0.5, 7.6, 2.3, 'fill="#7a5238"');
+    oval(0, 0.5, 7.6, 2.3, `fill="url(#${erde})"`);
   if (s === 1) {
     // Stufe 1: nur die Zwiebel mit einer Spitze
     out += an(0, -6, 0, blatt(5, 1.9, g.hell, g.dunkel, kon, 0.6));
@@ -264,24 +320,27 @@ function kufenLinie(y) {
 const kz = (L, dz = 0) => L.map(([x, y, z]) => P(x, y, z + dz));
 
 function schlitten() {
-  let out = kontakt(22, 7);
+  const pTeak = plastik(TEAK), pDecke = plastik(DECKE), pGeschenk = plastik(GESCHENK), pBand = plastik(BAND);
+  let out = pTeak.defs + pDecke.defs + pGeschenk.defs + pBand.defs + kontakt(22, 7);
   // Kufen zuerst (hinten, dann vorn)
   for (const y of [-3.6, 3.6]) {
     const L = kufenLinie(y);
     out += zug(kz(L), 'stroke="#6b4a3a" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"') +
       zug(kz(L), 'stroke="#8a5228" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"') +
-      zug(kz(L, 0.6), 'stroke="#d99a5b" stroke-width="0.8" stroke-linecap="round" opacity="0.9"');
+      zug(kz(L, 0.6), 'stroke="#f0c48a" stroke-width="0.8" stroke-linecap="round" opacity="0.9"');
   }
   // Querverstrebungen zwischen den Kufen
   for (const xs of [-12, -3, 6]) {
-    out += quader(xs - 1, xs + 1, -3.8, 3.8, 1.2, 2.0, TEAK);
+    out += quader(xs - 1, xs + 1, -3.8, 3.8, 1.2, 2.0, pTeak.f);
   }
-  // Sitzlatten, von hinten nach vorn
+  // Sitzlatten, von hinten nach vorn, mit feiner Holzmaserung
   for (const xs of [-15, -9, -3, 3, 9]) {
-    out += quader(xs - 1, xs + 1, -5.2, 5.2, 2.0, 2.8, TEAK);
+    out += quader(xs - 1, xs + 1, -5.2, 5.2, 2.0, 2.8, pTeak.f) +
+      linie(P(xs - 0.35, -4.4, 2.8), P(xs - 0.35, 4.4, 2.8), 'stroke="#f0c48a" stroke-width="0.4" stroke-linecap="round" opacity="0.5"') +
+      linie(P(xs + 0.35, -3.8, 2.8), P(xs + 0.35, 3.8, 2.8), 'stroke="#6e3e1c" stroke-width="0.4" stroke-linecap="round" opacity="0.4"');
   }
-  // Karierte rote Wolldecke
-  out += quader(-10, 6, -5.6, 5.6, 2.8, 3.6, DECKE, 'stroke="#6b4a3a" stroke-width="0.8" stroke-linejoin="round"');
+  // Karierte rote Wolldecke mit Verlauf
+  out += quader(-10, 6, -5.6, 5.6, 2.8, 3.6, pDecke.f, 'stroke="#6b4a3a" stroke-width="0.8" stroke-linejoin="round"');
   const dz = 3.62;
   for (const x of [-7, -2, 3]) {
     out += linie(P(x, -5.6, dz), P(x, 5.6, dz), 'stroke="#f5e6d8" stroke-width="0.9" opacity="0.8"');
@@ -290,9 +349,9 @@ function schlitten() {
     out += linie(P(-10, y, dz), P(6, y, dz), 'stroke="#f5e6d8" stroke-width="0.9" opacity="0.8"');
   }
   // Kleines Geschenk mit Schleife auf der Decke
-  out += quader(0.5, 3.5, -1.5, 1.5, 3.6, 6.0, GESCHENK) +
-    quader(1.8, 2.2, -1.6, 1.6, 6.0, 6.2, BAND, 'stroke="#8a2a1e" stroke-width="0.4"') +
-    quader(0.5, 3.5, -0.2, 0.2, 6.0, 6.2, BAND, 'stroke="#8a2a1e" stroke-width="0.4"');
+  out += quader(0.5, 3.5, -1.5, 1.5, 3.6, 6.0, pGeschenk.f) +
+    quader(1.8, 2.2, -1.6, 1.6, 6.0, 6.2, pBand.f, 'stroke="#8a2a1e" stroke-width="0.4"') +
+    quader(0.5, 3.5, -0.2, 0.2, 6.0, 6.2, pBand.f, 'stroke="#8a2a1e" stroke-width="0.4"');
   return out;
 }
 
@@ -311,16 +370,23 @@ function plaetzchen(cx, cy, z, r, rot) {
 
 function teekanne() {
   const gid = uid('tk-kanne');
+  const pTeak = plastik(TEAK);
+  const teller = uid('tk-teller'), tellerRand = uid('tk-rand'), tasse = uid('tk-tasse');
+  const defs = '<defs>' + pTeak.defs +
+    LIN(gid, [[0, '#fbf3e4'], [0.6, '#f1e4cc'], [1, '#e3d2b2']], 0, 0, 1, 1) +
+    RAD_V(tellerRand, [[0, '#e9dcc4'], [1, '#b9a57e']], 0.4, 0.3, 0.8) +
+    RAD_V(teller, [[0, '#ffffff'], [0.7, '#fbf4e6'], [1, '#e8dcc4']], 0.4, 0.3, 0.8) +
+    LIN(tasse, [[0, '#ffffff'], [0.45, '#f7efe0'], [1, '#e0cfb0']], 0, 0, 1, 0) +
+    '</defs>';
   // Tablett aus Teak mit leicht vertiefter Mitte
-  let out = kontakt(19, 7) +
-    quader(-11, 11, -8, 8, 0, 1.4, TEAK) +
+  let out = defs + kontakt(19, 7) +
+    quader(-11, 11, -8, 8, 0, 1.4, pTeak.f) +
     pk([[-9.5, -6.5, 1.42], [9.5, -6.5, 1.42], [9.5, 6.5, 1.42], [-9.5, 6.5, 1.42]], 'fill="#b8743d" opacity="0.35"');
 
   // Teekanne hinten links
   const tb = P(-6, -1, 1.4);
   const pt = (dx, dy) => p2([tb[0] + dx, tb[1] + dy]);
-  out += oval(tb[0] + 1, tb[1] + 0.5, 10, 3, SCHATTEN) +
-    `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbf3e4"/><stop offset="1" stop-color="#e3d2b2"/></linearGradient></defs>` +
+  out += kontaktAt(tb[0] + 1, tb[1] + 0.5, 10, 3) +
     pfad(`M${pt(7, -11)}C${pt(13, -12)} ${pt(13, -4)} ${pt(6.5, -4)}`, 'fill="none" stroke="#6b4a3a" stroke-width="3.2" stroke-linecap="round"') +
     pfad(`M${pt(7, -11)}C${pt(13, -12)} ${pt(13, -4)} ${pt(6.5, -4)}`, 'fill="none" stroke="#f3e6cf" stroke-width="1.6" stroke-linecap="round"') +
     pfad(`M${pt(-6.5, -6)}Q${pt(-11.5, -6.5)} ${pt(-13, -13)}L${pt(-11, -13.8)}Q${pt(-9.5, -8)} ${pt(-5.5, -3.5)}Z`, `fill="#f3e6cf" ${KON_DEKO}`) +
@@ -333,8 +399,8 @@ function teekanne() {
     kreis(tb[0], tb[1] - 16.6, 1.5, `fill="${PETROL}"`);
 
   // Teller mit Sternplaetzchen hinten rechts
-  out += scheibe(5, -5, 1.4, 5.4, 'fill="#d9c7a4" stroke="#8a7a60" stroke-width="0.5"') +
-    scheibe(5, -5, 2.2, 4.4, 'fill="#fbf4e6" stroke="#b9ab8a" stroke-width="0.5"') +
+  out += scheibe(5, -5, 1.4, 5.4, `fill="url(#${tellerRand})" stroke="#8a7a60" stroke-width="0.5"`) +
+    scheibe(5, -5, 2.2, 4.4, `fill="url(#${teller})" stroke="#b9ab8a" stroke-width="0.5"`) +
     plaetzchen(4.2, -5.6, 2.2, 2.1, 0) +
     plaetzchen(6.2, -4.4, 2.2, 2.1, 40) +
     plaetzchen(5.2, -3.4, 2.2, 2.1, 20);
@@ -342,9 +408,9 @@ function teekanne() {
   // Tasse mit Dampf vorn
   const c = P(5, 5, 1.4);
   const [cx, cy] = c;
-  out += oval(cx + 1, cy, 5.5, 2, SCHATTEN) +
+  out += kontaktAt(cx + 1, cy, 5.5, 2) +
     pfad(`M${p2([cx + 3.8, cy - 5])}C${p2([cx + 7.5, cy - 5.5])} ${p2([cx + 7.5, cy - 1.5])} ${p2([cx + 3.6, cy - 1.8])}`, 'fill="none" stroke="#6b4a3a" stroke-width="1.4" stroke-linecap="round"') +
-    pfad(`M${p2([cx - 4, cy - 6])}L${p2([cx + 4, cy - 6])}Q${p2([cx + 3.6, cy])} ${p2([cx, cy])}Q${p2([cx - 3.6, cy])} ${p2([cx - 4, cy - 6])}Z`, `fill="#f7efe0" ${KON_DEKO}`) +
+    pfad(`M${p2([cx - 4, cy - 6])}L${p2([cx + 4, cy - 6])}Q${p2([cx + 3.6, cy])} ${p2([cx, cy])}Q${p2([cx - 3.6, cy])} ${p2([cx - 4, cy - 6])}Z`, `fill="url(#${tasse})" ${KON_DEKO}`) +
     pfad(`M${p2([cx - 3.9, cy - 3])}Q${p2([cx, cy - 1.2])} ${p2([cx + 3.9, cy - 3])}`, `fill="none" stroke="${PETROL}" stroke-width="0.8"`) +
     oval(cx, cy - 6, 4, 1.5, 'fill="#fbf4e6" stroke="#6b4a3a" stroke-width="0.5"') +
     oval(cx, cy - 6, 3.2, 1, 'fill="#8a5a3a"');

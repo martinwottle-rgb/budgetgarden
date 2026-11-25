@@ -2557,3 +2557,42 @@ export function lagerVerkaufen(daten, lagerId) {
   }
   return { daten: d, erloes };
 }
+
+// Alle Töpfe, die zu einer Pflanze passen (SPEC-5, Kauf erst beim Einsetzen): Terrakotta, Töpfe im Lager und Töpfe zum Kaufen.
+// Je Eintrag: typ, name, preis, level, freigeschaltet, lagerId ('standard', Id im Lager oder null = muss gekauft werden), aktuell.
+export function topfAuswahl(daten, pflanzeId) {
+  const p = daten.spiel.gewaechshaus.pflanzen.find(x => x.id === pflanzeId);
+  if (!topfWechselbar(p)) return [];
+  const groesse = topfGroesse(p.typ);
+  const lvl = levelAus(daten.spiel.xp).level;
+  const lager = daten.spiel.lager || [];
+  const jetzt = topfVon(p);
+  return Object.keys(TOEPFE).filter(t => TOEPFE[t].groesse === groesse).map(t => {
+    const imLager = lager.find(e => e.kategorie === 'topf' && e.typ === t);
+    return {
+      typ: t,
+      name: TOEPFE[t].name,
+      preis: istStandardTopf(t) ? 0 : TOEPFE[t].preis,
+      level: TOEPFE[t].level || 1,
+      freigeschaltet: istStandardTopf(t) || lvl >= TOEPFE[t].level,
+      lagerId: istStandardTopf(t) ? 'standard' : imLager ? imLager.id : null,
+      aktuell: jetzt === t
+    };
+  }).sort((a, b) => (b.aktuell - a.aktuell) || ((a.lagerId ? 0 : 1) - (b.lagerId ? 0 : 1)) || a.level - b.level || a.preis - b.preis);
+}
+
+// Topf kaufen und gleich einsetzen: die Samen werden erst hier abgebucht. Der alte Topf (außer Terrakotta) kommt ins Lager.
+export function topfKaufenUndSetzen(daten, pflanzeId, typ) {
+  const p = daten.spiel.gewaechshaus.pflanzen.find(x => x.id === pflanzeId);
+  if (!p) return fehler('Diese Pflanze gibt es nicht.');
+  if (!topfWechselbar(p)) return fehler(p.saat ? 'Beetpflanzen wachsen direkt im Beet.' : 'Raritäten behalten ihr eigenes Gefäß.');
+  if (!hat(TOEPFE, typ) || TOEPFE[typ].groesse !== topfGroesse(p.typ)) {
+    return fehler(topfGroesse(p.typ) === 'kuebel' ? 'Große Pflanzen brauchen einen Kübel.' : 'Kleine Pflanzen brauchen einen kleinen Topf.');
+  }
+  if (istStandardTopf(typ)) return topfWechseln(daten, pflanzeId, 'standard');
+  if (topfVon(p) === typ) return fehler('Die Pflanze steht schon in diesem Topf.');
+  const k = topfKaufen(daten, typ);
+  if (k.fehler) return k;
+  const neu = k.daten.spiel.lager.filter(e => e.kategorie === 'topf' && e.typ === typ).pop();
+  return topfWechseln(k.daten, pflanzeId, neu.id);
+}

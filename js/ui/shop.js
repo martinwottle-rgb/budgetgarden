@@ -5,9 +5,10 @@
 import {
   katalog, freiePlaetze, kaufen, levelAus, ERWEITERUNGEN, raritaetenListe,
   samentuete, saatSeltenheit, saisonKatalog, aktiveSaison, designListe, designKaufen, designWaehlen, lagerListe,
-  topfKatalog, topfKaufen, lagerVerkaufen
+  topfKatalog, topfKaufen, lagerVerkaufen, topfAuswahl, topfKaufenUndSetzen
 } from '../spiel.js';
 import { TOEPFE } from '../grafik/toepfe.js';
+import { mitTopf } from '../grafik/topfwahl.js';
 import { PFLANZEN } from '../grafik/pflanzen.js';
 import { PFLANZEN2 } from '../grafik/pflanzen2.js';
 import { MOEBEL } from '../grafik/moebel.js';
@@ -330,15 +331,16 @@ function kaufBlatt(ctx, a) {
       el('button', {
         type: 'button',
         class: gratis ? 'knopf knopf-voll ios-knopf-gold' : 'knopf knopf-primaer knopf-voll',
-        text: gratis ? '🎁 Mit Gutschein gratis platzieren' : 'Kaufen',
+        text: gratis ? '🎁 Mit Gutschein gratis platzieren' : 'Platz wählen',
         disabled: !kaufbar,
         onclick: () => {
           if (!platzFuer(ctx.daten, a).length) return ctx.toast(KEIN_PLATZ);
           blatt.schliessen();
-          ctx.navigiere('garten', { platzieren: { kategorie: a.kategorie, typ: a.typ } });
+          ctx.navigiere('garten', { platzieren: { kategorie: a.kategorie, typ: a.typ, name: a.name, preis: gratis ? 0 : a.preis } });
         }
       }),
-      gratis ? el('p', { class: 'klein sh-grund', text: 'Dafür wird ein Gutschein eingelöst.' }) : null,
+      gratis ? el('p', { class: 'klein sh-grund', text: 'Dafür wird ein Gutschein eingelöst.' })
+        : el('p', { class: 'klein sh-grund', text: 'Bezahlt wird erst, wenn du einen Platz gewählt hast. Abbrechen geht jederzeit.' }),
       grund ? el('p', { class: 'sh-grund', text: grund }) : null,
       el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Abbrechen', onclick: () => blatt.schliessen() })
     )
@@ -847,23 +849,50 @@ function topfKarte(ctx, a) {
 }
 
 function topfKaufBlatt(ctx, a) {
+  // Erst die Pflanze wählen, dann wird bezahlt (Kauf und Einsetzen in einem Schritt)
+  const passend = ctx.daten.spiel.gewaechshaus.pflanzen.filter(p => topfAuswahl(ctx.daten, p.id).some(t => t.typ === a.typ && !t.aktuell));
+  let wahl = null;
   let blatt = null;
-  const knopf = el('button', {
-    type: 'button', class: 'knopf knopf-primaer knopf-voll',
-    text: !a.freigeschaltet ? `🔒 ab Level ${a.level}` : `Kaufen für ${zahl(a.preis)} Samen`,
-    disabled: !a.freigeschaltet || ctx.daten.spiel.samen < a.preis ? true : null,
-    onclick: () => {
-      const r = topfKaufen(ctx.daten, a.typ);
-      if (r.fehler) return ctx.toast(r.fehler);
-      blatt.schliessen();
-      ctx.speichern(r.daten);
-      ctx.toast(`${a.name} liegt im Lager. Tippe eine Pflanze an und wähle „Topf ändern“.`);
-    }
-  });
+  const raster = el('div', { class: 'raster' });
+  const knopfBox = el('div', { class: 'aktionen tp-knoepfe' });
+  const zeichnen = () => {
+    raster.replaceChildren(...passend.map(p => {
+      const def = PFLANZEN[p.typ] || PFLANZEN2[p.typ] || SAISON[p.typ];
+      return el('button', {
+        type: 'button',
+        class: 'karte sh-karte tp-wahl' + (p === wahl ? ' tp-aktuell' : ''),
+        'aria-pressed': p === wahl ? 'true' : 'false',
+        onclick: () => { wahl = p; zeichnen(); }
+      },
+        el('div', { class: 'sh-bild' }, def ? vorschau(mitTopf(TOEPFE[a.typ].zeichne, () => def.zeichne(p.stufe, false, 'boden', p.schmuck || null)), 'sh-vorschau') : null),
+        el('div', { class: 'sh-name', text: def ? def.name : p.typ }));
+    }));
+    const zuWenig = ctx.daten.spiel.samen < a.preis;
+    knopfBox.replaceChildren(
+      el('button', {
+        type: 'button', class: 'knopf knopf-primaer knopf-voll',
+        disabled: !a.freigeschaltet || zuWenig || !wahl ? true : null,
+        text: !a.freigeschaltet ? `🔒 ab Level ${a.level}` : zuWenig ? `Noch ${zahl(a.preis - ctx.daten.spiel.samen)} Samen`
+          : !wahl ? 'Pflanze auswählen' : `Für ${zahl(a.preis)} Samen kaufen und einsetzen`,
+        onclick: () => {
+          const r = topfKaufenUndSetzen(ctx.daten, wahl.id, a.typ);
+          if (r.fehler) return ctx.toast(r.fehler);
+          blatt.schliessen();
+          ctx.speichern(r.daten);
+          ctx.toast(`${a.name} gekauft und eingesetzt`);
+        }
+      }),
+      el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Abbrechen', onclick: () => blatt.schliessen() }));
+    if (blatt) einpassen(blatt.element);
+  };
+  zeichnen();
   blatt = ctx.sheet(el('div', {},
     el('h2', { class: 'sh-titel', text: a.name }),
     topfBild(a.typ),
-    el('p', { class: 'klein', text: a.groesse === 'kuebel' ? 'Kübel für große Pflanzen.' : 'Topf für kleine Pflanzen.' }),
-    knopf));
+    el('div', { class: 'sh-preis sh-preis-gross' }, svgBox(muenzSvg(22), 'muenze-klein'), `${zahl(a.preis)} Samen`),
+    passend.length
+      ? el('p', { class: 'klein', text: 'Für welche Pflanze? Bezahlt wird erst beim Einsetzen, der alte Topf kommt ins Lager.' })
+      : el('p', { class: 'klein', text: a.groesse === 'kuebel' ? 'Gerade gibt es keine große Pflanze für diesen Kübel.' : 'Gerade gibt es keine kleine Pflanze für diesen Topf.' }),
+    raster, knopfBox));
   einpassen(blatt.element);
 }

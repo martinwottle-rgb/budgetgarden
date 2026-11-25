@@ -27,9 +27,10 @@ const stufeN = (n) => Math.min(4, Math.max(1, Math.round(Number(n) || 1)));
 
 // ---------- Boden ----------
 // Kleine dunkle Erdkuhle, Ursprung im Mittelpunkt; die Pflanze wachsen aus ihr heraus
-function erdkuhle(rx = 7.5) {
-  return oval(0, 0.5, rx + 1, 2.6, 'fill="#6b4a3a" opacity="0.35"') +
-    oval(0, 0.2, rx, 2.1, 'fill="#5a3d2b"');
+// Klein genug, dass sie auch bei den vorderen Beetplaetzen nicht ueber den Beetrand ragt
+function erdkuhle(rx = 4.8) {
+  return oval(0, 0.4, rx + 0.6, 1.9, 'fill="#6b4a3a" opacity="0.25"') +
+    oval(0, 0.2, rx, 1.5, 'fill="#5a3d2b"');
 }
 
 // Abgefallene Blaetter (nur welk), flach neben der Pflanze

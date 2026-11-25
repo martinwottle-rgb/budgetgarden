@@ -1073,6 +1073,39 @@ test('Lager: Pflanze, Möbel und Deko verkaufen, Raritäten nicht', () => {
   scheitert(S.lagerVerkaufen(er.daten, er.daten.spiel.lager[0].id), 'Rarität nicht verkaufbar');
 });
 
+
+test('Töpfe: Auswahl zeigt alle passenden, Kauf erst beim Einsetzen', () => {
+  const d = basis(1000, 2100);
+  const liste = S.topfAuswahl(d, 'p1');
+  gleich(liste.length, 12, '12 kleine Töpfe zur Wahl');
+  gleich(liste[0].typ, 'terrakotta', 'aktueller Topf zuerst');
+  gleich(liste.some(t => !t.lagerId && t.preis > 0), true, 'nicht gekaufte Töpfe mit Preis');
+  const r = S.topfKaufenUndSetzen(d, 'p1', 'keramik_weiss');
+  klappt(r, 'kaufen und einsetzen');
+  gleich(r.daten.spiel.samen, 1000 - 30, 'erst jetzt bezahlt');
+  gleich(r.daten.spiel.gewaechshaus.pflanzen[0].topf, 'keramik_weiss', 'Topf sitzt');
+  gleich(r.daten.spiel.lager.length, 0, 'nichts im Lager (Terrakotta bleibt gratis)');
+  const z = S.topfKaufenUndSetzen(r.daten, 'p1', 'streifen');
+  klappt(z, 'zweiter Topf');
+  gleich(z.daten.spiel.lager.map(e => e.typ), ['keramik_weiss'], 'alter Topf im Lager');
+  gleich(S.topfAuswahl(z.daten, 'p1').find(t => t.typ === 'keramik_weiss').lagerId !== null, true, 'Topf aus dem Lager ohne Preis wählbar');
+  scheitert(S.topfKaufenUndSetzen(basis(10, 2100), 'p1', 'keramik_weiss'), 'zu wenig Samen');
+  scheitert(S.topfKaufenUndSetzen(d, 'p1', 'laufglasur_kuebel'), 'Kübel passt nicht');
+});
+
+test('Beetpflanze einlagern und wieder auf ein Beet setzen', () => {
+  const d = basis(500, 2100);
+  d.spiel.gewaechshaus.moebel.push({ id: 'b1', typ: 'kraeuterbeet', gx: 3, gy: 3, drehung: 0 });
+  d.spiel.gewaechshaus.pflanzen.push({ id: 's1', typ: 'basilikum', stufe: 3, saat: true, fortschritt: 1, ort: { moebel: 'b1', platz: 0 } });
+  const e = S.einlagern(d, 'pflanze', 's1');
+  klappt(e, 'einlagern');
+  const l = e.daten.spiel.lager[0];
+  gleich([l.typ, l.eigenschaften.saat, l.eigenschaften.stufe], ['basilikum', true, 3], 'Stufe und Saat bleiben');
+  const z = S.lagerPlatzieren(e.daten, l.id, { moebel: 'b1', platz: 1 });
+  klappt(z, 'wieder aufs Beet');
+  gleich(z.daten.spiel.gewaechshaus.pflanzen.find(p => p.typ === 'basilikum').stufe, 3, 'Stufe erhalten');
+});
+
 test('Katze kostet 250 und ist ab Level 9', () => {
   gleich(S.PREISE_DEKO.katze.preis, 250, 'Preis');
   gleich(S.PREISE_DEKO.katze.level, 9, 'Level');

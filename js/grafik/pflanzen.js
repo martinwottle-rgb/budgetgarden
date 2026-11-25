@@ -801,6 +801,25 @@ function vlStiel(d, welk, w = 3.2) {
     pfad(d, `fill="none" stroke="${licht}" stroke-width="${f(w * 0.4)}" stroke-linecap="round" opacity="0.75" transform="translate(${f(-w * 0.18)},0)"`);
 }
 
+// ---------- Gemeinsame Verlaeufe der Phase-2-Pflanzen (Blaetter, Bluetenblaetter, Holz) ----------
+// Blattverlaeufe eines Pflanzenexemplars mit Ids u-v (vorn, waermer), u-h (hinten, dunkler gruen), u-w (welk).
+function vlBlattDefs(u) {
+  return vlDefs(
+    vlLin(`${u}-v`, ['#a6d484', '#6f9f57', '#43733f']),
+    vlLin(`${u}-h`, ['#7fae70', '#4d7f4a', '#2e5a36']),
+    vlLin(`${u}-w`, VL_WELK));
+}
+// Blatt mit Verlauf in der passenden Farbe (welk, hinten oder vorn). R: Kante, L: Laenge, W: halbe Breite.
+function vlBl(R, L, W, u, welk, hinten) {
+  const g = vref(`${u}-${welk ? 'w' : hinten ? 'h' : 'v'}`);
+  return vlBlatt(R, L, W, g, vlOpt(welk, hinten));
+}
+// Radialer Verlauf mit eigener Id (Bluetenblaetter, Fruechte, Knospen). Liefert [Verweis, defs].
+function vlRadNeu(p, cols) {
+  const id = vlId(p);
+  return [vref(id), vlDefs(vlRad(id, cols))];
+}
+
 // ---------- Bogenhanf (Sansevieria) ----------
 // Steife, schwertfoermige Blaetter, dunkelgruen mit hellen Zickzack-Baendern und breitem gelbem Rand.
 // Licht von links: linke Haelfte heller. Hintere Blaetter dunkler.
@@ -1291,33 +1310,27 @@ const ORC_BLAETTER = {
   4: [[-78, 13], [-30, 15], [18, 15], [66, 13]],
 };
 
-function orchBlatt(L, welk) {
-  const T = welk ? ORC_WELK : ORC;
+function orchBlatt(L, welk, u, hinten) {
   const W = 0.32 * L;
-  const R = ovalKante(L, W, false);
-  return zweiseitig(R, T.blatt, T.dunkel) +
-    linie([0, -L * 0.05], [0, -L * 0.8], `stroke="${T.dunkel}" stroke-width="0.6" opacity="0.7"`) +
-    linie([-W * 0.4, -L * 0.25], [-W * 0.35, -L * 0.6], 'stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" opacity="0.6"') +
-    pfad(p2pfad(umriss(R)), `fill="none" ${kontur(welk)}`);
+  return vlBl(ovalKante(L, W, false), L, W, u, welk, hinten);
 }
 
-// Falterbluete: Mittelpunkt (x,y), Drehung rot, k = Groesse. 3 Kelchblaetter, 2 breite Kronblaetter, Lippe unten.
-function orchBluete(x, y, rot, k, welk) {
-  const T = welk ? ORC_WELK : ORC;
+// Falterbluete: Mittelpunkt (x,y), Drehung rot, k = Groesse. Radiale Verlaeufe und Glanzlicht auf den Kronblaettern.
+function orchBluete(x, y, rot, k, welk, u) {
   const kon = kontur(welk);
   const teil = (ang, cy, rx, ry, fill) => an(0, 0, ang, oval(0, cy * k, rx * k, ry * k, `fill="${fill}" ${kon}`));
-  const inhalt = teil(0, -3, 1.9, 3, T.kelch) +
-    teil(150, -2.6, 1.9, 2.9, T.kelch) + teil(-150, -2.6, 1.9, 2.9, T.kelch) +
-    teil(72, -2.4, 2.9, 3.4, T.bluete) + teil(-72, -2.4, 2.9, 3.4, T.bluete) +
-    teil(0, 1.4, 1.5, 1.8, T.lippe) +
-    kreis(0, 0, 0.9 * k, 'fill="#fff7d6"');
+  const inhalt = teil(0, -3, 1.9, 3, vref(`${u}-ke`)) +
+    teil(150, -2.6, 1.9, 2.9, vref(`${u}-ke`)) + teil(-150, -2.6, 1.9, 2.9, vref(`${u}-ke`)) +
+    teil(72, -2.4, 2.9, 3.4, vref(`${u}-pe`)) + teil(-72, -2.4, 2.9, 3.4, vref(`${u}-pe`)) +
+    teil(0, 1.4, 1.5, 1.8, vref(`${u}-lp`)) +
+    kreis(0, 0, 0.9 * k, 'fill="#fff7d6"') +
+    oval(-0.9 * k, -2.8 * k, 0.5 * k, 0.9 * k, 'fill="#ffffff" opacity="0.6" transform="rotate(-20)"');
   return an(x, y, rot, inhalt);
 }
 
-function orchKnospe(x, y, welk) {
-  const T = welk ? ORC_WELK : ORC;
-  return oval(x, y, 1.2, 1.7, `fill="${T.knospe}" ${kontur(welk)}`) +
-    kreis(x + 0.2, y - 0.6, 0.55, `fill="${T.rosa}"`);
+function orchKnospe(x, y, welk, u) {
+  return oval(x, y, 1.2, 1.7, `fill="${vref(`${u}-kn`)}" ${kontur(welk)}`) +
+    kreis(x + 0.2, y - 0.6, 0.55, `fill="${vref(`${u}-pk`)}"`);
 }
 
 // Rispen: Stab von S ueber C zur Spitze E. bl: [Anteil am Stab, Seite] je Bluete, kn: je Knospe
@@ -1330,26 +1343,33 @@ const ORC_RISPEN = {
   ],
 };
 
-function orchRispe(r, welk) {
-  let out = stiel(`M${sp(r.S)}Q${sp(r.C)} ${sp(r.E)}`, welk, 1.1);
+function orchRispe(r, welk, u) {
+  let out = vlStiel(`M${sp(r.S)}Q${sp(r.C)} ${sp(r.E)}`, welk, 1.1);
   for (const [t, sd] of r.kn) {
     const [x, y] = qb(r.S, r.C, r.E, t);
-    out += orchKnospe(x + sd * 1.2, y, welk);
+    out += orchKnospe(x + sd * 1.2, y, welk, u);
   }
   for (const [t, sd] of r.bl) {
     const [x, y] = qb(r.S, r.C, r.E, t);
-    out += orchBluete(x + sd * 2.2, y, sd * 15, 0.75, welk);
+    out += orchBluete(x + sd * 2.2, y, sd * 15, 0.75, welk, u);
   }
   return out;
 }
 
 function orchidee(s, welk) {
+  const u = vlId('or');
+  const defs = vlBlattDefs(u) + vlDefs(
+    vlRad(`${u}-pe`, welk ? ['#f3ece0', '#e6d8c8', '#b89c84'] : ['#fff8fb', '#fbd0e0', '#e18fb0']),
+    vlRad(`${u}-lp`, welk ? ['#d2a882', '#b8906a', '#8a6446'] : ['#f2a8c4', '#d9658f', '#a8426a']),
+    vlRad(`${u}-ke`, welk ? ['#eadccc', '#d8c4b0', '#a8906e'] : ['#fdeaf1', '#f3c6d6', '#d595b0']),
+    vlRad(`${u}-kn`, welk ? ['#d2d8a4', '#b5c48a', '#8a9a64'] : ['#c2e3a0', '#9ccc7a', '#5e9a52']),
+    vlRad(`${u}-pk`, welk ? ['#d8c0a8', '#c9b09a', '#9a806a'] : ['#f6c0d4', '#e9a0bb', '#b8608a']));
   let blaetter = '';
   for (const [a, len] of ORC_BLAETTER[s].slice().sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]))) {
-    blaetter += an(0, 0, welk ? a * 0.8 : a, orchBlatt(welk ? len * 0.8 : len, welk));
+    blaetter += an(0, 0, welk ? a * 0.8 : a, orchBlatt(welk ? len * 0.8 : len, welk, u, Math.abs(a) >= 50));
   }
-  let out = gruppe(`transform="translate(0,-1) scale(1,${welk ? 0.4 : 0.5})"`, blaetter);
-  for (const r of ORC_RISPEN[s] || []) out += orchRispe(r, welk);
+  let out = defs + gruppe(`transform="translate(0,-1) scale(1,${welk ? 0.4 : 0.5})"`, blaetter);
+  for (const r of ORC_RISPEN[s] || []) out += orchRispe(r, welk, u);
   return out;
 }
 
@@ -1380,23 +1400,29 @@ const CAL = { hell: '#9ccc7a', dunkel: '#7fb069', fisch: '#3a6b3a', ader: '#c8e6
 const CAL_UNTEN = { hell: '#8a3a5e', dunkel: '#6e2c4c', fisch: '#8a3a5e', ader: '#c98aa8' };
 const CAL_WELK = { hell: '#c4c98f', dunkel: '#a8a36a', fisch: '#8c8650', ader: '#e4e3b4' };
 
-function calBlatt(L, welk, unten) {
+// Calathea-Blatt: Verlauf, Fischgraet-Striche auf der Oberseite, Mittelader und Glanzpunkt.
+function calBlatt(L, welk, unten, u, hinten) {
   const T = welk ? CAL_WELK : (unten ? CAL_UNTEN : CAL);
-  const R = ovalKante(L, 0.3 * L, false);
-  let out = zweiseitig(R, T.hell, T.dunkel);
+  const W = 0.3 * L;
+  const R = ovalKante(L, W, false);
+  const D = p2pfad(umriss(R));
+  const g = vref(welk ? `${u}-w` : unten ? `${u}-u` : hinten ? `${u}-h` : `${u}-v`);
+  let out = pfad(D, `fill="${g}"`) + pfad(p2pfad(R), `fill="#24473a" opacity="${welk ? 0.1 : 0.16}"`);
   if (!unten) {
     // Fischgraet: Striche von der Mittelader schraeg nach oben zum Rand
     for (let k = 0; k < 5; k++) {
       const t = 0.16 + k * 0.14;
       const [ex, ey] = R[Math.round(t * 40)];
       for (const sd of [-1, 1]) {
-        out += linie([0, ey], [sd * ex * 0.75, ey - L * 0.12], `stroke="${T.fisch}" stroke-width="1.3" stroke-linecap="round" opacity="0.85"`);
+        out += linie([0, ey], [sd * ex * 0.75, ey - L * 0.12], `stroke="${T.fisch}" stroke-width="1.1" stroke-linecap="round" opacity="0.8"`);
       }
     }
   }
   out += linie([0, -L * 0.03], [0, -L * 0.93], `stroke="${T.ader}" stroke-width="0.7" stroke-linecap="round" opacity="0.8"`);
-  const rand = welk ? KON_WELK : 'stroke="#2f5a30" stroke-width="1.4" stroke-linejoin="round"';
-  return out + pfad(p2pfad(umriss(R)), `fill="none" ${rand}`);
+  out += oval(-0.3 * W, -0.55 * L, 0.12 * W + 0.3, 0.035 * L + 0.2,
+    `fill="#ffffff" opacity="0.4" transform="rotate(-30 ${f(-0.3 * W)} ${f(-0.55 * L)})"`);
+  const rand = welk ? KON_WELK : 'stroke="#2f5a30" stroke-width="1.2" stroke-linejoin="round"';
+  return out + pfad(D, `fill="none" ${rand}`);
 }
 
 // Blaetter: [Winkel gegen die Senkrechte, Stiellaenge, Blattlaenge, gedreht (Unterseite sichtbar)]
@@ -1408,17 +1434,19 @@ const CAL_BLAETTER = {
 };
 
 function calathea(s, welk) {
+  const u = vlId('ca');
+  const defs = vlBlattDefs(u) + vlDefs(vlLin(`${u}-u`, ['#a8607f', '#7e3560', '#5a2344']));
   let stiele = '', blaetter = '';
   for (const [a0, S, L, gedreht] of CAL_BLAETTER[s].slice().sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]))) {
     const a = welk ? a0 * 1.25 : a0;
     const ex = S * Math.sin(a * RAD), ey = -S * Math.cos(a * RAD) * (welk ? 0.5 : 1);
-    stiele += stiel(`M0,0Q${f(ex * 0.1)},${f(ey * 0.5)} ${f(ex)},${f(ey)}`, welk, 1.5);
+    stiele += vlStiel(`M0,0Q${f(ex * 0.1)},${f(ey * 0.5)} ${f(ex)},${f(ey)}`, welk, 1.5);
     const dreht = gedreht && !welk;
-    let b = calBlatt(welk ? L * 0.8 : L, welk, dreht);
+    let b = calBlatt(welk ? L * 0.8 : L, welk, dreht, u, !dreht && Math.abs(a0) >= 30);
     if (dreht) b = gruppe('transform="scale(0.8,1)"', b);
     blaetter += an(ex, ey, welk ? (a0 < 0 ? -140 : 140) : a0 * 0.5, b);
   }
-  return stiele + blaetter;
+  return defs + stiele + blaetter;
 }
 
 // ---------- Bostonfarn (Nephrolepis) ----------
@@ -1434,18 +1462,28 @@ const BOS_WEDEL = {
 };
 const BOS_FIEDER = [0, 6, 9, 12, 14];
 
+// Wedel mit Fiederblaettchen in Verlaeufen. Hintere Wedel etwas dunkler.
 function bostonfarn(s, welk) {
+  const u = vlId('bo');
   const T = welk ? BOS_WELK : BOS;
+  const defs = vlDefs(
+    vlLin(`${u}-a`, welk ? VL_WELK : ['#b5dc92', '#82b26c', '#5a8f52']),
+    vlLin(`${u}-b`, welk ? VL_WELK_H : ['#8cbd74', '#5e9a52', '#3f7a3c']),
+    vlLin(`${u}-c`, welk ? VL_WELK_H : ['#7aaa66', '#4d8048', '#2e5a36']));
   const n = BOS_FIEDER[s];
   const Lp = welk ? 2.2 : 2.5;
   const R = ovalKante(Lp, 0.75, false);
-  const fiederA = pfad(p2pfad(umriss(R)), `fill="${T.hell}" stroke="#2f5a30" stroke-width="0.4" stroke-linejoin="round"`);
-  const fiederB = pfad(p2pfad(umriss(R)), `fill="${T.dunkel}" stroke="#2f5a30" stroke-width="0.4" stroke-linejoin="round"`);
-  let out = '';
-  for (const [X0, Y0] of BOS_WEDEL[s].slice().sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]))) {
+  const D = p2pfad(umriss(R));
+  const fA = pfad(D, `fill="${vref(`${u}-a`)}" stroke="#2f5a30" stroke-width="0.4" stroke-linejoin="round"`);
+  const fB = pfad(D, `fill="${vref(`${u}-b`)}" stroke="#2f5a30" stroke-width="0.4" stroke-linejoin="round"`);
+  const fC = pfad(D, `fill="${vref(`${u}-c`)}" stroke="#2f5a30" stroke-width="0.4" stroke-linejoin="round"`);
+  const wedel = BOS_WEDEL[s].slice().sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]));
+  let out = defs;
+  wedel.forEach(([X0, Y0], idx) => {
     const X = welk ? X0 * 1.15 : X0;
     const Y = welk ? Y0 * 0.6 : Y0;
     const P = [[0, 0], [X * 0.1, -Y], [X * 0.85, -Y * 0.8], [X, welk ? 12 : 5]];
+    const hinten = !welk && idx < wedel.length / 2;
     out += pfad(`M0,0C${sp(P[1])} ${sp(P[2])} ${sp(P[3])}`, `fill="none" stroke="${T.rachis}" stroke-width="0.9" stroke-linecap="round"`);
     for (let k = 0; k < n; k++) {
       const t = 0.12 + 0.86 * k / (n - 1);
@@ -1453,10 +1491,11 @@ function bostonfarn(s, welk) {
       const [x2, y2] = bez(P, t + 0.02);
       const tRot = Math.atan2(x2 - x, -(y2 - y)) / RAD;
       for (const sd of [-1, 1]) {
-        out += an(x, y, tRot + sd * 70, sd > 0 ? fiederA : fiederB);
+        const blaettchen = hinten ? fC : sd > 0 ? fA : fB;
+        out += an(x, y, tRot + sd * 70, blaettchen);
       }
     }
-  }
+  });
   return out;
 }
 
@@ -1476,9 +1515,16 @@ function lavNadel(x, y, a, L, fill, kon) {
   return an(x, y, a, pfad(p2pfad(umriss(R)), `fill="${fill}" stroke="${kon}" stroke-width="0.5" stroke-linejoin="round"`));
 }
 
+// Halbkugeliger Busch aus Nadeln mit Verlauf. Aehren aus Punkten mit radialem Verlauf.
 function lavendel(s, welk) {
+  const u = vlId('lv');
   const T = welk ? LAV_WELK : LAV;
   const r = zufall(21 + s);
+  const defs = vlDefs(
+    vlLin(`${u}-h`, welk ? VL_WELK : ['#c3d4bc', '#9fb39a', '#7e9479']),
+    vlLin(`${u}-s`, welk ? VL_WELK_H : ['#9fb39a', '#7e9479', '#5f7a5c']),
+    vlRad(`${u}-pk`, welk ? ['#d8ccbb', '#a89a8a', '#7a6a5a'] : ['#d9c8ff', '#9b7fc9', '#5e4390']),
+    vlRad(`${u}-kn`, ['#c9e6a8', '#7fb069', '#44703e']));
   const [N, Rd] = LAV_BUSCH[s];
   // Halbkugel: jede Nadel laeuft von der Buschmitte zu einem Punkt auf der Kugelflaeche (welk: flacher, breiter)
   const nadeln = [];
@@ -1494,7 +1540,7 @@ function lavendel(s, welk) {
   }
   let out = '';
   for (const b of nadeln.slice().sort((p, q) => q.th - p.th)) {
-    out += lavNadel(b.x0, b.y0, b.a, b.L, b.hell ? T.hell : T.schatten, T.kontur);
+    out += lavNadel(b.x0, b.y0, b.a, b.L, vref(`${u}-${b.hell ? 'h' : 's'}`), T.kontur);
   }
   const [ns, hoehe] = LAV_STIELE[s];
   let stiele = '', spitzen = '';
@@ -1504,9 +1550,9 @@ function lavendel(s, welk) {
     const B = [(r() - 0.5) * 6, -4];
     const tip = [B[0] + h * Math.sin(a) * (welk ? 1.3 : 1), B[1] - h * Math.cos(a)];
     const C = [B[0] + (tip[0] - B[0]) * 0.1, (B[1] + tip[1]) / 2];
-    stiele += pfad(`M${sp(B)}Q${sp(C)} ${sp(tip)}`, `fill="none" stroke="${T.stiel}" stroke-width="0.6" stroke-linecap="round"`);
+    stiele += vlStiel(`M${sp(B)}Q${sp(C)} ${sp(tip)}`, welk, 0.9);
     if (s === 2) {
-      spitzen += kreis(tip[0], tip[1], 1.1, `fill="${T.knospe}"`);
+      spitzen += kreis(tip[0], tip[1], 1.1, `fill="${vref(`${u}-kn`)}"`);
       continue;
     }
     // Aehre: sieben Punkte entlang der letzten Stielstrecke, abwechselnd links und rechts, nach oben schmaler
@@ -1521,23 +1567,25 @@ function lavendel(s, welk) {
       const px = unten[0] + (tip[0] - unten[0]) * t + perp[0] * w;
       const py = unten[1] + (tip[1] - unten[1]) * t + perp[1] * w;
       spitzen += kreis(px + 0.3, py + 0.3, 0.75, `fill="${T.schatten2}"`) +
-        kreis(px, py, 0.75, `fill="${T.punkt}"`) +
+        kreis(px, py, 0.75, `fill="${vref(`${u}-pk`)}"`) +
         kreis(px - 0.25, py - 0.25, 0.25, `fill="${T.licht}" opacity="0.7"`);
     }
   }
-  return out + stiele + spitzen;
+  return defs + out + stiele + spitzen;
 }
 
-// ---------- Gemeinsame Bluete (weiss mit gelber Mitte) ----------
-// Fuenf runde Blueten-Blaettchen um eine gelbe Mitte. Mittelpunkt (x,y), k = Groesse
+// Weisse Bluete mit radialem Verlauf und gelber Mitte mit Glanzpunkt (Erdbeere, Zitrone)
 function weissBlute(x, y, k, welk) {
   const kon = kontur(welk);
-  let out = '';
+  const [pid, pdefs] = vlRadNeu('wb', welk ? ['#f3ece0', '#e6d8c8', '#b8a088'] : ['#ffffff', '#f4f1ec', '#cfd8c8']);
+  const [gid, gdefs] = vlRadNeu('wm', welk ? ['#e0b870', '#c9a46a', '#8a6a3a'] : ['#ffe98a', '#f5c518', '#c99510']);
+  let out = pdefs + gdefs;
   for (let j = 0; j < 5; j++) {
     const a = (j * 72 - 90) * RAD;
-    out += oval(x + 1.9 * k * Math.cos(a), y + 1.9 * k * Math.sin(a), 1.3 * k, 1.3 * k, `fill="${welk ? '#e6d8c8' : '#ffffff'}" ${kon}`);
+    out += oval(x + 1.9 * k * Math.cos(a), y + 1.9 * k * Math.sin(a), 1.3 * k, 1.3 * k, `fill="${pid}" ${kon}`);
   }
-  return out + kreis(x, y, 1.1 * k, `fill="${welk ? '#c9a46a' : '#f5c518'}"`);
+  return out + kreis(x, y, 1.1 * k, `fill="${gid}"`) +
+    kreis(x - 0.35 * k, y - 0.35 * k, 0.35 * k, 'fill="#ffffff" opacity="0.7"');
 }
 
 // ---------- Basilikum ----------
@@ -1556,10 +1604,8 @@ const BAS_BLUETEN = [1, 2, 4];
 const BAS = { grund: '#5e9a52', licht: '#7fb069', glanz: '#b9dd9a', ader: '#477d43' };
 const BAS_WELK = { grund: '#a8a36a', licht: '#c4c98f', glanz: '#d8d6a0', ader: '#8c8650' };
 
-// Basilikumblatt: Grund (0,0), Spitze (0,-L), eifoermig mit breiter Mitte im unteren Drittel und glattem Rand.
-// Rechte Haelfte dunkler, linke heller und etwas schmaler (leichte Woelbung), Glanzstreifen links neben der
-// Mittelader, Mittelader und zwei feine Seitenadern je Seite.
-function basilBlatt(L, W, welk) {
+// Basilikumblatt mit Verlauf: Licht oben links, Schatten rechts. Glanzstreifen links neben der Mittelader.
+function basilBlatt(L, W, welk, u, hinten) {
   const c = welk ? BAS_WELK : BAS;
   // Eiform mit breiter Mitte bei t 0.35 (unteres Drittel) und stumpf gerundeter Spitze (kein Zacken)
   const breite = (t) => {
@@ -1576,8 +1622,10 @@ function basilBlatt(L, W, welk) {
     const [x, y] = R[i];
     lk.push([-0.9 * x, y]);
   }
-  const rand = welk ? 'stroke="#a6845a" stroke-width="0.8" stroke-linejoin="round"' : `stroke="#2f5a30" stroke-width="0.6" stroke-linejoin="round"`;
-  let out = pfad(p2pfad(R), `fill="${c.grund}"`) + pfad(p2pfad(lk), `fill="${c.licht}"`);
+  const rand = welk ? 'stroke="#a6845a" stroke-width="0.8" stroke-linejoin="round"' : 'stroke="#2f5a30" stroke-width="0.6" stroke-linejoin="round"';
+  const g = vref(welk ? `${u}-w` : hinten ? `${u}-h` : `${u}-v`);
+  let out = pfad(p2pfad(R.concat(lk)), `fill="${g}"`) +
+    pfad(p2pfad(R), `fill="#24473a" opacity="${welk ? 0.1 : 0.14}"`);
   // Glanzstreifen: schmal, links neben der Mittelader
   const glanz = [];
   for (let i = 8; i <= 20; i++) {
@@ -1588,7 +1636,7 @@ function basilBlatt(L, W, welk) {
     const t = i / 30;
     glanz.push([-0.33 * breite(t), -L * t]);
   }
-  out += pfad(p2pfad(glanz), `fill="${c.glanz}" opacity="0.75"`);
+  out += pfad(p2pfad(glanz), `fill="${c.glanz}" opacity="0.7"`);
   out += pfad(p2pfad(R.concat(lk)), `fill="none" ${rand}`);
   // Mittelader und Seitenadern (je Seite zwei)
   out += linie([0, 0], [0, -L * 0.92], `stroke="${c.ader}" stroke-width="0.6" stroke-linecap="round"`);
@@ -1614,25 +1662,28 @@ function lippenQuirl(x, y) {
 
 function basilikum(s, welk) {
   const r = zufall(31 + s);
-  let stiele = '', blaetter = '', bluten = '';
+  const u = vlId('ba');
+  let stiele = '', hinten = '', vorn = '', bluten = '';
   BAS_TRIEBE[s].forEach(([a0, h0, paare], idx) => {
     const a = welk ? a0 * 1.2 : a0;
     const h = h0 * (welk ? 0.8 : 1);
     const tip = [h * Math.sin(a * RAD), -h * Math.cos(a * RAD)];
     stiele += stiel(`M0,0L${sp(tip)}`, welk, 1.6);
     const ts = paare === 2 ? [0.5, 0.85] : [0.4, 0.65, 0.9];
+    const dahinter = !welk && Math.abs(a0) >= 20;
     for (const t of ts) {
       const N = [tip[0] * t, tip[1] * t];
       for (const sd of [-1, 1]) {
         // Blattpaar gegenstaendig, zur Triebspitze hin kleiner (t = Lage am Trieb)
         const L = (welk ? 5.5 : 7) * (0.85 + 0.3 * r()) * (1 - 0.35 * t);
         const stielchen = linie([0, 1.2], [0, 0], `stroke="${welk ? '#7d6a45' : '#2f5a30'}" stroke-width="0.8" stroke-linecap="round"`);
-        blaetter += an(N[0], N[1], a + sd * (welk ? 55 : 42), stielchen + basilBlatt(L, 0.32 * L, welk));
+        const bl = an(N[0], N[1], a + sd * (welk ? 55 : 42), stielchen + basilBlatt(L, 0.32 * L, welk, u, dahinter));
+        if (dahinter) hinten += bl; else vorn += bl;
       }
     }
     if (s === 4 && BAS_BLUETEN.includes(idx)) bluten += lippenQuirl(tip[0], tip[1]);
   });
-  return stiele + blaetter + bluten;
+  return vlBlattDefs(u) + stiele + hinten + vorn + bluten;
 }
 
 // ---------- Erdbeere ----------
@@ -1650,13 +1701,15 @@ const ERD_AUSLAEUFER = { 1: [], 2: [1], 3: [1, -1], 4: [1, -1] };
 // Fruechte je Stufe: [x, y, Radius]. Die Fruechte haengen ueber den Topfrand.
 const ERD_FRUECHTE = { 1: [], 2: [], 3: [], 4: [[-12, -4, 3.4], [12, -2, 3.6], [-5, -14, 3.2], [6, -15, 3.0]] };
 
-// Herzform mit Spitze nach unten, gelbe Nuesschen-Punkte, gruener Kelch oben
+// Herzform mit Spitze nach unten, radialer Verlauf mit Glanzlicht, gelbe Nuesschen, gruener Kelch oben
 function erdFrucht(x, y, r) {
   const w = r * 0.9, h = r;
   const pts = [[0, -0.55 * h], [0.55 * w, -0.95 * h], [0.95 * w, -0.2 * h], [0.5 * w, 0.6 * h], [0, 1.2 * h], [-0.5 * w, 0.6 * h], [-0.95 * w, -0.2 * h], [-0.55 * w, -0.95 * h]]
     .map(([px, py]) => [x + px, y + py]);
-  let out = pfad(glattGeschlossen(pts), 'fill="#e8453c" stroke="#8a2a24" stroke-width="0.6" stroke-linejoin="round"') +
-    oval(x - 0.4 * w, y - 0.2 * h, 0.3 * w, 0.2 * h, 'fill="#ffffff" opacity="0.5"');
+  const [fv, fdefs] = vlRadNeu('ef', ['#ff9c8c', '#e8453c', '#a8281f']);
+  const [kv, kdefs] = vlRadNeu('ek', ['#a9d98f', '#5e9a52', '#3a6b3a']);
+  let out = fdefs + kdefs + pfad(glattGeschlossen(pts), `fill="${fv}" stroke="#8a2a24" stroke-width="0.6" stroke-linejoin="round"`) +
+    oval(x - 0.4 * w, y - 0.2 * h, 0.3 * w, 0.2 * h, 'fill="#ffffff" opacity="0.55"');
   for (const [px, py] of [[-0.5, -0.45], [0.4, -0.35], [-0.2, 0.1], [0.45, 0.25], [-0.45, 0.4], [0, 0.65], [0.25, 0.8]]) {
     out += kreis(x + px * w, y + py * h, 0.3, 'fill="#ffe08a"');
   }
@@ -1666,20 +1719,21 @@ function erdFrucht(x, y, r) {
     const a = k * 36 * RAD, rr = k % 2 ? 0.3 * w : 0.7 * w;
     kelch.push([x + rr * Math.cos(a), y - 0.6 * h + rr * Math.sin(a) * 0.45]);
   }
-  return out + poly(kelch, `fill="#5e9a52" ${KON_GRUEN}`);
+  return out + poly(kelch, `fill="${kv}" ${KON_GRUEN}`);
 }
 
 function erdbeere(s, welk) {
+  const u = vlId('er');
   let stiele = '', blaetter = '', bluten = '', ausl = '', fr = '';
   ERD_BLAETTER[s].forEach(([a0, S], i) => {
     const a = welk ? a0 * 1.25 : a0;
     const len = welk ? S * 0.8 : S;
     const N = [len * Math.sin(a * RAD), -len * Math.cos(a * RAD) * (welk ? 0.6 : 1)];
     stiele += stiel(`M0,0L${sp(N)}`, welk, 1.4);
-    // Dreizaehliges Blatt: Endblaettchen in Stielrichtung, zwei seitliche Blaettchen
+    // Dreizaehliges Blatt: Endblaettchen in Stielrichtung, zwei seitliche Blaettchen (seitlich dunkler)
     for (const [da, k] of [[0, 1], [-50, 0.85], [50, 0.85]]) {
       const Lf = 6.5 * k * (welk ? 0.8 : 1);
-      blaetter += an(N[0], N[1], a + da, blatt(ovalKante(Lf, 0.6 * Lf, true), { L: Lf, W: 0.6 * Lf, ...farben(i + (da > 0 ? 1 : 0), welk) }));
+      blaetter += an(N[0], N[1], a + da, vlBl(ovalKante(Lf, 0.6 * Lf, true), Lf, 0.6 * Lf, u, welk, da !== 0));
     }
     if (s === 3 && i < 3) bluten += weissBlute(N[0], N[1] - 2, 0.9, welk);
   });
@@ -1688,13 +1742,13 @@ function erdbeere(s, welk) {
     ausl += stiel(`M${sg * 3},-3Q${sg * 14},-9 ${sp(E)}`, welk, 1.2);
     // Jungpflanze am Ende des Ausloeufers: zwei kleine Blaettchen
     for (const da of [-30, 30]) {
-      ausl += an(E[0], E[1], sg * da, blatt(ovalKante(4.5, 2.4, true), { L: 4.5, W: 2.4, ...farben(da > 0 ? 1 : 0, welk) }));
+      ausl += an(E[0], E[1], sg * da, vlBl(ovalKante(4.5, 2.4, true), 4.5, 2.4, u, welk, da < 0));
     }
   }
   for (const [x, y, rad] of ERD_FRUECHTE[s]) {
     fr += linie([x * 0.2, -3], [x, y - rad * 0.6], 'stroke="#5e9a52" stroke-width="0.9" stroke-linecap="round"') + erdFrucht(x, y, rad);
   }
-  return stiele + ausl + blaetter + bluten + fr;
+  return vlBlattDefs(u) + stiele + ausl + blaetter + bluten + fr;
 }
 
 // ---------- Zitronenbaeumchen ----------
@@ -1712,33 +1766,33 @@ const ZIT_STUFE = {
 const ZIT_BLUETEN = [[-0.6, -0.3], [0.5, 0.2], [0.1, 0.7]];
 const ZIT_ZITRONEN = [[-0.75, 0.6], [0.2, 0.95], [0.8, 0.45], [-0.3, 0.95], [0.5, 1.0]];
 
-// Zitrone: ovale Form mit spitzen Enden, Licht links, Schatten rechts, heller Glanzpunkt
+// Zitrone: ovale Form mit spitzen Enden, radialer Verlauf mit Glanzpunkt
 function zitronenFrucht(x, y, w, h, welk) {
-  const aussen = welk ? '#a8895a' : '#d9b52a', innen = welk ? '#c9a46a' : '#f5d63d';
-  const form = (k, dx) => glattGeschlossen([[0, -h], [0.6 * w, -0.5 * h], [0.75 * w, 0], [0.6 * w, 0.5 * h], [0, h], [-0.6 * w, 0.5 * h], [-0.75 * w, 0], [-0.6 * w, -0.5 * h]]
-    .map(([px, py]) => [x + px * k + dx, y + py]));
-  return pfad(form(1, 0), `fill="${aussen}" ${KON_GRUEN}`) +
-    pfad(form(0.8, -0.12 * w), `fill="${innen}"`) +
+  const [gv, gdefs] = vlRadNeu('zf', welk ? ['#e6cf96', '#c9a46a', '#8a6a3a'] : ['#fff0a0', '#f5d63d', '#b8901e']);
+  const pts = [[0, -h], [0.6 * w, -0.5 * h], [0.75 * w, 0], [0.6 * w, 0.5 * h], [0, h], [-0.6 * w, 0.5 * h], [-0.75 * w, 0], [-0.6 * w, -0.5 * h]]
+    .map(([px, py]) => [x + px, y + py]);
+  return gdefs + pfad(glattGeschlossen(pts), `fill="${gv}" ${KON_GRUEN}`) +
     oval(x - 0.35 * w, y - 0.25 * h, 0.2 * w, 0.14 * h, 'fill="#ffffff" opacity="0.7"');
 }
 
 function zitrone(s, welk) {
   const Z = ZIT_STUFE[s];
   const r = zufall(51 + s);
+  const u = vlId('zi');
   const cx = 0, cy = -Z.TH - Z.KR * 0.5;
-  const T = welk ? WELK : ZIT;
+  const holzVerlauf = vlLin(`${u}-st`, welk ? ['#e3cf9a', '#c9b07a', '#9c8456'] : ['#e8bd8a', '#c98f5a', '#8a5a36'], 1, 0);
   const holz = welk ? '#c9b07a' : '#c98f5a';
-  // Schatten unter der Krone, Stamm mit Licht und Schatten, drei Aeste
-  let out = oval(cx, cy + Z.KR * 0.2, Z.KR * 0.95, Z.KR * 0.75, `fill="${welk ? '#a8a36a' : '#3a6b3a'}" opacity="0.3"`) +
-    pfad(`M-2.6,1L-1.7,${-Z.TH}L1.7,${-Z.TH}L2.6,1Z`, `fill="${holz}" ${KON_TOPF}`) +
-    linie([-1.5, -Z.TH + 1], [-1.5, -1], 'stroke="#e2b07c" stroke-width="1" stroke-linecap="round"') +
+  // Schatten unter der Krone, Stamm mit Verlauf (Licht links), drei Aeste
+  let out = vlDefs(holzVerlauf) + oval(cx, cy + Z.KR * 0.2, Z.KR * 0.95, Z.KR * 0.75, `fill="${welk ? '#a8a36a' : '#3a6b3a'}" opacity="0.3"`) +
+    pfad(`M-2.6,1L-1.7,${-Z.TH}L1.7,${-Z.TH}L2.6,1Z`, `fill="${vref(`${u}-st`)}" ${KON_TOPF}`) +
+    linie([-1.5, -Z.TH + 1], [-1.5, -1], 'stroke="#f0c9a0" stroke-width="1" stroke-linecap="round"') +
     linie([1.2, -Z.TH + 1], [1.2, -1], 'stroke="#a86b43" stroke-width="0.8"');
   for (const [bx, by] of [[-8, cy + Z.KR * 0.2], [7, cy + Z.KR * 0.3], [0, cy + Z.KR * 0.7]]) {
     const d = `M0,${-Z.TH + 2}Q${f(bx * 0.4)},${f(-Z.TH - 2)} ${f(bx)},${f(by)}`;
     out += pfad(d, 'fill="none" stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"') +
       pfad(d, `fill="none" stroke="${holz}" stroke-width="1.4" stroke-linecap="round"`);
   }
-  // Blaetter in der Krone, nach aussen gerichtet; obere zuerst, untere liegen vorn
+  // Blaetter in der Krone; obere (hinten) zuerst, untere liegen vorn
   const bl = [];
   for (let i = 0; i < Z.N; i++) {
     const phi = r() * 2 * Math.PI, rho = Math.sqrt(r()) * 0.9;
@@ -1746,8 +1800,9 @@ function zitrone(s, welk) {
     bl.push({ x, y, rot: (x - cx) / Z.KR * 70 + (r() - 0.5) * 40, L: Z.L * (0.85 + 0.3 * r()) });
   }
   bl.sort((p, q) => p.y - q.y);
+  out += vlBlattDefs(u);
   for (const b of bl) {
-    out += an(b.x, b.y, b.rot, blatt(ovalKante(b.L, 0.42 * b.L, false), { L: b.L, W: 0.42 * b.L, ...T }));
+    out += an(b.x, b.y, b.rot, vlBl(ovalKante(b.L, 0.42 * b.L, false), b.L, 0.42 * b.L, u, welk, b.y < cy));
   }
   for (const [dx, dy] of ZIT_BLUETEN.slice(0, Z.blueten)) {
     out += weissBlute(cx + Z.KR * dx, cy + Z.KR * dy, 1, welk);
@@ -1796,12 +1851,15 @@ function bonsaiSchale(H) {
 function bonsai(s, welk) {
   const St = BON_STUFE[s];
   const r = zufall(71 + s);
+  const u = vlId('bn');
   const h = St.h;
   const holz = welk ? '#c9b07a' : '#c98f5a';
-  // Knorriger S-foermiger Stamm: dunkle Kontur, Holzfarbe, heller Streifen links, Schatten rechts
+  const holzVerlauf = vlLin(`${u}-st`, welk ? ['#e3cf9a', '#c9b07a', '#9c8456'] : ['#e8bd8a', '#c98f5a', '#8a5a36'], 1, 0);
+  // Knorriger S-foermiger Stamm: dunkle Kontur, Verlauf (Licht links), Rindenstreifen in hellem und dunklem Ton
   const d = `M0,2C-6,${f(-h * 0.13)} 5,${f(-h * 0.3)} 0,${f(-h * 0.5)}C-5,${f(-h * 0.7)} 4,${f(-h * 0.83)} 1,${f(-h)}`;
-  let out = pfad(d, 'fill="none" stroke="#6b4a3a" stroke-width="6.4" stroke-linecap="round"') +
-    pfad(d, `fill="none" stroke="${holz}" stroke-width="5" stroke-linecap="round"`) +
+  let out = vlDefs(holzVerlauf) + vlBlattDefs(u) +
+    pfad(d, 'fill="none" stroke="#6b4a3a" stroke-width="6.4" stroke-linecap="round"') +
+    pfad(d, `fill="none" stroke="${vref(`${u}-st`)}" stroke-width="5" stroke-linecap="round"`) +
     gruppe('transform="translate(-1.3,0)"', pfad(d, 'fill="none" stroke="#e2b07c" stroke-width="1.2" stroke-linecap="round" opacity="0.8"')) +
     gruppe('transform="translate(1.7,0)"', pfad(d, 'fill="none" stroke="#a86b43" stroke-width="1.2" stroke-linecap="round" opacity="0.6"'));
   // Wurzelansatz: vier kurze Wurzeln, die sich auf der Erde verteilen
@@ -1811,18 +1869,18 @@ function bonsai(s, welk) {
       pfad(rd, `fill="none" stroke="${holz}" stroke-width="1.6" stroke-linecap="round"`);
   }
   // Laubpolster: flache Ellipsen aus kleinen Blaettchen, mit Astansatz am Stamm
-  St.pols.forEach(([cx, cy, rx, ry], j) => {
+  St.pols.forEach(([cx, cy, rx, ry]) => {
     out += linie([0, cy + ry * 0.4], [cx * 0.6, cy + ry * 0.5], 'stroke="#6b4a3a" stroke-width="1.6" stroke-linecap="round"') +
       linie([0, cy + ry * 0.4], [cx * 0.6, cy + ry * 0.5], `stroke="${holz}" stroke-width="0.8" stroke-linecap="round"`) +
       oval(cx, cy + ry * 0.6, rx * 0.95, ry * 0.8, `fill="${welk ? '#a8a36a' : '#3a6b3a'}" opacity="0.35"`);
     const bl = [];
     for (let k = 0; k < St.n; k++) {
       const phi = r() * 2 * Math.PI, rho = Math.sqrt(r()) * 0.9;
-      bl.push({ x: cx + rx * rho * Math.cos(phi), y: cy + ry * rho * Math.sin(phi), rot: (r() - 0.5) * 120, k });
+      bl.push({ x: cx + rx * rho * Math.cos(phi), y: cy + ry * rho * Math.sin(phi), rot: (r() - 0.5) * 120 });
     }
     bl.sort((p, q) => p.y - q.y);
     for (const b of bl) {
-      out += an(b.x, b.y, b.rot, blatt(ovalKante(St.L, 0.42 * St.L, true), { L: St.L, W: 0.42 * St.L, ...farben(b.k + j, welk) }));
+      out += an(b.x, b.y, b.rot, vlBl(ovalKante(St.L, 0.42 * St.L, true), St.L, 0.42 * St.L, u, welk, b.y < cy));
     }
   });
   return out;
@@ -1847,24 +1905,25 @@ const ROS_STUFE = {
   4: { tmax: 1, blaetter: 4, L: 11, knospen: [], rosen: [[0, 1, 1], [0, 0.7, -1], [1, 1, -1], [1, 0.72, 1], [2, 1, 1], [2, 0.7, -1], [1, 0.45, -1]] },
 };
 
-// Rankgitter aus Latten: zwei Pfosten, Querlatten und Gitterlatten, Ursprung am Topfrand, ca. 70 hoch
+// Rankgitter aus Latten mit Holzverlauf, Ursprung am Topfrand, ca. 70 hoch
 function rankgitter(welk) {
-  const at = `fill="${welk ? '#c9b07a' : '#c98f5a'}" stroke="#6b4a3a" stroke-width="0.7" stroke-linejoin="round"`;
+  const id = vlId('rg');
+  const defs = vlDefs(vlLin(id, welk ? ['#e3cf9a', '#c9b07a', '#9c8456'] : ['#e8bd8a', '#c98f5a', '#a86b43'], 1, 0));
+  const at = `fill="${vref(id)}" stroke="#6b4a3a" stroke-width="0.7" stroke-linejoin="round"`;
   let out = '';
   for (const x of [-7, 0, 7]) out += rechteck(x - 0.7, -70, 1.4, 70, 0.3, at);
   for (const y of [-10, -24, -38, -52, -66]) out += rechteck(-14, y - 0.9, 28, 1.8, 0.4, at);
-  return out + rechteck(-15.2, -70, 2.4, 71, 0.6, at) + rechteck(12.8, -70, 2.4, 71, 0.6, at) + rechteck(-15.8, -71.5, 31.6, 2.2, 0.8, at);
+  return defs + out + rechteck(-15.2, -70, 2.4, 71, 0.6, at) + rechteck(12.8, -70, 2.4, 71, 0.6, at) + rechteck(-15.8, -71.5, 31.6, 2.2, 0.8, at);
 }
 
-// Gefiederte Blattfolge: Spindel nach oben, Fiederblaettchen paarweise und ein Endblaettchen, gezaehnt
-function rosenBlatt(L, welk, i) {
-  const col = welk ? WELK : GRUEN[i % 2];
-  const bl = (x, y, rot, Lf) => an(x, y, rot, blatt(ovalKante(Lf, 0.5 * Lf, true), { L: Lf, W: 0.5 * Lf, ...col }));
+// Gefiederte Blattfolge mit Verlauf: Spindel nach oben, Fiederblaettchen paarweise und ein Endblaettchen, gezaehnt
+function rosenBlatt(L, welk, u) {
+  const bl = (x, y, rot, Lf, hinten) => an(x, y, rot, vlBl(ovalKante(Lf, 0.5 * Lf, true), Lf, 0.5 * Lf, u, welk, hinten));
   let out = linie([0, 0], [0, -L], `stroke="${welk ? '#a8a36a' : '#477d43'}" stroke-width="0.8" stroke-linecap="round"`);
   for (const fr of [0.35, 0.65]) {
-    for (const sd of [-1, 1]) out += bl(0, -L * fr, sd * 60, L * 0.36);
+    for (const sd of [-1, 1]) out += bl(0, -L * fr, sd * 60, L * 0.36, sd < 0);
   }
-  return out + bl(0, -L, 0, L * 0.38);
+  return out + bl(0, -L, 0, L * 0.38, false);
 }
 
 // Triebverlauf bis zum Anteil tmax als Polygonzug
@@ -1884,37 +1943,41 @@ function dornen(P, tmax) {
   return out;
 }
 
-// Rosenbluete: aeussere Blaetter in Rosa, hellere Innenseite, Spirale aus Blattkanten in der Mitte
+// Rosenbluete: radialer Verlauf in Rosa, Glanzpunkt, Spirale aus Blattkanten in der Mitte
 function rosenBlute(x, y, r, welk) {
   const T = welk ? ROS_WELK : ROS;
+  const [rv, rdefs] = vlRadNeu('rb', welk ? ['#eedbb0', '#c9a46a', '#8a6a4a'] : ['#fbd6df', '#e9849b', '#b84a68']);
   let spirale = '';
   for (let i = 0; i <= 24; i++) {
     const th = i / 24 * 3 * Math.PI, rad = r * (0.1 + 0.6 * i / 24);
     spirale += (i ? 'L' : 'M') + p2([x + rad * Math.cos(th), y + rad * Math.sin(th)]);
   }
-  return kreis(x, y, r, `fill="${T.rose}" ${kontur(welk)}`) +
-    kreis(x + 0.2 * r, y - 0.2 * r, r * 0.7, `fill="${T.hell}"`) +
+  return rdefs + kreis(x, y, r, `fill="${rv}" ${kontur(welk)}`) +
+    kreis(x + 0.25 * r, y + 0.25 * r, r * 0.5, `fill="${T.hell}" opacity="0.35"`) +
+    kreis(x - 0.35 * r, y - 0.35 * r, r * 0.22, 'fill="#ffffff" opacity="0.6"') +
     pfad(spirale, `fill="none" stroke="${T.spirale}" stroke-width="0.6" stroke-linecap="round" opacity="0.8"`);
 }
 
-// Knospe: rosa Kopf auf einem gruenen Kelch
+// Knospe: rosa Kopf mit Verlauf auf einem gruenen Kelch mit Verlauf
 function rosenKnospe(x, y, welk) {
-  const T = welk ? ROS_WELK : ROS;
-  return oval(x, y + 1.4, 1.4, 1.8, `fill="#5e9a52" ${kontur(welk)}`) +
-    oval(x, y - 0.4, 1.6, 2.2, `fill="${T.rose}" ${kontur(welk)}`);
+  const [kv, kdefs] = vlRadNeu('rk', welk ? ['#b5c48a', '#8a9a64', '#5a6a3a'] : ['#a9d98f', '#5e9a52', '#3a6b3a']);
+  const [bv, bdefs] = vlRadNeu('rq', welk ? ['#e0c08a', '#c9a46a', '#8a6a4a'] : ['#fbd6df', '#e9849b', '#b84a68']);
+  return kdefs + bdefs + oval(x, y + 1.4, 1.4, 1.8, `fill="${kv}" ${kontur(welk)}`) +
+    oval(x, y - 0.4, 1.6, 2.2, `fill="${bv}" ${kontur(welk)}`);
 }
 
 function kletterrose(s, welk) {
   const St = ROS_STUFE[s];
   const r = zufall(61 + s);
+  const u = vlId('kr');
   let triebe = '', dorn = '', blaetter = '', knospen = '', rosen = '';
   ROS_TRIEBE.forEach((P, j) => {
-    triebe += stiel(rankPfad(P, St.tmax), welk, 2.2);
+    triebe += vlStiel(rankPfad(P, St.tmax), welk, 2.2);
     dorn += dornen(P, St.tmax);
     for (let k = 0; k < St.blaetter; k++) {
       const t = St.tmax * (0.3 + 0.7 * k / (St.blaetter - 1));
       const [x, y] = bez(P, t);
-      blaetter += an(x, y, ((k + j) % 2 ? 1 : -1) * 62, rosenBlatt(St.L, welk, k + j));
+      blaetter += an(x, y, ((k + j) % 2 ? 1 : -1) * 62, rosenBlatt(St.L, welk, u));
     }
   });
   for (const j of St.knospen) {
@@ -1925,7 +1988,7 @@ function kletterrose(s, welk) {
     const [x, y] = bez(ROS_TRIEBE[j], St.tmax * t);
     rosen += rosenBlute(x + sd * 1.5, y - 1, 3.6 + 0.8 * r(), welk);
   }
-  return rankgitter(welk) + triebe + dorn + blaetter + knospen + rosen;
+  return rankgitter(welk) + vlBlattDefs(u) + triebe + dorn + blaetter + knospen + rosen;
 }
 
 // ---------- Zusammensetzen ----------

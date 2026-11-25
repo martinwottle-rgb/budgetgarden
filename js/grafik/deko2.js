@@ -41,12 +41,6 @@ const PETROL = { links: '#2f6f73', rechts: '#1f4f52', oben: '#4a8f93' };
 const SENF = { links: '#d9a441', rechts: '#b07f26', oben: '#ecc56e' };
 const CREME = { links: '#e9d6b4', rechts: '#cdb692', oben: '#f7ecd9' };
 
-// Quader mit sichtbaren Flaechen links (+y), rechts (+x) und oben
-function quader(x0, x1, y0, y1, z0, z1, farben, kon = KB) {
-  return pk([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], `fill="${farben.links}" ${kon}`) +
-    pk([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], `fill="${farben.rechts}" ${kon}`) +
-    pk([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], `fill="${farben.oben}" ${kon}`);
-}
 
 // Kegelstumpf als Mantel aus Segmenten (nur die sichtbare Seite). Helligkeit nach Blickwinkel,
 // Licht kommt aus Richtung (-1, 1) im Raum (links oben in der Ansicht).
@@ -90,26 +84,150 @@ function bandLinien(cx, cy, r0, z0, r1, z1, schritt, attr) {
   return s;
 }
 
-// Schraeg ausgestelltes Bein als Strich: oben bei (x, y, zOben), unten um (dx, dy) ausgestellt, Messingkappe unten
+// Schraeg ausgestelltes Bein: oben bei (x, y, zOben), unten um (dx, dy) ausgestellt, Messingkappe unten
 function bein(x, y, dx, dy, zOben, dicke = 1.6) {
-  const a = P(x, y, zOben), b = P(x + dx, y + dy, 0.6);
-  return zug([a, b], `stroke="#6b4a3a" stroke-width="${f(dicke + 1.2)}" stroke-linecap="round"`) +
-    zug([a, b], `stroke="#b8743d" stroke-width="${f(dicke)}" stroke-linecap="round"`) +
-    zug([a, b], 'stroke="#d99a5b" stroke-width="0.6" stroke-linecap="round" opacity="0.8"') +
-    kreis(b[0], b[1], 0.9, `fill="${MESSING.links}" ${KF}`);
+  const fx = x + dx, fy = y + dy, fz = 1.2; // Oberkante der Kappe
+  const rK = 1.0;
+  // Erst die Messingkappe (unten bei z 0), dann das Teak-Bein, das oben auf der Kappe endet
+  const kappe = stumpf([fx, fy, 0], rK, [fx, fy, fz], rK, MESSING.rechts, MESSING.oben) +
+    deckelP(fx, fy, rK, fz, MESSING.oben, KF);
+  const r = dicke / 2;
+  return kappe + stumpf([x, y, zOben], r, [fx, fy, fz], r * 0.8, TEAK.rechts, TEAK.links);
+}
+
+// ---------- Plastik-Helfer (Phase 2) ----------
+// Nur Verlaeufe (linearGradient, radialGradient) und weiche Kontaktschatten, keine SVG-Filter.
+// Licht von links oben: Oberseiten hell, linke Seiten mittel, rechte Seiten dunkel.
+// Konturen bleiben #6b4a3a. Jeder Verlauf bekommt eine eindeutige Id (eindeutig), damit Teile sich nicht ueberschreiben.
+
+// Linearer Verlauf innerhalb der Flaeche (objectBoundingBox). Stopps: [Offset, Farbe] oder [Offset, Farbe, Deckkraft]
+const VERLAUF = (id, stopps, x1 = 0, y1 = 0, x2 = 0, y2 = 1) =>
+  `<linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">` +
+  stopps.map(([o, c, d]) => `<stop offset="${o}" stop-color="${c}"${d === undefined ? '' : ` stop-opacity="${d}"`}/>`).join('') +
+  '</linearGradient>';
+
+// Radialer Verlauf; (cx, cy) und r als Anteil der Flaeche. Mitte oben links = Licht von links oben
+const RADIAL = (id, stopps, cx = 0.5, cy = 0.5, r = 0.5) =>
+  `<radialGradient id="${id}" cx="${cx}" cy="${cy}" r="${r}" fx="${cx}" fy="${cy}">` +
+  stopps.map(([o, c, d]) => `<stop offset="${o}" stop-color="${c}"${d === undefined ? '' : ` stop-opacity="${d}"`}/>`).join('') +
+  '</radialGradient>';
+
+// Heller bzw. dunkler Ton: t ist der Anteil der Mischfarbe
+const aufhellen = (c, t) => mischen(c, '#ffffff', t);
+const abdunkeln = (c, t) => mischen(c, '#2a1a10', t);
+
+// Weicher Kontaktschatten am Boden: radialer Verlauf statt einer einfarbigen Ellipse (Mittelpunkt dx, dy)
+function kontaktW(rx, ry, dx = 0, dy = 0) {
+  const id = eindeutig('kontakt');
+  return `<defs>${RADIAL(id, [[0, '#6b4a3a', 0.34], [0.55, '#6b4a3a', 0.16], [1, '#6b4a3a', 0]])}</defs>` +
+    oval(dx, dy, rx, ry, `fill="url(#${id})"`);
+}
+// Kontaktschatten fuer einen runden Fuss mit Radius r (gleiche Ausdehnung wie die Ellipse von kontakt)
+const kontaktR = (r) => kontaktW(0.9 * Math.SQRT2 * r, 0.45 * Math.SQRT2 * r);
+
+// Quader mit Verlauf je Flaeche. c = {links, rechts, oben} (Grundfarben wie TEAK).
+// maser: feine Holzmaserung auf langen Teilen. Immer: Lichtkante vorne oben, dunkle Unterkante vorne unten.
+function quaderP(x0, x1, y0, y1, z0, z1, c, maser = false) {
+  const id = eindeutig('quad');
+  const lang = x1 - x0 > 4;
+  const yy = (t) => y0 + (y1 - y0) * t;
+  const zz = z0 + (z1 - z0) * 0.45;
+  const defs = '<defs>' +
+    VERLAUF(`${id}-o`, [[0, aufhellen(c.oben, 0.3)], [1, c.oben]], 0, 0, 1, 1) +
+    VERLAUF(`${id}-l`, [[0, aufhellen(c.links, 0.12)], [1, abdunkeln(c.links, 0.12)]]) +
+    VERLAUF(`${id}-r`, [[0, c.rechts], [1, abdunkeln(c.rechts, 0.2)]]) +
+    '</defs>';
+  const maserung = maser && lang
+    ? zug([P(x0 + 1, yy(0.3), z1), P(x1 - 1, yy(0.3), z1)], 'stroke="#f7d9ae" stroke-width="0.6" stroke-linecap="round" opacity="0.35"') +
+      zug([P(x0 + 1, yy(0.72), z1), P(x1 - 1, yy(0.72), z1)], 'stroke="#f7d9ae" stroke-width="0.6" stroke-linecap="round" opacity="0.35"') +
+      zug([P(x0 + 1, y1, zz), P(x1 - 1, y1, zz)], 'stroke="#4a2b15" stroke-width="0.5" stroke-linecap="round" opacity="0.25"')
+    : '';
+  return defs +
+    pk([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], `fill="url(#${id}-l)" ${KB}`) +
+    pk([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], `fill="url(#${id}-r)" ${KB}`) +
+    pk([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], `fill="url(#${id}-o)" ${KB}`) +
+    maserung +
+    zug([P(x0, y1, z1), P(x1, y1, z1)], 'stroke="#fff6e4" stroke-width="0.9" stroke-linecap="round" opacity="0.6"') +
+    zug([P(x0, y1, z0), P(x1, y1, z0)], 'stroke="#4a2b15" stroke-width="0.8" stroke-linecap="round" opacity="0.35"');
+}
+
+// Punkte eines waagerechten Kreises (Mittelpunkt C = [x, y, z], Radius r) im Bild
+const kreisBild = (C, r, N = 28) => {
+  const out = [];
+  for (let k = 0; k < N; k++) {
+    const a = (2 * Math.PI * k) / N;
+    out.push(P(C[0] + r * Math.cos(a), C[1] + r * Math.sin(a), C[2]));
+  }
+  return out;
+};
+
+// Konvexe Huelle einer Punktmenge im Bild (Andrew-Monotonkette): liefert die Aussenkontur
+function huelle(pts) {
+  const s = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const kreuz = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const unten = [], oben = [];
+  for (const p of s) {
+    while (unten.length >= 2 && kreuz(unten[unten.length - 2], unten[unten.length - 1], p) <= 0) unten.pop();
+    unten.push(p);
+  }
+  for (let i = s.length - 1; i >= 0; i--) {
+    const p = s[i];
+    while (oben.length >= 2 && kreuz(oben[oben.length - 2], oben[oben.length - 1], p) <= 0) oben.pop();
+    oben.push(p);
+  }
+  oben.pop();
+  unten.pop();
+  return unten.concat(oben);
+}
+
+// Kegelstumpf zwischen zwei waagerechten Kreisen (Mittelpunkte C0, C1 im Raum, Radien r0, r1), nur der Mantel.
+// Verlauf waagerecht: links hell, rechts dunkel. Silhouette = konvexe Huelle beider Kreise.
+// Dazu eine Lichtkante links und eine dunklere Unterkante vorn. Die Oberseite zeichnet deckelP.
+function stumpf(C0, r0, C1, r1, dunkel, hell) {
+  const id = eindeutig('stumpf');
+  const kontur = huelle([...kreisBild(C0, r0), ...kreisBild(C1, r1)]);
+  const verlauf = VERLAUF(id, [[0, hell], [0.5, mischen(dunkel, hell, 0.5)], [1, dunkel]], 0, 0, 1, 0);
+  // Silhouette links liegt im Grundriss bei 135 Grad, dort sitzt die Lichtkante
+  const licht = (3 * Math.PI) / 4;
+  const lichtKante = zug([
+    P(C0[0] + 0.8 * r0 * Math.cos(licht), C0[1] + 0.8 * r0 * Math.sin(licht), C0[2]),
+    P(C1[0] + 0.8 * r1 * Math.cos(licht), C1[1] + 0.8 * r1 * Math.sin(licht), C1[2]),
+  ], 'stroke="#fff6e4" stroke-width="0.8" stroke-linecap="round" opacity="0.55"');
+  // Dunkle Unterkante: vorderer Halbkreis des unteren Kreises
+  const unten = [];
+  for (let k = 0; k <= 14; k++) {
+    const a = -Math.PI / 4 + (Math.PI * k) / 14;
+    unten.push(P(C0[0] + r0 * Math.cos(a), C0[1] + r0 * Math.sin(a), C0[2]));
+  }
+  return `<defs>${verlauf}</defs>` +
+    poly(kontur, `fill="url(#${id})" ${KB}`) +
+    zug(unten, 'stroke="#4a2b15" stroke-width="0.8" stroke-linecap="round" opacity="0.35"') +
+    lichtKante;
+}
+
+// Zylinder bzw. Kegelstumpf mit senkrechter Achse, gleiche Signatur wie mantel (nur der Mantel)
+const zylP = (cx, cy, r0, z0, r1, z1, dunkel, hell) => stumpf([cx, cy, z0], r0, [cx, cy, z1], r1, dunkel, hell);
+
+// Oberseite bzw. Boden als flache Scheibe mit Verlauf (Licht oben links). c = Grundfarbe, kon = Kontur
+function deckelP(cx, cy, r, z, c, kon = KB) {
+  const id = eindeutig('deckel');
+  return `<defs>${RADIAL(id, [[0, aufhellen(c, 0.35)], [0.7, c], [1, abdunkeln(c, 0.08)]], 0.38, 0.32, 0.72)}</defs>` +
+    poly(kreisBild([cx, cy, z], r, 28), `fill="url(#${id})" ${kon}`);
 }
 
 // ---------- Katzenkorb ----------
 function katzenkorb() {
   const RATTAN = ['#b58450', '#efd09a'];
-  const korb = mantel(0, 0, 11, 0, 11, 7, RATTAN[0], RATTAN[1]) +
+  const fell = eindeutig('katze-fell');
+  const korb = zylP(0, 0, 11, 0, 11, 7, RATTAN[0], RATTAN[1]) +
     bandLinien(0, 0, 11, 0, 11, 7, 1.4, `stroke="#8a5a33" stroke-width="0.6" stroke-linecap="round" opacity="0.7"`);
-  const rand = scheibe(0, 0, 11, 7, `fill="#f0d6a6" ${KON}`) + scheibe(0, 0, 9.4, 7.2, 'fill="#7a4e2c"');
-  const kissen = mantel(0, 0, 8.6, 7.2, 8.6, 8.4, '#c9a07a', '#f3e6cf') + scheibe(0, 0, 8.6, 8.4, `fill="#f7ecd9" ${KF}`);
+  const rand = deckelP(0, 0, 11, 7, '#f0d6a6', KON) + deckelP(0, 0, 9.4, 7.2, '#7a4e2c', 'stroke="none"');
+  const kissen = zylP(0, 0, 8.6, 7.2, 8.6, 8.4, '#c9a07a', '#f3e6cf') + deckelP(0, 0, 8.6, 8.4, '#f7ecd9', KF);
   // Schlafende Katze, im Kissen eingerollt. Basis (0, 0, 9)
   const [bx, by] = P(0, 0, 9.6);
-  const katze = oval(bx + 1, by + 1.4, 6.8, 2.2, SCHATTEN) +
-    `<ellipse cx="${f(bx - 0.4)}" cy="${f(by - 1.6)}" rx="6.4" ry="3.6" fill="#e0884a" ${KB}>` +
+  const katze = `<defs>${RADIAL(fell, [[0, '#f9c08a'], [0.55, '#e88f52'], [1, '#b8643a']], 0.36, 0.3, 0.75)}</defs>` +
+    kontaktW(6.8, 2.2, bx + 1, by + 1.4) +
+    `<ellipse cx="${f(bx - 0.4)}" cy="${f(by - 1.6)}" rx="6.4" ry="3.6" fill="url(#${fell})" ${KB}>` +
       `<animate attributeName="ry" values="3.6;3.9;3.6" dur="3.2s" repeatCount="indefinite"/></ellipse>` +
     oval(bx - 1.6, by - 0.3, 4.2, 1.6, 'fill="#f3c08a" opacity="0.8"') +
     zug([[bx - 4.6, by - 3.4], [bx - 3.8, by - 0.8]], 'stroke="#b25f2b" stroke-width="0.9" stroke-linecap="round"') +
@@ -119,13 +237,13 @@ function katzenkorb() {
       `fill="none" stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"`) +
     pfad(`M${f(bx - 5.6)},${f(by + 0.4)} q-4.5,-1.5 -3.4,-5.2 q0.8,-2 2.2,-0.2`,
       `fill="none" stroke="#e0884a" stroke-width="1.6" stroke-linecap="round"`) +
-    kreis(bx + 4.8, by - 3.2, 3.1, `fill="#e88f52" ${KB}`) +
-    poly([[bx + 2.4, by - 4.6], [bx + 2.6, by - 8.0], [bx + 5.0, by - 5.6]], `fill="#e88f52" ${KF}`) +
-    poly([[bx + 5.6, by - 6.0], [bx + 6.4, by - 8.8], [bx + 7.6, by - 5.2]], `fill="#e88f52" ${KF}`) +
+    kreis(bx + 4.8, by - 3.2, 3.1, `fill="url(#${fell})" ${KB}`) +
+    poly([[bx + 2.4, by - 4.6], [bx + 2.6, by - 8.0], [bx + 5.0, by - 5.6]], `fill="url(#${fell})" ${KF}`) +
+    poly([[bx + 5.6, by - 6.0], [bx + 6.4, by - 8.8], [bx + 7.6, by - 5.2]], `fill="url(#${fell})" ${KF}`) +
     zug([[bx + 3.3, by - 3.5], [bx + 4.0, by - 3.1]], 'stroke="#6b4a3a" stroke-width="0.9" stroke-linecap="round"') +
     zug([[bx + 5.6, by - 3.2], [bx + 6.3, by - 3.6]], 'stroke="#6b4a3a" stroke-width="0.9" stroke-linecap="round"') +
     poly([[bx + 4.5, by - 1.4], [bx + 5.3, by - 1.4], [bx + 4.9, by - 0.7]], 'fill="#d9707a"');
-  return kontakt(11.5) + korb + rand + kissen + katze;
+  return kontaktR(11.5) + korb + rand + kissen + katze;
 }
 
 // ---------- Leseplatz ----------
@@ -133,17 +251,17 @@ function leseecke() {
   // Teak-Beistelltisch: runde Platte auf drei schraegen Beinen
   const beine = [[-5.2, -3, -3.5, -2], [5.2, -3, 3.5, -2], [0, 6, 0, 4]]
     .map(([x, y, dx, dy]) => bein(x, y, dx, dy, 13.6, 1.5)).join('');
-  const platte = mantel(0, 0, 9, 13.6, 9, 15.2, TEAK.rechts, TEAK.links) +
-    scheibe(0, 0, 9, 15.2, `fill="${TEAK.oben}" ${KON}`) +
+  const platte = zylP(0, 0, 9, 13.6, 9, 15.2, TEAK.rechts, TEAK.links) +
+    deckelP(0, 0, 9, 15.2, TEAK.oben, KON) +
     bandLinien(0, 0, 9, 13.8, 9, 15.2, 2.2, 'stroke="#8a5228" stroke-width="0.5" stroke-linecap="round" opacity="0.6"');
   // Teekanne petrol mit Dampf, Stellung neben der Mitte
   const tx = 1.5, ty = -1.2;
   const profil = [[15.2, 1.4], [15.9, 2.5], [17.0, 2.9], [18.3, 2.6], [19.2, 1.8], [19.8, 0.9]];
   let kanne = '';
   for (let i = 0; i < profil.length - 1; i++) {
-    kanne += mantel(tx, ty, profil[i][1], profil[i][0], profil[i + 1][1], profil[i + 1][0], '#1f4f52', '#5fb0b4');
+    kanne += zylP(tx, ty, profil[i][1], profil[i][0], profil[i + 1][1], profil[i + 1][0], '#1f4f52', '#5fb0b4');
   }
-  kanne += scheibe(tx, ty, 0.9, 19.9, `fill="#2f6f73" ${KF}`) +
+  kanne += deckelP(tx, ty, 0.9, 19.9, '#2f6f73', KF) +
     zug3([[tx + 2.4, ty, 16.4], [tx + 3.8, ty, 17.4], [tx + 4.6, ty, 18.8]], 'stroke="#1f4f52" stroke-width="2" stroke-linecap="round"') +
     zug3([[tx + 2.4, ty, 16.4], [tx + 3.8, ty, 17.4], [tx + 4.6, ty, 18.8]], 'stroke="#5fb0b4" stroke-width="0.8" stroke-linecap="round"') +
     zug3([[tx - 2.5, ty, 16.6], [tx - 4.2, ty, 17.4], [tx - 3.6, ty, 19.0]], 'stroke="#1f4f52" stroke-width="1.5" stroke-linecap="round"');
@@ -154,14 +272,14 @@ function leseecke() {
     `<animate attributeName="stroke-dashoffset" values="0;-4" dur="2.6s" begin="${i * 1.3}s" repeatCount="indefinite"/></path>`
   ).join('');
   // Zwei Tassen creme, Innenseite dunkler
-  const tasse = (x, y) => mantel(x, y, 1.5, 15.2, 1.3, 17.2, CREME.rechts, CREME.oben) + scheibe(x, y, 1.3, 17.2, 'fill="#b5764a"');
+  const tasse = (x, y) => zylP(x, y, 1.5, 15.2, 1.3, 17.2, CREME.rechts, CREME.oben) + deckelP(x, y, 1.3, 17.2, '#b5764a', KF);
   const tassen = tasse(-3.6, 3.4) + tasse(4.4, 4.2);
   // Bücherstapel daneben, auf dem Boden
-  const buecher = quader(8, 13, 4, 10, 0, 1.6, PETROL) +
-    quader(8.5, 12.5, 4.5, 9.5, 1.6, 3.2, SENF) +
-    quader(8, 12.6, 4, 9.6, 3.2, 4.6, { links: '#d9693b', rechts: '#b04e26', oben: '#ee8c5e' });
+  const buecher = quaderP(8, 13, 4, 10, 0, 1.6, PETROL) +
+    quaderP(8.5, 12.5, 4.5, 9.5, 1.6, 3.2, SENF) +
+    quaderP(8, 12.6, 4, 9.6, 3.2, 4.6, { links: '#d9693b', rechts: '#b04e26', oben: '#ee8c5e' });
 
-  return kontakt(10) + beine + platte + kanne + dampf + tassen + buecher;
+  return kontaktR(10) + beine + platte + kanne + dampf + tassen + buecher;
 }
 
 // ---------- Lounge-Sessel ----------
@@ -170,29 +288,29 @@ const RATTAN = ['#b58450', '#efd09a'];
 
 function loungesessel() {
   // Teak-Rueckenrahmen mit Lederpolster davor
-  const rueck = quader(-9.4, -7.6, -9.4, -7.0, 6.5, 21, TEAK) + quader(7.6, 9.4, -9.4, -7.0, 6.5, 21, TEAK) +
-    quader(-9.4, 9.4, -9.4, -7.6, 18.6, 21, TEAK) +
-    quader(-7.6, 7.6, -7.4, -6.0, 10, 19, LEDER) +
+  const rueck = quaderP(-9.4, -7.6, -9.4, -7.0, 6.5, 21, TEAK) + quaderP(7.6, 9.4, -9.4, -7.0, 6.5, 21, TEAK) +
+    quaderP(-9.4, 9.4, -9.4, -7.6, 18.6, 21, TEAK) +
+    quaderP(-7.6, 7.6, -7.4, -6.0, 10, 19, LEDER) +
     zug3([[-6.2, -6.6, 13], [6.2, -6.6, 13]], 'stroke="#4a2814" stroke-width="0.5" stroke-dasharray="1.2 1.2" opacity="0.6"');
   // Schalenfuesse, schraeg ausgestellt
   const beine = [[-7.5, -6], [7.5, -6], [-7.5, 6], [7.5, 6]]
     .map(([x, y]) => bein(x, y, Math.sign(x) * 1.2, Math.sign(y) * 1.2, 5, 1.8)).join('');
-  const basis = quader(-8.6, 8.6, -7.4, 7.4, 5, 6.5, TEAK);
+  const basis = quaderP(-8.6, 8.6, -7.4, 7.4, 5, 6.5, TEAK);
   // Sitzkissen aus Leder mit Steppnaht vorne
-  const sitz = quader(-8.2, 8.2, -7.0, 7.8, 6.5, 10.2, LEDER) +
+  const sitz = quaderP(-8.2, 8.2, -7.0, 7.8, 6.5, 10.2, LEDER) +
     zug3([[-7.4, 7.5, 7.2], [7.4, 7.5, 7.2]], 'stroke="#4a2814" stroke-width="0.5" stroke-dasharray="1.2 1.2" opacity="0.7"') +
     zug3([[-7.0, -3, 10.25], [7.0, -3, 10.25]], 'stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.35"');
   // Armlehnen: Teak-Platte auf zwei Pfosten je Seite
-  const arm = (x0, x1) => quader(x0, x1, -7.2, 7.2, 12, 13.6, TEAK) +
-    quader(x0 + 0.2, x1 - 0.2, -6.6, -6.2, 6.5, 12, TEAK) + quader(x0 + 0.2, x1 - 0.2, 6.2, 6.6, 6.5, 12, TEAK);
+  const arm = (x0, x1) => quaderP(x0, x1, -7.2, 7.2, 12, 13.6, TEAK) +
+    quaderP(x0 + 0.2, x1 - 0.2, -6.6, -6.2, 6.5, 12, TEAK) + quaderP(x0 + 0.2, x1 - 0.2, 6.2, 6.6, 6.5, 12, TEAK);
   // Fussbank, vorne rechts: Teak-Sockel mit Lederplatte
-  const fussbank = kontakt(5) +
-    mantel(15, 11, 4.6, 0, 4.6, 4.6, TEAK.rechts, TEAK.links) +
+  const fussbank = kontaktR(5) +
+    zylP(15, 11, 4.6, 0, 4.6, 4.6, TEAK.rechts, TEAK.links) +
     bandLinien(15, 11, 4.6, 0.4, 4.6, 4.5, 1.6, 'stroke="#8a5228" stroke-width="0.5" stroke-linecap="round" opacity="0.6"') +
-    mantel(15, 11, 4.9, 4.6, 4.9, 5.6, LEDER.rechts, LEDER.links) +
-    scheibe(15, 11, 4.9, 5.6, `fill="${LEDER.oben}" ${KB}`);
+    zylP(15, 11, 4.9, 4.6, 4.9, 5.6, LEDER.rechts, LEDER.links) +
+    deckelP(15, 11, 4.9, 5.6, LEDER.oben, KB);
 
-  return kontakt(12) + rueck + beine + basis + arm(-10.4, -8.4) + sitz + arm(8.4, 10.4) + fussbank;
+  return kontaktR(12) + rueck + beine + basis + arm(-10.4, -8.4) + sitz + arm(8.4, 10.4) + fussbank;
 }
 
 // ---------- Haengesessel ----------
@@ -236,11 +354,11 @@ function haengesessel() {
   const zOese = 25.4;
 
   // Schatten: Fuss am Boden, Sessel schwebt darueber
-  let s = oval(...P(fx, fy, 0), 0.9 * Math.SQRT2 * 6.5, 0.45 * Math.SQRT2 * 6.5, SCHATTEN) +
-    oval(...P(cx, cy, 0), 0.9 * Math.SQRT2 * 8, 0.45 * Math.SQRT2 * 8, 'fill="#6b4a3a" opacity="0.13"');
+  let s = kontaktW(0.9 * Math.SQRT2 * 6.5, 0.45 * Math.SQRT2 * 6.5, ...P(fx, fy, 0)) +
+    kontaktW(0.9 * Math.SQRT2 * 8, 0.45 * Math.SQRT2 * 8, ...P(cx, cy, 0));
   // Runder, flacher Fuss und der C-Bogen aus Teak, Kette (Kordel) senkrecht zum Sessel
-  s += mantel(fx, fy, 5.5, 0, 5.5, 1.2, TEAK.rechts, TEAK.links) +
-    scheibe(fx, fy, 5.5, 1.2, `fill="${TEAK.oben}" ${KB}`) +
+  s += zylP(fx, fy, 5.5, 0, 5.5, 1.2, TEAK.rechts, TEAK.links) +
+    deckelP(fx, fy, 5.5, 1.2, TEAK.oben, KB) +
     zug3([[cx, cy, zAuf], [cx, cy, zOese]], 'stroke="#a86b43" stroke-width="1" stroke-dasharray="1.4 0.9" stroke-linecap="round"') +
     zug3(bogen, 'stroke="#6b4a3a" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"') +
     zug3(bogen, 'stroke="#b8743d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"') +
@@ -275,8 +393,8 @@ function haengesessel() {
   // Innenwand hinten: dunkler Rattan-Innenraum, durch die Oeffnung sichtbar
   s += flaeche(hinten, 0.9, '#5a3a22', '#8a5a33');
   // Sitzkissen (Creme) unten im Ei
-  s += mantel(cx, cy, 7.6, 9.5, 7.6, 12.5, CREME.rechts, CREME.oben) +
-    scheibe(cx, cy, 7.6, 12.5, `fill="${CREME.oben}" ${KB}`);
+  s += zylP(cx, cy, 7.6, 9.5, 7.6, 12.5, CREME.rechts, CREME.oben) +
+    deckelP(cx, cy, 7.6, 12.5, CREME.oben, KB);
   // Zierkissen (Senf) an der Rueckwand, in einer Ebene quer zur Blickrichtung
   const ra = (5 * Math.PI) / 4;
   const pcx = cx + 0.72 * R(16) * Math.cos(ra), pcy = cy + 0.72 * R(16) * Math.sin(ra);
@@ -289,7 +407,9 @@ function haengesessel() {
     }
     return out;
   };
-  s += pk(kreisAuf(4.2, 3.8, 0, 0), `fill="#d9a441" stroke="#6b4a3a" stroke-width="0.9" stroke-linejoin="round"`) +
+  const senf = eindeutig('ei-senf');
+  s += `<defs>${RADIAL(senf, [[0, '#f0c76a'], [1, '#b07f26']], 0.38, 0.32, 0.75)}</defs>` +
+    pk(kreisAuf(4.2, 3.8, 0, 0), `fill="url(#${senf})" stroke="#6b4a3a" stroke-width="0.9" stroke-linejoin="round"`) +
     pk(kreisAuf(2.2, 1.6, -1.2, 1.3), 'fill="#ecc56e" opacity="0.9"');
   // Vorderseite: Rattan ausserhalb der Oeffnung
   s += flaeche((a, z) => vorne(a) && aussen(a, z), 1, RATTAN[0], RATTAN[1]);
@@ -324,7 +444,7 @@ function haengesessel() {
   s += zug3(rand, 'stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"') +
     zug3(rand, 'stroke="#efd09a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"');
   // Oberer Abschluss mit Oese fuer die Kordel
-  s += scheibe(cx, cy, R(EI.oben), EI.oben, 'fill="#6e4426"') +
+  s += deckelP(cx, cy, R(EI.oben), EI.oben, '#6e4426', '') +
     kreis(...P(cx, cy, zOese), 1.2, `fill="none" stroke="${MESSING.links}" stroke-width="1.2"`);
   return s;
 }
@@ -360,11 +480,11 @@ function bogenlampe() {
     s += scheibe(ex, ey, 6 + 11 * (1 - z / zRand), z, 'fill="#ffe9a8" opacity="0.08"');
   }
   // Schwerer runder Marmorfuss mit grauen Adern und Messingring oben
-  s += kontakt(10) + mantel(0, 0, 9, 0, 9, 3.6, MARMOR.dunkel, MARMOR.hell) +
-    scheibe(0, 0, 9, 3.6, `fill="${MARMOR.hell}" ${KB}`) +
+  s += kontaktR(10) + zylP(0, 0, 9, 0, 9, 3.6, MARMOR.dunkel, MARMOR.hell) +
+    deckelP(0, 0, 9, 3.6, MARMOR.hell, KB) +
     zug3([[-7, -4, 3.6], [-3, 1.5, 3.6], [1, -3, 3.6], [5, 2, 3.6], [8, -1, 3.6]], 'stroke="#9d9990" stroke-width="0.6" fill="none" opacity="0.8"') +
     zug3([[-1, 6, 3.6], [1.5, 0.5, 3.6], [6, 5, 3.6]], 'stroke="#9d9990" stroke-width="0.5" fill="none" opacity="0.6"') +
-    mantel(0, 0, 2.2, 3.6, 2.2, 5.0, MESSING.rechts, MESSING.oben);
+    zylP(0, 0, 2.2, 3.6, 2.2, 5.0, MESSING.rechts, MESSING.oben);
   // Duenne Messingstange senkrecht, dann der Bogen
   const stange = [[0, 0, 5.0], [0, 0, ZS]];
   s += zug3(stange, 'stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"') +
@@ -378,9 +498,9 @@ function bogenlampe() {
   // Kleiner Kuppelschirm (Senf, Durchmesser ca. 12) am Bogenende, nach unten geoeffnet
   const profil = [[zTop, 1.2], [zTop - 1.0, 3.2], [zTop - 2.6, 5.2], [zTop - 4.6, 6.0]];
   for (let i = 0; i < profil.length - 1; i++) {
-    s += mantel(ex, ey, profil[i][1], profil[i][0], profil[i + 1][1], profil[i + 1][0], SENF.rechts, SENF.oben);
+    s += zylP(ex, ey, profil[i][1], profil[i][0], profil[i + 1][1], profil[i + 1][0], SENF.rechts, SENF.oben);
   }
-  s += scheibe(ex, ey, 1.2, zTop, `fill="${SENF.oben}" ${KF}`) +
+  s += deckelP(ex, ey, 1.2, zTop, SENF.oben, KF) +
     kreis(...P(ex, ey, zTop + 0.9), 1.0, `fill="${MESSING.links}" ${KF}`);
   // Innen hell: vordere Haelfte der Schirmkante leuchtet
   const mund = [];
@@ -401,21 +521,21 @@ const kufenZ = (y) => 0.8 + 0.035 * y * y;
 function schaukelstuhl() {
   // Achsen wie bei der Bank: Breite x, Tiefe y (vorne +y), Hoehe z
   // Sitzrahmen aus Teak und salbeigruenes Polster darauf
-  const sitz = quader(-14, 14, -7, 7, 9, 10.5, TEAK) +
-    quader(-12.8, 12.8, -5.8, 6.4, 10.5, 12, SALBEI);
+  const sitz = quaderP(-14, 14, -7, 7, 9, 10.5, TEAK) +
+    quaderP(-12.8, 12.8, -5.8, 6.4, 10.5, 12, SALBEI);
   // Rueckenlehne: zwei Pfosten an der hinteren Sitzkante, nach hinten geneigt, dazu drei Sprossen
   const pfosten = [-12.6, 12.6].map((x) => zug3([[x, -6.6, 10.5], [x, -9.2, 27]], 'stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"') +
     zug3([[x, -6.6, 10.5], [x, -9.2, 27]], 'stroke="#b8743d" stroke-width="1.6" stroke-linecap="round"')).join('');
-  const sprossen = [14, 18.6, 23].map((z) => quader(-13, 13, -9.6, -8.4, z, z + 1.2, TEAK, KB)).join('');
+  const sprossen = [14, 18.6, 23].map((z) => quaderP(-13, 13, -9.6, -8.4, z, z + 1.2, TEAK)).join('');
   // Wolldecke ueber der Lehne, mit einem Streifen
-  const decke = quader(-11.5, 11.5, -8.4, -7.2, 15.2, 22, CREME) +
-    quader(-11.5, 11.5, -8.4, -7.2, 19, 20.2, { links: '#d9693b', rechts: '#b04e26', oben: '#ee8c5e' });
+  const decke = quaderP(-11.5, 11.5, -8.4, -7.2, 15.2, 22, CREME) +
+    quaderP(-11.5, 11.5, -8.4, -7.2, 19, 20.2, { links: '#d9693b', rechts: '#b04e26', oben: '#ee8c5e' });
   // Armlehnen links und rechts, auf je zwei Stuetzen
   const arm = [-1, 1].map((s) => {
     const x0 = s > 0 ? 12.8 : -15, x1 = s > 0 ? 15 : -12.8;
-    return quader(x0, x1, -6, 6, 14, 15.2, TEAK) +
-      quader(s * 13.4 - 0.6, s * 13.4 + 0.6, -5.6, -4.8, 10.5, 14, TEAK) +
-      quader(s * 13.4 - 0.6, s * 13.4 + 0.6, 4.8, 5.6, 10.5, 14, TEAK);
+    return quaderP(x0, x1, -6, 6, 14, 15.2, TEAK) +
+      quaderP(s * 13.4 - 0.6, s * 13.4 + 0.6, -5.6, -4.8, 10.5, 14, TEAK) +
+      quaderP(s * 13.4 - 0.6, s * 13.4 + 0.6, 4.8, 5.6, 10.5, 14, TEAK);
   }).join('');
   // Vier kurze Beine vom Sitz zu den Kufen
   const beine = [-1, 1].map((s) => [-5.8, 5.8].map((y) =>
@@ -437,7 +557,7 @@ function schaukelstuhl() {
   // Hinten liegende Teile zuerst: Lehne, Kufen, Beine, dann Sitz, Decke und Armlehnen
   const inhalt = kufen + beine + pfosten + sprossen + sitz + decke + arm;
   // Schaukeln: Skalierung in Tiefenrichtung um den Bodenkontakt
-  return oval(0, 0, 21, 10.5, 'fill="#6b4a3a" opacity="0.18"') +
+  return kontaktW(21, 10.5) +
     `<g><animateTransform attributeName="transform" type="scale" values="1 0.96;1 1.04;1 0.96" dur="5s" repeatCount="indefinite"/>${inhalt}</g>`;
 }
 
@@ -446,9 +566,10 @@ function schaukelstuhl() {
 const HERZ = 'M0,0C-0.6,-0.7 -1.5,-0.2 -1.3,0.7C-1.1,1.5 -0.4,2.0 0,2.3C0.4,2.0 1.1,1.5 1.3,0.7C1.5,-0.2 0.6,-0.7 0,0Z';
 // Blatt am Ansatzpunkt (x, y) im Bild, leicht schwingend um den Ansatz
 function herzBlatt(x, y, rot, s, farbe) {
-  return `<g transform="translate(${f(x)},${f(y)})"><g>` +
+  const id = eindeutig('herz');
+  return `<defs>${RADIAL(id, [[0, aufhellen(farbe, 0.35)], [1, abdunkeln(farbe, 0.12)]], 0.35, 0.3, 0.75)}</defs><g transform="translate(${f(x)},${f(y)})"><g>` +
     `<animateTransform attributeName="transform" type="rotate" values="${f(rot - 5)} 0 0;${f(rot + 5)} 0 0;${f(rot - 5)} 0 0" dur="4.5s" repeatCount="indefinite"/>` +
-    `<path d="${HERZ}" transform="rotate(${rot}) scale(${s})" fill="${farbe}" stroke="#6b4a3a" stroke-width="${f(0.5 / s)}" stroke-linejoin="round"/>` +
+    `<path d="${HERZ}" transform="rotate(${rot}) scale(${s})" fill="url(#${id})" stroke="#6b4a3a" stroke-width="${f(0.5 / s)}" stroke-linejoin="round"/>` +
     `<path d="M0,0.4L0,1.9" transform="rotate(${rot}) scale(${s})" stroke="#3a6b3a" stroke-width="${f(0.25 / s)}" fill="none"/>` +
     `</g></g>`;
 }
@@ -457,15 +578,15 @@ function plattenspieler() {
   // Niedriges Teak-Sideboard auf schraegen Beinen
   const beine = [[-12, -5], [12, -5], [-12, 5], [12, 5]]
     .map(([x, y]) => bein(x, y, Math.sign(x) * 1.4, Math.sign(y) * 1.0, 2.5, 1.6)).join('');
-  const korpus = quader(-13, 13, -6, 6, 2.5, 11, TEAK) +
+  const korpus = quaderP(-13, 13, -6, 6, 2.5, 11, TEAK) +
     zug3([[0, 6, 3], [0, 6, 10.5]], 'stroke="#6b3d1e" stroke-width="0.6" fill="none"') +
     zug3([[-13, 6, 6.8], [13, 6, 6.8]], 'stroke="#c98f5a" stroke-width="0.4" fill="none" opacity="0.6"') +
     kreis(...P(-1.4, 6, 6.8), 0.9, `fill="${MESSING.links}" ${KF}`) +
     kreis(...P(1.4, 6, 6.8), 0.9, `fill="${MESSING.links}" ${KF}`);
   // Plattenteller mit Schallarm
-  const teller = mantel(-2, 0, 5, 11, 5, 11.8, '#1d1d1d', '#4f4f4f') +
-    scheibe(-2, 0, 5, 11.8, `fill="#2b2b2b" ${KF}`) +
-    scheibe(-2, 0, 1.8, 11.9, 'fill="#d9693b"') +
+  const teller = zylP(-2, 0, 5, 11, 5, 11.8, '#1d1d1d', '#4f4f4f') +
+    deckelP(-2, 0, 5, 11.8, '#2b2b2b', KF) +
+    deckelP(-2, 0, 1.8, 11.9, '#d9693b', 'stroke="none"') +
     kreis(...P(-2, 0, 12), 0.5, `fill="${MESSING.oben}"`) +
     zug3([[-4.5, -3, 11.9], [-1.5, -3.6, 11.9]], 'stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" opacity="0.35"');
   const arm = kreis(...P(9, -4, 11.4), 1.1, `fill="${MESSING.links}" ${KF}`) +
@@ -473,13 +594,13 @@ function plattenspieler() {
     zug3([[9, -4, 11.4], [9, -2, 13.2], [3.6, -0.6, 12.2]], `stroke="${MESSING.oben}" stroke-width="0.7" stroke-linecap="round"`);
   // Plattenstapel rechts, Cover als dünne Kartons
   const stapel = [PETROL, SENF, { links: '#d9693b', rechts: '#b04e26', oben: '#ee8c5e' }, CREME]
-    .map((c, i) => quader(7.8, 11.6, 1.8, 5.6, 11 + i * 0.9, 11.8 + i * 0.9, c)).join('');
+    .map((c, i) => quaderP(7.8, 11.6, 1.8, 5.6, 11 + i * 0.9, 11.8 + i * 0.9, c)).join('');
 
   // Efeutute in Terrakotta vorne links: Topf auf der Platte, die Ranken haengen ueber die Vorderkante herab
   const [tx, ty] = [-9.4, 4.2];
   const [px, py] = P(tx, ty, 12.9);
-  const topf = mantel(tx, ty, 2.1, 11, 1.7, 12.9, '#b8643f', '#eba47f') +
-    scheibe(tx, ty, 1.7, 12.9, 'fill="#5a3a22"');
+  const topf = zylP(tx, ty, 2.1, 11, 1.7, 12.9, '#b8643f', '#eba47f') +
+    deckelP(tx, ty, 1.7, 12.9, '#5a3a22', 'stroke="none"');
   // Zwei kurze Triebe nach oben, mit je einem Blatt
   const FARBEN = ['#7fb069', '#5e9a52', '#9ccc7a', '#477d43'];
   let triebe = '';
@@ -507,7 +628,7 @@ function plattenspieler() {
   // Die Ranken schwingen leicht um den Topfrand
   const vg = `<g><animateTransform attributeName="transform" type="rotate" values="-1.5 ${f(px)} ${f(py)};1.5 ${f(px)} ${f(py)};-1.5 ${f(px)} ${f(py)}" dur="4.5s" repeatCount="indefinite"/>${ranke}</g>`;
 
-  return kontakt(14) + beine + korpus + teller + arm + stapel + topf + triebe + vg;
+  return kontaktR(14) + beine + korpus + teller + arm + stapel + topf + triebe + vg;
 }
 
 // ---------- Lichterlaube ----------
@@ -518,7 +639,12 @@ function lichterlaube() {
     const x = -12 + k;
     bogen.push([x, 0, hz(x)]);
   }
-  let s = kontakt(14);
+  const farben = ['#e0606a', '#f29aa6', '#c94b5c', '#f7c1c7'];
+  const roseIds = farben.map(() => eindeutig('rose'));
+  const laub = eindeutig('laub');
+  let s = kontaktR(14) + '<defs>' +
+    roseIds.map((id, i) => RADIAL(id, [[0, aufhellen(farben[i], 0.4)], [0.6, farben[i]], [1, abdunkeln(farben[i], 0.2)]], 0.38, 0.32, 0.72)).join('') +
+    RADIAL(laub, [[0, '#9ccc7a'], [1, '#3f7040']], 0.35, 0.3, 0.75) + '</defs>';
   // Gitterwerk aus Teak hinter den Rosen
   for (let x = -10; x <= 10; x += 2.5) {
     s += zug3([[x, 0, 1.5], [x, 0, hz(x) - 0.5]], 'stroke="#a86b43" stroke-width="0.9" stroke-linecap="round"');
@@ -538,15 +664,14 @@ function lichterlaube() {
 
   // Kletterrosen: Haufen aus Bluetenkoepfen und Blaettern, deterministisch verteilt
   const rnd = zufall(31);
-  const farben = ['#e0606a', '#f29aa6', '#c94b5c', '#f7c1c7'];
   for (let i = 0; i < 26; i++) {
     const x = -11 + 22 * rnd();
     const z = hz(x) + (rnd() - 0.5) * 4 - (rnd() < 0.3 ? 4 + rnd() * 6 : 0);
     const [rx, ry] = P(x, 0.8, z);
     for (let j = 0; j < 3; j++) {
       const dx = (rnd() - 0.5) * 4, dy = (rnd() - 0.5) * 3;
-      s += oval(rx + dx + 0.3, ry + dy + 0.4, 0.9 + rnd() * 0.3, 0.9 + rnd() * 0.3, `fill="#5e9a52" ${KF}`);
-      s += kreis(rx + dx, ry + dy, 1.3 + rnd() * 0.5, `fill="${farben[(i + j) % 4]}" ${KF}`);
+      s += oval(rx + dx + 0.3, ry + dy + 0.4, 0.9 + rnd() * 0.3, 0.9 + rnd() * 0.3, `fill="url(#${laub})" ${KF}`);
+      s += kreis(rx + dx, ry + dy, 1.3 + rnd() * 0.5, `fill="url(#${roseIds[(i + j) % 4]})" ${KF}`);
     }
   }
   // Lichterkette entlang dem Bogen, leicht durchhaengend, Lampen gestaffelt pulsierend
@@ -569,39 +694,48 @@ function lichterlaube() {
 
 // ---------- Aquarium ----------
 function aquarium() {
-  const WASSER = { links: '#2fb3b9', rechts: '#1f8f97', oben: '#8fe6e9' };
   const boden = 12.4, oben = 24.5;
   // Teak-Unterschrank mit zwei Tueren
-  let s = kontakt(13) + quader(-12, 12, -7, 7, 0, 11, TEAK) + quader(-12, 12, -7, 7, 11, 11.8, TEAK) +
+  let s = kontaktR(13) + quaderP(-12, 12, -7, 7, 0, 11, TEAK) + quaderP(-12, 12, -7, 7, 11, 11.8, TEAK) +
     zug3([[0, 7, 1], [0, 7, 10]], 'stroke="#6b3d1e" stroke-width="0.6" fill="none"') +
     kreis(...P(-1.4, 7, 5.5), 0.9, `fill="${MESSING.links}" ${KF}`) +
     kreis(...P(1.4, 7, 5.5), 0.9, `fill="${MESSING.links}" ${KF}`);
   // Sand am Boden des Beckens
-  s += pk([[-10.6, -5.6, boden], [10.6, -5.6, boden], [10.6, 5.6, boden], [-10.6, 5.6, boden]], 'fill="#f0dca8"');
-  // Hintere Innenwand und linke Innenwand des Wassers (von innen sichtbar)
-  s += pk([[-10.6, -5.6, boden], [10.6, -5.6, boden], [10.6, -5.6, oben], [-10.6, -5.6, oben]], `fill="${WASSER.links}" opacity="0.75"`) +
-    pk([[-10.6, -5.6, boden], [-10.6, 5.6, boden], [-10.6, 5.6, oben], [-10.6, -5.6, oben]], `fill="${WASSER.rechts}" opacity="0.7"`) +
-    pk([[-10.6, -5.6, oben], [10.6, -5.6, oben], [10.6, 5.6, oben], [-10.6, 5.6, oben]], `fill="${WASSER.oben}" opacity="0.55"`);
+  const sand = eindeutig('sand');
+  s += `<defs>${VERLAUF(sand, [[0, '#fbeec4'], [1, '#e2c58a']], 0, 0, 1, 1)}</defs>` +
+    pk([[-10.6, -5.6, boden], [10.6, -5.6, boden], [10.6, 5.6, boden], [-10.6, 5.6, boden]], `fill="url(#${sand})"`);
+  // Hintere und linke Innenwand des Wassers (von innen sichtbar), Wasser hellblau, nach unten tiefer
+  const wasser = eindeutig('wasser');
+  s += '<defs>' +
+    VERLAUF(`${wasser}-hinten`, [[0, '#bfeffa'], [1, '#3fb6d0']]) +
+    VERLAUF(`${wasser}-links`, [[0, '#8fd9ef'], [1, '#1f8f97']], 0, 0, 1, 0) +
+    VERLAUF(`${wasser}-oben`, [[0, '#e4fbff'], [1, '#8fd9ef']], 0, 0, 1, 1) +
+    '</defs>' +
+    pk([[-10.6, -5.6, boden], [10.6, -5.6, boden], [10.6, -5.6, oben], [-10.6, -5.6, oben]], `fill="url(#${wasser}-hinten)" opacity="0.75"`) +
+    pk([[-10.6, -5.6, boden], [-10.6, 5.6, boden], [-10.6, 5.6, oben], [-10.6, -5.6, oben]], `fill="url(#${wasser}-links)" opacity="0.7"`) +
+    pk([[-10.6, -5.6, oben], [10.6, -5.6, oben], [10.6, 5.6, oben], [-10.6, 5.6, oben]], `fill="url(#${wasser}-oben)" opacity="0.55"`);
   // Wasserpflanzen: Stiele mit Blaettern, wiegen dezent um den Bodenpunkt
   const pflanze = (x, y, hoehe, farbe) => {
     const [bx, by] = P(x, y, boden);
+    const id = eindeutig('wblatt');
     let p = `<g><animateTransform attributeName="transform" type="rotate" values="-3 ${f(bx)} ${f(by)};3 ${f(bx)} ${f(by)};-3 ${f(bx)} ${f(by)}" dur="5s" repeatCount="indefinite"/>`;
     p += zug3([[x, y, boden], [x + 0.6, y + 0.3, boden + hoehe * 0.5], [x - 0.4, y - 0.2, boden + hoehe]], `stroke="#3a6b3a" stroke-width="1.1" fill="none" stroke-linecap="round"`);
     for (let k = 1; k <= 4; k++) {
       const z = boden + (hoehe * k) / 5;
       const side = k % 2 ? 1 : -1;
       const [lx, ly] = P(x + side * 1.6, y, z);
-      p += oval(lx, ly, 3.2, 1.3, `fill="${farbe}" transform="rotate(${side * 28} ${f(lx)} ${f(ly)})" ${KF}`);
+      p += oval(lx, ly, 3.2, 1.3, `fill="url(#${id})" transform="rotate(${side * 28} ${f(lx)} ${f(ly)})" ${KF}`);
     }
-    return p + '</g>';
+    return `<defs>${RADIAL(id, [[0, aufhellen(farbe, 0.3)], [1, abdunkeln(farbe, 0.15)]], 0.35, 0.3, 0.75)}</defs>` + p + '</g>';
   };
   s += pflanze(-6, -2, 9, '#5e9a52') + pflanze(4, -3, 11, '#7fb069') + pflanze(5, 3, 7, '#9ccc7a') + pflanze(-3, 3.5, 6, '#477d43');
   // Drei bunte Fische, schwimmen waagerecht hin und her
   const fisch = (x, y, z, farbe, dauer, weg) => {
     const [fx, fy] = P(x, y, z);
-    return `<g><animateTransform attributeName="transform" type="translate" values="0 0;${weg} 0.6;0 0" dur="${dauer}s" repeatCount="indefinite"/>` +
-      oval(fx, fy, 3.4, 1.7, `fill="${farbe}" ${KF}`) +
-      poly([[fx - 3, fy], [fx - 5.2, fy - 1.9], [fx - 5.2, fy + 1.9]], `fill="${farbe}" ${KF}`) +
+    const fid = eindeutig('fisch');
+    return `<defs>${RADIAL(fid, [[0, aufhellen(farbe, 0.35)], [1, abdunkeln(farbe, 0.15)]], 0.4, 0.3, 0.7)}</defs><g><animateTransform attributeName="transform" type="translate" values="0 0;${weg} 0.6;0 0" dur="${dauer}s" repeatCount="indefinite"/>` +
+      oval(fx, fy, 3.4, 1.7, `fill="url(#${fid})" ${KF}`) +
+      poly([[fx - 3, fy], [fx - 5.2, fy - 1.9], [fx - 5.2, fy + 1.9]], `fill="url(#${fid})" ${KF}`) +
       kreis(fx + 1.8, fy - 0.4, 0.45, 'fill="#2b2b2b"') + '</g>';
   };
   s += fisch(-2, -1, 15, '#f08a3c', 6, 5) + fisch(3, 2, 16.5, '#ffd166', 7, -4) + fisch(-5, 3, 14, '#e0524d', 5.5, 4);
@@ -612,15 +746,16 @@ function aquarium() {
       `<animate attributeName="cy" values="${f(by)};${f(by - 13)}" dur="3.6s" begin="${t}s" repeatCount="indefinite"/>` +
       `<animate attributeName="opacity" values="0.8;0" dur="3.6s" begin="${t}s" repeatCount="indefinite"/></circle>`;
   }
-  // Glas vorne: zwei Scheiben, Glanzstreifen
-  s += pk([[-10.6, 5.6, boden], [10.6, 5.6, boden], [10.6, 5.6, oben], [-10.6, 5.6, oben]], `fill="${WASSER.links}" opacity="0.3"`) +
-    pk([[10.6, -5.6, boden], [10.6, 5.6, boden], [10.6, 5.6, oben], [10.6, -5.6, oben]], `fill="${WASSER.rechts}" opacity="0.3"`) +
-    pk([[-11, 6, boden], [11, 6, boden], [11, 6, oben], [-11, 6, oben]], 'fill="#dff6fb" opacity="0.18"') +
-    pk([[11, -6, boden], [11, 6, boden], [11, 6, oben], [11, -6, oben]], 'fill="#dff6fb" opacity="0.22"') +
-    zug3([[-9, 6, oben - 1.5], [-9, 6, boden + 2]], 'stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.6"');
+  // Glas vorne und rechts: halbtransparent mit Verlauf, Spiegelstreifen oben links
+  const glas = eindeutig('glas');
+  s += `<defs>${VERLAUF(glas, [[0, '#e6fbff', 0.42], [0.5, '#8fe6e9', 0.14], [1, '#2fb3b9', 0.3]], 0, 0, 1, 1)}</defs>` +
+    pk([[-11, 6, boden], [11, 6, boden], [11, 6, oben], [-11, 6, oben]], `fill="url(#${glas})"`) +
+    pk([[11, -6, boden], [11, 6, boden], [11, 6, oben], [11, -6, oben]], `fill="url(#${glas})"`) +
+    zug3([[-9, 6, oben - 1.5], [-9, 6, boden + 2]], 'stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.6"') +
+    zug3([[-7.4, 6, oben - 2], [-7.4, 6, boden + 3]], 'stroke="#ffffff" stroke-width="0.5" stroke-linecap="round" opacity="0.4"');
   // Teak-Rahmen oben
-  s += quader(-12, 12, 6, 7, 24.5, 25.5, TEAK) + quader(11, 12, -7, 7, 24.5, 25.5, TEAK) +
-    quader(-12, 12, -7, -6, 24.5, 25.5, TEAK) + quader(-12, -11, -7, 7, 24.5, 25.5, TEAK);
+  s += quaderP(-12, 12, 6, 7, 24.5, 25.5, TEAK) + quaderP(11, 12, -7, 7, 24.5, 25.5, TEAK) +
+    quaderP(-12, 12, -7, -6, 24.5, 25.5, TEAK) + quaderP(-12, -11, -7, 7, 24.5, 25.5, TEAK);
   return s;
 }
 
@@ -634,7 +769,7 @@ function teewagen() {
       kreis(...P(x, y, 0.8), 1.4, 'fill="#2b2b2b"')).join('');
   // Zwei Ebenen aus Teak mit Messingkante vorne
   const ebenen = [7, 21].map((z) =>
-    quader(-11, 11, -7, 7, z, z + 1.4, TEAK) +
+    quaderP(-11, 11, -7, 7, z, z + 1.4, TEAK) +
     zug3([[-11, 7, z + 0.7], [11, 7, z + 0.7]], `stroke="${MESSING.oben}" stroke-width="0.8" stroke-linecap="round"`)).join('');
   // Griff hinten oben
   const griff = zug3([[-10, -6, 25], [-10, -6.5, 27.5], [10, -6.5, 27.5], [10, -6, 25]], 'stroke="#6b4a3a" stroke-width="2" fill="none" stroke-linecap="round"') +
@@ -643,23 +778,26 @@ function teewagen() {
   const kanne = [[22.4, 1.2], [23.2, 2.1], [24.4, 2.3], [25.4, 1.6], [26, 0.6]];
   let service = '';
   for (let i = 0; i < kanne.length - 1; i++) {
-    service += mantel(-3, 0, kanne[i][1], kanne[i][0], kanne[i + 1][1], kanne[i + 1][0], CREME_P.rechts, CREME_P.oben);
+    service += zylP(-3, 0, kanne[i][1], kanne[i][0], kanne[i + 1][1], kanne[i + 1][0], CREME_P.rechts, CREME_P.oben);
   }
-  service += scheibe(-3, 0, 0.6, 26, `fill="#d9825b" ${KF}`) +
+  service += deckelP(-3, 0, 0.6, 26, '#d9825b', KF) +
     zug3([[-0.9, 0, 23.6], [0.4, 0, 24.6], [0.9, 0, 25.2]], `stroke="${CREME_P.rechts}" stroke-width="1.4" fill="none" stroke-linecap="round"`) +
     zug3([[-5.2, 0, 23.4], [-6.4, 0, 24.6], [-5.6, 0, 25.6]], `stroke="${CREME_P.rechts}" stroke-width="1.2" fill="none" stroke-linecap="round"`);
   for (const [x, y] of [[3, -2.5], [3.2, 2.5]]) {
-    service += mantel(x, y, 1.1, 22.4, 0.9, 24, CREME_P.rechts, CREME_P.oben) + scheibe(x, y, 0.9, 24, 'fill="#8a5a33"');
+    service += zylP(x, y, 1.1, 22.4, 0.9, 24, CREME_P.rechts, CREME_P.oben) + deckelP(x, y, 0.9, 24, '#8a5a33', KF);
   }
-  service += quader(0.8, 6.8, -4, 4, 22.4, 22.8, PETROL);
+  service += quaderP(0.8, 6.8, -4, 4, 22.4, 22.8, PETROL);
   // Unterste Ebene: Pflanze in Terrakotta und Teedose
-  const pflanzeTopf = mantel(5, -2, 2, 8.4, 1.6, 11.2, '#b8643f', '#eba47f') + scheibe(5, -2, 1.6, 11.2, 'fill="#5a3a22"');
+  const pflanzeTopf = zylP(5, -2, 2, 8.4, 1.6, 11.2, '#b8643f', '#eba47f') + deckelP(5, -2, 1.6, 11.2, '#5a3a22', KF);
   const [px, py] = P(5, -2, 11.2);
-  const blaetter = [[-35, 0, 0], [35, 0, 0], [-80, -2, 0], [70, -1, 0], [0, -4, 0]]
-    .map(([winkel, dx, dy], i) => oval(px + dx * 1.5, py + dy, 4, 1.4, `fill="${['#7fb069', '#5e9a52', '#9ccc7a', '#477d43', '#7fb069'][i]}" transform="rotate(${winkel} ${f(px + dx * 1.5)} ${f(py + dy)})" ${KF}`)).join('');
-  const dose = mantel(-5, 1, 1.8, 8.4, 1.8, 12.4, PETROL.rechts, PETROL.oben) + scheibe(-5, 1, 1.8, 12.4, `fill="${PETROL.oben}" ${KF}`);
-  const stapel = [0, 1].map((i) => quader(-1.5, 3.5, -3, 1.5, 8.4 + i * 1.2, 9.6 + i * 1.2, i ? SENF : CREME)).join('');
-  return kontakt(13) + gestell + griff + ebenen + pflanzeTopf + blaetter + dose + stapel + service;
+  const blattFarben = ['#7fb069', '#5e9a52', '#9ccc7a', '#477d43', '#7fb069'];
+  const blattIds = blattFarben.map(() => eindeutig('tee-blatt'));
+  const blaetter = '<defs>' + blattFarben.map((c, i) => RADIAL(blattIds[i], [[0, aufhellen(c, 0.3)], [1, abdunkeln(c, 0.15)]], 0.35, 0.3, 0.75)).join('') + '</defs>' +
+    [[-35, 0, 0], [35, 0, 0], [-80, -2, 0], [70, -1, 0], [0, -4, 0]]
+      .map(([winkel, dx, dy], i) => oval(px + dx * 1.5, py + dy, 4, 1.4, `fill="url(#${blattIds[i]})" transform="rotate(${winkel} ${f(px + dx * 1.5)} ${f(py + dy)})" ${KF}`)).join('');
+  const dose = zylP(-5, 1, 1.8, 8.4, 1.8, 12.4, PETROL.rechts, PETROL.oben) + deckelP(-5, 1, 1.8, 12.4, PETROL.oben, KF);
+  const stapel = [0, 1].map((i) => quaderP(-1.5, 3.5, -3, 1.5, 8.4 + i * 1.2, 9.6 + i * 1.2, i ? SENF : CREME)).join('');
+  return kontaktR(13) + gestell + griff + ebenen + pflanzeTopf + blaetter + dose + stapel + service;
 }
 
 // ---------- Messing-Skulptur ----------
@@ -695,8 +833,8 @@ function skulptur() {
   const rnd = zufall(12);
   const q = (x, z) => [x, -z];
   // Sockel aus Terrazzo: runder Zylinder mit bunten Einschluessen
-  let s = kontakt(8) + mantel(0, 0, 7.5, 0, 7.5, 3.6, '#c9c3b8', '#f2efe9') +
-    scheibe(0, 0, 7.5, 3.6, `fill="#f2efe9" ${KB}`);
+  let s = kontaktR(8) + zylP(0, 0, 7.5, 0, 7.5, 3.6, '#c9c3b8', '#f2efe9') +
+    deckelP(0, 0, 7.5, 3.6, '#f2efe9', KB);
   const farben = ['#d9825b', '#2f6f73', '#d9a441', '#9fb79a', '#6b4a3a', '#e8e0d2'];
   for (let i = 0; i < 30; i++) {
     const a = rnd() * 2 * Math.PI, r = 6.9 * Math.sqrt(rnd());
@@ -714,8 +852,8 @@ function skulptur() {
   s += pfad(bein, 'fill="none" stroke="#6b4a3a" stroke-width="2.6" stroke-linecap="round"') +
     pfad(bein, `fill="none" stroke="${MESSING.links}" stroke-width="1.4" stroke-linecap="round"`);
   // Hintere Schwinge und Schwanzfedern: dunkler, hinter dem Koerper
-  s += poly([[-2.2, 19.4], [-8.4, 22.6], [-13.4, 19.2], [-9.4, 16.2]].map(([x, z]) => q(x, z)), `fill="#c9a14a" ${KANTE}`) +
-    poly([[-5.6, 15.6], [-10.8, 13.4], [-9.6, 16.2], [-6.4, 17.2]].map(([x, z]) => q(x, z)), `fill="#c9a14a" ${KANTE}`);
+  s += poly([[-2.2, 19.4], [-8.4, 22.6], [-13.4, 19.2], [-9.4, 16.2]].map(([x, z]) => q(x, z)), `fill="url(#${metall})" ${KANTE}`) +
+    poly([[-5.6, 15.6], [-10.8, 13.4], [-9.6, 16.2], [-6.4, 17.2]].map(([x, z]) => q(x, z)), `fill="url(#${metall})" ${KANTE}`);
   // Koerper: glatt gerundet, polierter Verlauf
   const korper = [[-6.2, 16.8], [-4.6, 20.4], [-0.8, 22.4], [3.2, 21.6], [5.4, 18.4], [4.6, 15.0], [1.0, 13.2], [-3.2, 13.6], [-5.8, 15.0]];
   s += `<path d="${glattZu(korper.map(([x, z]) => q(x, z)))}" fill="url(#${metall})" ${KANTE}/>`;
@@ -727,10 +865,10 @@ function skulptur() {
     pfad(hals, 'fill="none" stroke="#fff3c4" stroke-width="1" stroke-linecap="round" opacity="0.9" transform="translate(-0.8,0)"');
   // Kopf mit langem, spitzem Schnabel und Auge
   s += oval(...q(12.4, 36.4), 2.8, 2.2, `fill="url(#${metall})" ${KANTE}`) +
-    poly([[13.4, 37.3], [20.6, 35.8], [13.6, 35.3]].map(([x, z]) => q(x, z)), `fill="#c9a14a" ${KANTE}`) +
+    poly([[13.4, 37.3], [20.6, 35.8], [13.6, 35.3]].map(([x, z]) => q(x, z)), `fill="url(#${metall})" ${KANTE}`) +
     kreis(...q(13.1, 36.9), 0.55, 'fill="#2b2b2b"');
   // Vordere Schwinge: zwei eckige, polierte Flaechen mit hellen Kanten
-  s += poly([[-0.6, 20.8], [-5.4, 26.2], [-10.8, 25.4], [-7.4, 20.4], [-3.4, 17.6]].map(([x, z]) => q(x, z)), `fill="#f2d98a" ${KANTE}`) +
+  s += poly([[-0.6, 20.8], [-5.4, 26.2], [-10.8, 25.4], [-7.4, 20.4], [-3.4, 17.6]].map(([x, z]) => q(x, z)), `fill="url(#${metall})" ${KANTE}`) +
     zug([q(-0.6, 20.8), q(-5.4, 26.2), q(-10.8, 25.4)], 'stroke="#fff6d6" stroke-width="0.9" stroke-linecap="round" opacity="0.9"') +
     zug([q(-7.4, 20.4), q(-3.4, 17.6)], 'stroke="#9c7a2e" stroke-width="0.8" stroke-linecap="round" opacity="0.7"');
   // Glanzlicht auf dem Koerper

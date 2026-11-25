@@ -278,7 +278,7 @@ function kraeuterbeetZeichnen(gx, gy, drehung) {
     const [fu, fw] = fussVon(u, v, U / 2, V / 2, 0.22);
     s += holzStandBein(m, u, v, fu, fw, 22, holz, messing);
   }
-  s += trog(m, U, V, 22, 45, 38, 0.08, stahl, erde);
+  s += trog(m, U, V, 22, 45, 43, 0.08, stahl, erde); // Erde knapp unter dem Rand, damit die Pflanzen sichtbar in der Erde stehen
   return s;
 }
 
@@ -290,7 +290,7 @@ function hochbeetZeichnen(gx, gy, drehung) {
   const stahl = materialVerlaeufe(STAHL), erde = materialVerlaeufe(ERDE);
   let s = holz.defs + hell.defs + stahl.defs + erde.defs + schatten(m, U, V);
   s += quader(m, 0.03, U - 0.03, 0.03, V - 0.03, 0, 4, holz);
-  s += trog(m, U, V, 4, 56, 46, 0.1, stahl, erde);
+  s += trog(m, U, V, 4, 56, 55, 0.1, stahl, erde); // Erde knapp unter dem Rand
   // Teak-Abdeckleiste auf dem oberen Rand
   s += rahmen(m, U, V, 56, 60, 0.16, hell);
   return s;
@@ -594,8 +594,8 @@ export const MOEBEL2 = {
     tiefe: 1,
     beet: true,
     plaetze: [
-      { dx: 0.3, dy: 0.5, z: 38, beet: true }, { dx: 0.7, dy: 0.5, z: 38, beet: true },
-      { dx: 1.3, dy: 0.5, z: 38, beet: true }, { dx: 1.7, dy: 0.5, z: 38, beet: true },
+      { dx: 0.3, dy: 0.5, z: 43, beet: true }, { dx: 0.7, dy: 0.5, z: 43, beet: true },
+      { dx: 1.3, dy: 0.5, z: 43, beet: true }, { dx: 1.7, dy: 0.5, z: 43, beet: true },
     ],
     zeichne: (gx, gy, drehung = 0) => kraeuterbeetZeichnen(gx, gy, drehung),
   },
@@ -605,8 +605,8 @@ export const MOEBEL2 = {
     tiefe: 2,
     beet: true,
     plaetze: [
-      { dx: 0.35, dy: 0.6, z: 46, beet: true }, { dx: 1.0, dy: 0.6, z: 46, beet: true }, { dx: 1.65, dy: 0.6, z: 46, beet: true },
-      { dx: 0.35, dy: 1.4, z: 46, beet: true }, { dx: 1.0, dy: 1.4, z: 46, beet: true }, { dx: 1.65, dy: 1.4, z: 46, beet: true },
+      { dx: 0.4, dy: 0.6, z: 55, beet: true }, { dx: 1.0, dy: 0.6, z: 55, beet: true }, { dx: 1.6, dy: 0.6, z: 55, beet: true },
+      { dx: 0.4, dy: 1.35, z: 55, beet: true }, { dx: 1.0, dy: 1.35, z: 55, beet: true }, { dx: 1.6, dy: 1.35, z: 55, beet: true },
     ],
     zeichne: (gx, gy, drehung = 0) => hochbeetZeichnen(gx, gy, drehung),
   },

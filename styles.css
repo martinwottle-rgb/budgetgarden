@@ -2410,3 +2410,14 @@ button.h20-kachel { cursor: pointer; }
 /* 2.0: Shop-Reiter umbrechen statt seitlich verstecken, damit alle neuen Reiter sichtbar sind */
 .sh-reiter { flex-wrap: wrap; overflow-x: visible; }
 .sh-reiter button { flex: 1 1 auto; min-width: calc(33% - 4px); }
+
+/* Topfwahl: Bestätigen-Knopf bleibt beim Scrollen unten sichtbar */
+.tp-knoepfe {
+  position: sticky;
+  bottom: calc(-18px - var(--sicht-unten));
+  margin: 12px -18px 0;
+  padding: 12px 18px calc(18px + var(--sicht-unten));
+  background: linear-gradient(to bottom, rgba(253, 246, 236, 0), var(--creme) 18px);
+  z-index: 2;
+}
+.tp-wahl.tp-aktuell { outline: 3px solid var(--koralle, #e8836b); outline-offset: -3px; }
