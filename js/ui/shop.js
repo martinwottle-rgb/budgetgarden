@@ -331,7 +331,7 @@ function kaufBlatt(ctx, a) {
       el('button', {
         type: 'button',
         class: gratis ? 'knopf knopf-voll ios-knopf-gold' : 'knopf knopf-primaer knopf-voll',
-        text: gratis ? '🎁 Mit Gutschein gratis platzieren' : 'Platz wählen',
+        text: gratis ? '🎁 Mit Gutschein gratis platzieren' : 'Kaufen',
         disabled: !kaufbar,
         onclick: () => {
           if (!platzFuer(ctx.daten, a).length) return ctx.toast(KEIN_PLATZ);
@@ -339,8 +339,7 @@ function kaufBlatt(ctx, a) {
           ctx.navigiere('garten', { platzieren: { kategorie: a.kategorie, typ: a.typ, name: a.name, preis: gratis ? 0 : a.preis } });
         }
       }),
-      gratis ? el('p', { class: 'klein sh-grund', text: 'Dafür wird ein Gutschein eingelöst.' })
-        : el('p', { class: 'klein sh-grund', text: 'Bezahlt wird erst, wenn du einen Platz gewählt hast. Abbrechen geht jederzeit.' }),
+      gratis ? el('p', { class: 'klein sh-grund', text: 'Dafür wird ein Gutschein eingelöst.' }) : null,
       grund ? el('p', { class: 'sh-grund', text: grund }) : null,
       el('button', { type: 'button', class: 'knopf knopf-leise knopf-voll', text: 'Abbrechen', onclick: () => blatt.schliessen() })
     )

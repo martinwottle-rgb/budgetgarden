@@ -59,6 +59,9 @@ let zug = null;
 let gleitet = false;
 // Nach einem Kauf im Shop: Blätter-Konfetti beim nächsten Zeichnen (bei einer Rarität in Gold)
 let konfettiNaechstes = false;
+// Probeplatzierung bei der Platzwahl: {schluessel, ort, daten}. Der Garten wird mit diesen Daten gezeichnet,
+// gespeichert und bezahlt wird erst mit dem Haken.
+let probe = null;
 let konfettiGold = false;
 // Zoom der Szene: s = Faktor (1 bis ZOOM_MAX), cx/cy = Mitte des Ausschnitts in SVG-Einheiten (null = Mitte).
 // Bleibt über Neuzeichnen hinweg erhalten (nach jedem Speichern wird der Garten neu aufgebaut).
@@ -145,12 +148,14 @@ export function zeige(container, ctx, param) {
   const aktion = aktionAus(param);
   // Platzwahl nach dem Kauf schließt den Bewegungsmodus aus
   if (aktion) { bewegen = false; gewaehlt = null; }
+  // Probe gehört nur zur laufenden Platzwahl desselben Teils
+  if (!aktion || (probe && probe.schluessel !== aktionSchluessel(aktion))) probe = null;
 
   // Hinweisleiste oben bei Platzwahl
   if (aktion) container.append(hinweisLeiste(ctx, aktion));
 
-  // Wochenkarte: Budget der Woche mit Prognose, darunter der Stand von heute
-  container.append(budgetKarte({
+  // Wochenkarte: Budget der Woche mit Prognose, darunter der Stand von heute (nicht während der Platzwahl)
+  if (!aktion) container.append(budgetKarte({
     symbol: '🗓️',
     titel: 'Diese Woche',
     chip: tagesChip(w.proTag),
@@ -193,7 +198,8 @@ export function zeige(container, ctx, param) {
   }
 
   // Szene: mobile Ansicht mit ausschnitt, Größe aus dem Gewächshaus
-  const gh = d.spiel.gewaechshaus;
+  // Bei einer Probeplatzierung zeigt die Szene den Garten so, als wäre schon gekauft
+  const gh = probe ? probe.daten.spiel.gewaechshaus : d.spiel.gewaechshaus;
   const platz = el('div', { class: 'szene-platz zi12-platz' });
   const karte = el('section', { class: 'karte szene-karte ga-szene' }, platz);
   container.append(karte);
@@ -292,14 +298,28 @@ function aktionAus(param) {
   return null;
 }
 
+// Schlüssel einer Platzwahl, damit eine Probe nicht in eine andere Platzwahl hinüberrutscht
+function aktionSchluessel(aktion) {
+  return [aktion.kategorie, aktion.typ, aktion.lagerId || ''].join('|');
+}
+
+// Leiste oben: ✕ bricht ab, ✓ kauft bzw. platziert (erst nach einer Probeplatzierung aktiv)
 function hinweisLeiste(ctx, aktion) {
-  const name = aktion.lagerId ? lagerName(ctx.daten, aktion.lagerId) : '';
-  return el('section', { class: 'karte ga-hinweis', role: 'status' },
-    el('span', { text: aktion.lagerId ? `Tippe auf einen freien Platz für ${name}`
-      : aktion.preis > 0 ? `Tippe auf einen freien Platz${aktion.name ? ' für ' + aktion.name : ''}. Erst dann werden ${zahl(aktion.preis)} Samen abgebucht.`
-        : 'Tippe auf einen freien Platz' }),
-    el('span', { class: 'ga-punkt', 'aria-hidden': 'true', text: '·' }),
-    el('button', { type: 'button', class: 'knopf knopf-leise ga-hinweis-knopf', text: 'Abbrechen', onclick: () => ctx.navigiere('garten') })
+  const preis = !aktion.lagerId && aktion.preis > 0 ? aktion.preis : 0;
+  return el('section', { class: 'karte ga-hinweis ga-probe', role: 'status' },
+    el('button', {
+      type: 'button', class: 'ga-rund ga-abbruch', 'aria-label': 'Abbrechen', text: '✕',
+      onclick: () => { probe = null; ctx.navigiere('garten'); }
+    }),
+    el('span', { class: 'ga-probe-luecke', 'aria-hidden': 'true' }),
+    el('button', {
+      type: 'button',
+      class: 'ga-rund ga-ok' + (probe ? '' : ' ga-aus'),
+      'aria-label': preis ? `Für ${zahl(preis)} Samen kaufen` : 'Hier platzieren',
+      disabled: probe ? null : true,
+      onclick: () => probeBestaetigen(ctx, aktion)
+    }, el('span', { 'aria-hidden': 'true', text: '✓' }),
+      preis ? el('span', { class: 'ga-ok-preis' }, svgBox(muenzSvg(18), 'muenze-klein'), zahl(preis)) : null)
   );
 }
 
@@ -362,14 +382,26 @@ function szeneKlick(e, ctx, aktion) {
   if (objekt && !aktion) oeffneBlatt(ctx, objekt.dataset.art, objekt.dataset.id);
 }
 
-// Platz gewählt: kaufen, Rarität pflanzen, Saat setzen oder Saisonartikel kaufen. Danach Platzwahl beenden und speichern.
+// Platz gewählt: nur zur Probe aufstellen. Die Aktion (Kauf, Rarität, Saat, Lager) wird auf einer Kopie
+// gerechnet und angezeigt, aber noch nicht gespeichert. Ein anderer Platz ersetzt die Probe.
 function zielGewaehlt(ctx, aktion, ort) {
-  const istRaritaet = aktion.kategorie === 'raritaet';
   const r = platzAktion(ctx, aktion, ort);
   if (r.fehler) return ctx.toast(r.fehler);
+  probe = { schluessel: aktionSchluessel(aktion), ort, daten: r.daten };
+  const y = window.scrollY;
+  ctx.navigiere('garten', { platzieren: aktion });
+  window.scrollTo(0, y);
+}
+
+// Haken: jetzt erst kaufen und speichern (gerechnet auf den aktuellen Daten, falls sich etwas geändert hat)
+function probeBestaetigen(ctx, aktion) {
+  if (!probe) return;
+  const r = platzAktion(ctx, aktion, probe.ort);
+  if (r.fehler) return ctx.toast(r.fehler);
+  probe = null;
   ctx.navigiere('garten');  // Platzwahl beenden, bevor gespeichert und neu gezeichnet wird
   konfettiNaechstes = true;
-  konfettiGold = istRaritaet;
+  konfettiGold = aktion.kategorie === 'raritaet';
   return ctx.speichern(r.daten);
 }
 
